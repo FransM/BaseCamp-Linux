@@ -1,5 +1,7 @@
 {
   "name": "English",
+  "splash_toggle": "Show startup logo",
+  "autostart_toggle": "Start automatically at login",
   "display_style_title": "Display Style",
   "monitor_title": "Monitor Mode",
   "monitor_start": "Start Monitor Mode",

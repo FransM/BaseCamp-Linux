@@ -241,6 +241,9 @@ class App(tk.Tk):
         # 5. Build OBS type map from lang
         self._rebuild_obs_type_map()
 
+        self._splash_var = tk.BooleanVar(value=load_splash_enabled())
+        self._autostart_var = tk.BooleanVar(value=load_autostart_enabled())
+
         saved = load_style()
         self._current_style = tk.StringVar(value=next(
             (k for k, v in STYLES.items() if v == saved), "Analog"))
@@ -377,6 +380,27 @@ class App(tk.Tk):
                  bg=BG2, fg=BLUE).pack(side="left")
         tk.Label(self, text="Display Control", font=("Helvetica", 9),
                  bg=BG, fg=FG2).pack(pady=(4, 0))
+
+        chk_frame = tk.Frame(self, bg=BG)
+        chk_frame.pack(pady=(4, 0))
+
+        self._reg(
+            tk.Checkbutton(chk_frame, text="", variable=self._splash_var,
+                           command=lambda: save_splash_enabled(self._splash_var.get()),
+                           bg=BG, fg=FG2, selectcolor=BG2, activebackground=BG,
+                           activeforeground=FG2, font=("Helvetica", 9),
+                           cursor="hand2"),
+            "splash_toggle"
+        ).pack(side="left", padx=(0, 12))
+
+        self._reg(
+            tk.Checkbutton(chk_frame, text="", variable=self._autostart_var,
+                           command=lambda: save_autostart_enabled(self._autostart_var.get()),
+                           bg=BG, fg=FG2, selectcolor=BG2, activebackground=BG,
+                           activeforeground=FG2, font=("Helvetica", 9),
+                           cursor="hand2"),
+            "autostart_toggle"
+        ).pack(side="left")
 
         # ── Clock ──
         clock_card = tk.Frame(self, bg=BG2)
@@ -896,8 +920,55 @@ def show_splash():
     splash.after(3500, splash.destroy)
     splash.mainloop()
 
+_AUTOSTART_FILE = os.path.join(
+    os.path.expanduser("~") if not os.environ.get("SUDO_USER") else
+    _pwd.getpwnam(os.environ["SUDO_USER"]).pw_dir,
+    ".config", "autostart", "basecamp-linux.desktop"
+)
+
+def _autostart_exec():
+    if _FROZEN:
+        return sys.executable
+    return f"{sys.executable} {os.path.abspath(__file__)}"
+
+def load_autostart_enabled():
+    return os.path.exists(_AUTOSTART_FILE)
+
+def save_autostart_enabled(val):
+    if val:
+        os.makedirs(os.path.dirname(_AUTOSTART_FILE), exist_ok=True)
+        with open(_AUTOSTART_FILE, "w") as f:
+            f.write(f"""[Desktop Entry]
+Type=Application
+Name=BaseCamp Linux
+Comment=Mountain Everest Max display control
+Exec={_autostart_exec()}
+Icon=basecamp-linux
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+""")
+    else:
+        try:
+            os.remove(_AUTOSTART_FILE)
+        except FileNotFoundError:
+            pass
+
+
+def load_splash_enabled():
+    try:
+        return open(os.path.join(CONFIG_DIR, "splash")).read().strip() != "0"
+    except FileNotFoundError:
+        return True
+
+def save_splash_enabled(val):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(os.path.join(CONFIG_DIR, "splash"), "w") as f:
+        f.write("1" if val else "0")
+
 if __name__ == "__main__":
     psutil.cpu_percent()
-    show_splash()
+    if load_splash_enabled():
+        show_splash()
     app = App()
     app.mainloop()

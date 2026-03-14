@@ -1,5 +1,7 @@
 {
   "name": "Deutsch",
+  "splash_toggle": "Startlogo anzeigen",
+  "autostart_toggle": "Beim Login automatisch starten",
   "display_style_title": "Display-Stil",
   "monitor_title": "Monitor-Modus",
   "monitor_start": "Monitor-Modus starten",
