@@ -65,11 +65,19 @@ pip install customtkinter pillow psutil obsws-python pystray
 Without this the app can't talk to the keyboard without `sudo`:
 
 ```bash
-sudo cp 99-mountain-everest-max.rules /etc/udev/rules.d/
+sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-Then unplug and replug the keyboard.
+Then add yourself to the `plugdev` group (if not already) and unplug/replug the keyboard:
+
+```bash
+sudo usermod -aG plugdev $USER
+```
+
+> Log out and back in after adding the group.
 
 ---
 
@@ -85,7 +93,7 @@ The GUI starts with a splash screen and auto-activates Monitor mode. The app min
 
 ## AppImage
 
-A self-contained AppImage is available in the releases. No Python installation required.
+A self-contained AppImage is available in the [releases](../../releases). No Python installation required.
 
 ```bash
 chmod +x BaseCamp-Linux-x86_64.AppImage
@@ -93,6 +101,11 @@ chmod +x BaseCamp-Linux-x86_64.AppImage
 ```
 
 USB permissions still need to be set up once (see above).
+
+> If you get a FUSE error on startup, run with `--appimage-extract-and-run` instead:
+> ```bash
+> ./BaseCamp-Linux-x86_64.AppImage --appimage-extract-and-run
+> ```
 
 ---
 
