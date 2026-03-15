@@ -62,24 +62,39 @@ pip install customtkinter pillow psutil obsws-python pystray
 
 ### USB permissions (required, one-time)
 
-Without this the app can't talk to the keyboard without `sudo`:
+#### Debian / Ubuntu / Linux Mint
 
 ```bash
 sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
 SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-Then unplug and replug the keyboard.
-
-**Debian / Ubuntu / Mint only** — add yourself to the `plugdev` group if it exists:
-
-```bash
 sudo usermod -aG plugdev $USER
 ```
 
-> Log out and back in after adding the group. On Arch and Fedora the `plugdev` group does not exist — the `TAG+="uaccess"` in the rule above is sufficient.
+> Log out and back in after adding the group, then unplug and replug the keyboard.
+
+#### Fedora / Nobara
+
+```bash
+sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", TAG+="uaccess"
+EOF
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+> Unplug and replug the keyboard. No group changes needed.
+
+#### Arch Linux
+
+```bash
+sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", TAG+="uaccess"
+EOF
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+> Unplug and replug the keyboard. No group changes needed.
 
 ---
 
