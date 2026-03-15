@@ -74,7 +74,26 @@ sudo usermod -aG plugdev $USER
 
 > Log out and back in after adding the group, then unplug and replug the keyboard.
 
-#### Fedora / Nobara / Arch / CachyOS / Manjaro
+#### Fedora / Nobara
+
+```bash
+sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666"
+EOF
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+> Unplug and replug the keyboard. No group changes needed.
+
+#### Arch / CachyOS / Manjaro
+
+Arch uses Fish as default shell — switch to bash first:
+
+```bash
+bash
+```
+
+Then run:
 
 ```bash
 sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
