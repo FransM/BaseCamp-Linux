@@ -14,6 +14,17 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+# Remove bloat: system icon themes, locales, themes bundled from Fedora
+import os
+a.datas = [
+    (dst, src, kind)
+    for dst, src, kind in a.datas
+    if not dst.startswith('share/icons/')
+    and not dst.startswith('share/locale/')
+    and not dst.startswith('share/themes/')
+]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -25,7 +36,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -38,7 +49,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='BaseCamp-Linux',
 )

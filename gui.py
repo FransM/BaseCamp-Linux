@@ -480,6 +480,10 @@ class App(ctk.CTk):
                      text_color=FG).pack(side="left")
         ctk.CTkLabel(inner, text=" EVEREST MAX", font=("Helvetica", 15, "bold"),
                      text_color=BLUE).pack(side="left")
+        ctk.CTkButton(hdr, text="✕", width=32, height=32, corner_radius=6,
+                      fg_color="transparent", hover_color=BG3, text_color=FG2,
+                      font=("Helvetica", 14), command=self._quit).place(relx=1.0,
+                      rely=0.5, anchor="e", x=-8)
 
         # ── Dashboard ──
         dash = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
