@@ -71,13 +71,15 @@ EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-Then add yourself to the `plugdev` group (if not already) and unplug/replug the keyboard:
+Then unplug and replug the keyboard.
+
+**Debian / Ubuntu / Mint only** — add yourself to the `plugdev` group if it exists:
 
 ```bash
 sudo usermod -aG plugdev $USER
 ```
 
-> Log out and back in after adding the group.
+> Log out and back in after adding the group. On Arch and Fedora the `plugdev` group does not exist — the `TAG+="uaccess"` in the rule above is sufficient.
 
 ---
 
