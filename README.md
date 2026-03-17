@@ -84,6 +84,14 @@ chmod +x BaseCamp-Linux-x86_64-*.AppImage
 ./BaseCamp-Linux-x86_64-debian.AppImage   # or -fedora
 ```
 
+To add BaseCamp Linux to your app menu, run it once with `--install`:
+
+```bash
+./BaseCamp-Linux-x86_64-fedora.AppImage --install
+```
+
+This installs the icon and desktop entry to `~/.local/share/`. After that you can launch it directly from your application launcher.
+
 USB permissions still need to be set up once (see below).
 
 > If you get a FUSE error on startup, add `--appimage-extract-and-run`:
