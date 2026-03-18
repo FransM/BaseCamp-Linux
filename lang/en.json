@@ -102,5 +102,7 @@
   "zone_reset": "Reset",
   "zone_applying": "Applying…",
   "zone_applied": "Zones applied ✓",
-  "zone_error": "Error"
+  "zone_error": "Error",
+  "error": "Error",
+  "waiting_for_keyboard": "Waiting for keyboard…"
 }

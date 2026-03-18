@@ -1346,7 +1346,7 @@ class App(ctk.CTk):
                                         font=("Helvetica", 11, "bold"))
                 self._cpu_status.configure(text=self.T("monitor_running"), text_color=GRN)
             except Exception as e:
-                self._cpu_status.configure(text=f"Fehler: {e}", text_color=RED)
+                self._cpu_status.configure(text=f"{self.T('error')}: {e}", text_color=RED)
 
     def _obs_connect(self):
         self._obs_status.configure(text=self.T("obs_connecting"), text_color=BLUE)
@@ -1592,7 +1592,7 @@ class App(ctk.CTk):
             delay = 2.0 if just_uploaded else 0.8 if was_running else 0.5
             if just_uploaded:
                 self.after(0, lambda: self._main_status.configure(
-                    text="Warte auf Tastatur…", text_color=YLW))
+                    text=self.T("waiting_for_keyboard"), text_color=YLW))
             time.sleep(delay)
             pkill = "basecamp-controller.*cpu" if _FROZEN else r"mountain-time-sync\.py.*cpu"
             subprocess.run(["pkill", "-f", pkill], capture_output=True)

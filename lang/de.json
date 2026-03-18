@@ -102,5 +102,7 @@
   "zone_reset": "Zurücksetzen",
   "zone_applying": "Anwenden…",
   "zone_applied": "Zonen gesetzt ✓",
-  "zone_error": "Fehler"
+  "zone_error": "Fehler",
+  "error": "Fehler",
+  "waiting_for_keyboard": "Warte auf Tastatur…"
 }
