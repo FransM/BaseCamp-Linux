@@ -660,8 +660,10 @@ class LibraryPickerDialog(ctk.CTkToplevel):
         cell.destroy()
 
     def _browse_file(self):
+        self.grab_release()
         path = native_open_image(title=self._app.T("multi_upload_pick"))
         if not path:
+            self.grab_set()
             return
         gif_frame = 0
         if path.lower().endswith(".gif"):
