@@ -95,7 +95,7 @@ A built-in **Synthwave** preset is included as a starting point.
 
 ## Upload Images & Image Library
 
-### Upload Images — D1–D4
+### Upload Images
 
 <p align="center">
   <img src="multiupload.png" alt="Upload Images Dialog" width="400"/>
