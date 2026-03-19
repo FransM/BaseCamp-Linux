@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.1] - 2026-03-19
+
+### Upload Images & Image Library
+- New **Upload Images** dialog (Numpad Keys section): shows D1–D4 as four tiles with thumbnail previews, select images per slot and upload all at once with **Upload All**
+- Per-slot **↑** button inside the dialog for uploading a single slot without affecting others
+- **Image Library**: every uploaded image is automatically saved as a thumbnail locally — pick previously used images with one click instead of browsing the file system every time
+- Library images can be deleted individually via the ✕ button
+- The last uploaded image per D-slot is remembered and shown as the tile preview on next open
+- **Skip detection**: if the same image is selected again (content unchanged), the slot is skipped — no unnecessary flash write, both in single and multi upload
+- **Main display Image Library**: the main display upload now also uses the library picker with thumbnails in the correct 240×204 aspect ratio (stored in `main_library/`)
+- Image Library picker opens at the mouse cursor position
+
+---
+
 ## [1.4.0] - 2026-03-19
 
 ### Custom RGB Mode

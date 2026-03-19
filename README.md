@@ -36,8 +36,9 @@ The GUI is split into a persistent **dashboard** at the top and six collapsible 
 - **24H / 12H** — Toggle clock format
 - **Monitor mode** — Live metrics on the keyboard display: CPU%, GPU%, RAM%, HDD%, Network MB/s
 - **Button actions (D1–D4)** — Assign Shell commands, URLs, folders or installed apps to D1–D4 — with native folder picker and searchable app picker. Use **Reset Buttons Flash** after first setup or when switching from Mountain Base Camp — BaseCamp may have stored its own actions in the keyboard's flash memory, which can cause two actions to fire on a single button press. Reset Buttons Flash overwrites all four slots with your configured actions, clearing any leftover BaseCamp data.
-- **Image upload (D1–D4)** — Upload any image to the D-buttons — automatically converted and resized (GIF frame picker included)
-- **Main display upload** — Upload any image to the keyboard's main display — automatically converted and resized
+- **Image upload (D1–D4)** — Upload images to D-buttons via the **Upload Images** dialog or individual per-slot upload buttons — automatically converted and resized (GIF frame picker included). Images are saved to the **Image Library** for quick reuse.
+- **Image Library** — All uploaded images are stored locally as thumbnails. Pick from previously used images with one click instead of browsing the file system every time. Images can be deleted from the library individually.
+- **Main display upload** — Upload any image to the keyboard's main display — with Image Library support for quick reuse
 - **RGB Lighting** — Full RGB effect control: Wave, Tornado, Tornado Rainbow, Reactive, Yeti, Matrix, Off — with speed, brightness, color pickers and direction — settings saved to config
 - **Custom RGB Mode** — Per-key color editor with rubber band selection, eyedropper, undo, and named presets — side LEDs selectable individually around keyboard and numpad — includes built-in Synthwave preset
 
@@ -89,6 +90,46 @@ A built-in **Synthwave** preset is included as a starting point.
 - **OBS integration** — Connect to OBS via WebSocket and trigger scene switches, recording or streaming from D1–D4 — settings save automatically on change
 - **System tray** — Minimize to tray, runs in the background
 - **Internationalization** — UI language switchable at runtime via external JSON files (DE + EN included, add your own)
+
+---
+
+## Upload Images & Image Library
+
+### Upload Images — D1–D4
+
+<p align="center">
+  <img src="multiupload.png" alt="Upload Images Dialog" width="400"/>
+</p>
+
+Click **Upload Images** in the Numpad Keys section to open the multi-upload dialog.
+
+| Element | Description |
+|---------|-------------|
+| **D1–D4 tiles** | Click a tile to open the Image Library and pick an image — the thumbnail is shown immediately as a preview |
+| **↑ button** | Upload that single slot right away |
+| **Upload All** | Upload all four slots sequentially — slots without a selected image are skipped |
+| **Status rows** | Per-slot upload status and progress bar |
+| **Skip detection** | If the same image is selected again (unchanged), the slot is skipped automatically — no unnecessary flash write |
+
+The last image used per slot is remembered and shown as the tile preview next time you open the dialog.
+
+---
+
+### Image Library
+
+<p align="center">
+  <img src="iconlibrary.png" alt="Image Library" width="320"/>
+</p>
+
+Every image you upload to D1–D4 or the main display is automatically saved to a local library (`~/.config/mountain-time-sync/icon_library/`). The library opens whenever you click a tile or the individual upload button.
+
+| Element | Description |
+|---------|-------------|
+| **Browse new file…** | Open the file picker to choose a new image from disk (GIF frame picker included) |
+| **Thumbnails** | Click any thumbnail to select it instantly — no file picker needed |
+| **✕ button** | Delete an image from the library |
+
+The main display has its own separate library (`main_library/`) with thumbnails that match the display's aspect ratio.
 
 ---
 

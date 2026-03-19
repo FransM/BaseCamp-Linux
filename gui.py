@@ -56,7 +56,10 @@ MAIN_MODE_FILE  = os.path.join(CONFIG_DIR, "main_display_mode")
 ZONE_FILE       = os.path.join(CONFIG_DIR, "zone_colors.json")
 RGB_FILE        = os.path.join(CONFIG_DIR, "rgb_settings.json")
 PER_KEY_FILE    = os.path.join(CONFIG_DIR, "per_key_colors.json")
-RGB_PRESETS_FILE = os.path.join(CONFIG_DIR, "rgb_presets.json")
+RGB_PRESETS_FILE  = os.path.join(CONFIG_DIR, "rgb_presets.json")
+ICON_LIBRARY_DIR  = os.path.join(CONFIG_DIR, "icon_library")
+MAIN_LIBRARY_DIR  = os.path.join(CONFIG_DIR, "main_library")
+ICON_LAST_FILE    = os.path.join(CONFIG_DIR, "icon_last.json")
 
 OBS_INTERNAL_ORDER = ["none", "scene", "record", "stream"]
 
@@ -442,6 +445,478 @@ def _save_presets(presets):
     import json as _j
     with open(RGB_PRESETS_FILE, "w") as f:
         f.write(_j.dumps(presets, indent=2))
+
+
+# ── Icon Library ───────────────────────────────────────────────────────────────
+
+def _load_icon_last():
+    """Return dict {slot_str: thumb_filename} for last uploaded image per slot."""
+    try:
+        return json.load(open(ICON_LAST_FILE))
+    except Exception:
+        return {}
+
+
+def _save_icon_last(slot, filename):
+    data = _load_icon_last()
+    data[str(slot)] = filename
+    with open(ICON_LAST_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _save_to_library(path, gif_frame=0):
+    """Resize image to 72×72, save as PNG by content-hash. Returns filename or None."""
+    import hashlib
+    try:
+        img = Image.open(path)
+        try:
+            img.seek(gif_frame)
+        except Exception:
+            pass
+        img = img.convert("RGB").resize((72, 72), Image.LANCZOS)
+        buf = img.tobytes()
+        h = hashlib.md5(buf).hexdigest()[:16]
+        os.makedirs(ICON_LIBRARY_DIR, exist_ok=True)
+        out = os.path.join(ICON_LIBRARY_DIR, f"{h}.png")
+        if not os.path.exists(out):
+            img.save(out, "PNG")
+        return f"{h}.png"
+    except Exception:
+        return None
+
+
+def _save_to_main_library(path, gif_frame=0):
+    """Save 96×82 thumbnail of main display image to main_library. Returns filename or None."""
+    import hashlib
+    try:
+        img = Image.open(path)
+        try:
+            img.seek(gif_frame)
+        except Exception:
+            pass
+        img = img.convert("RGB").resize((96, 82), Image.LANCZOS)
+        buf = img.tobytes()
+        h = hashlib.md5(buf).hexdigest()[:16]
+        os.makedirs(MAIN_LIBRARY_DIR, exist_ok=True)
+        out = os.path.join(MAIN_LIBRARY_DIR, f"{h}.png")
+        if not os.path.exists(out):
+            img.save(out, "PNG")
+        return f"{h}.png"
+    except Exception:
+        return None
+
+
+def _compute_main_lib_hash(path, gif_frame=0):
+    import hashlib
+    try:
+        img = Image.open(path)
+        try:
+            img.seek(gif_frame)
+        except Exception:
+            pass
+        img = img.convert("RGB").resize((96, 82), Image.LANCZOS)
+        h = hashlib.md5(img.tobytes()).hexdigest()[:16]
+        return f"{h}.png"
+    except Exception:
+        return None
+
+
+def _list_main_library():
+    try:
+        return sorted(f for f in os.listdir(MAIN_LIBRARY_DIR) if f.endswith(".png"))
+    except FileNotFoundError:
+        return []
+
+
+def _compute_lib_hash(path, gif_frame=0):
+    """Return the library filename (hash.png) for an image without saving it."""
+    import hashlib
+    try:
+        img = Image.open(path)
+        try:
+            img.seek(gif_frame)
+        except Exception:
+            pass
+        img = img.convert("RGB").resize((72, 72), Image.LANCZOS)
+        h = hashlib.md5(img.tobytes()).hexdigest()[:16]
+        return f"{h}.png"
+    except Exception:
+        return None
+
+
+def _list_library():
+    """Return sorted list of PNG filenames in the icon library."""
+    try:
+        return sorted(f for f in os.listdir(ICON_LIBRARY_DIR) if f.endswith(".png"))
+    except FileNotFoundError:
+        return []
+
+
+# ── Library Picker Dialog ──────────────────────────────────────────────────────
+
+class LibraryPickerDialog(ctk.CTkToplevel):
+    """Show icon library thumbnails + Browse button. result=(src_path, gif_frame, thumb_fname)."""
+
+    def __init__(self, parent, app, lib_dir=None, thumb_w=64, thumb_h=64, cols=4):
+        super().__init__(parent)
+        self._app = app
+        self._lib_dir  = lib_dir or ICON_LIBRARY_DIR
+        self._thumb_w  = thumb_w
+        self._thumb_h  = thumb_h
+        self._cols     = cols
+        self._cell_w   = thumb_w + 14
+        self._cell_h   = thumb_h + 22
+        self.result = None
+        self.title(app.T("multi_upload_pick_title"))
+        self.configure(fg_color=BG)
+        self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        self._thumb_imgs = []  # keep CTkImage refs alive
+
+        self._build_ui()
+
+        mx = parent.winfo_pointerx()
+        my = parent.winfo_pointery()
+        dlg_w = cols * (self._cell_w + 4) + 40
+        self.after(10, lambda: self.geometry(f"{dlg_w}x520+{mx - dlg_w//2}+{my - 260}"))
+
+        self.grab_set()
+        self.wait_window()
+
+    def _build_ui(self):
+        # Browse new file button
+        ctk.CTkButton(
+            self, text=self._app.T("multi_upload_browse"),
+            fg_color=BLUE, hover_color="#0884be", text_color=FG,
+            font=("Helvetica", 11), height=34, corner_radius=6,
+            command=self._browse_file,
+        ).pack(fill="x", padx=12, pady=(12, 6))
+
+        ctk.CTkLabel(
+            self, text=self._app.T("multi_upload_library"),
+            font=("Helvetica", 10), text_color=FG2,
+        ).pack(padx=14, anchor="w")
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color=BG2, corner_radius=6,
+                                        height=300)
+        scroll.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+        self._load_grid(scroll)
+
+    def _load_grid(self, container):
+        try:
+            files = sorted(f for f in os.listdir(self._lib_dir) if f.endswith(".png"))
+        except FileNotFoundError:
+            files = []
+
+        if not files:
+            ctk.CTkLabel(container, text=self._app.T("multi_upload_empty"),
+                         font=("Helvetica", 11), text_color=FG2).pack(pady=20)
+            return
+
+        row_frame = None
+        for i, fname in enumerate(files):
+            if i % self._cols == 0:
+                row_frame = ctk.CTkFrame(container, fg_color="transparent")
+                row_frame.pack(fill="x", pady=2)
+
+            fpath = os.path.join(self._lib_dir, fname)
+            cell = ctk.CTkFrame(row_frame, fg_color=BG3, corner_radius=4,
+                                 width=self._cell_w, height=self._cell_h,
+                                 cursor="hand2")
+            cell.pack(side="left", padx=2)
+            cell.pack_propagate(False)
+
+            try:
+                img = Image.open(fpath).convert("RGB").resize(
+                    (self._thumb_w, self._thumb_h), Image.LANCZOS)
+                ctk_img = ctk.CTkImage(light_image=img, dark_image=img,
+                                       size=(self._thumb_w, self._thumb_h))
+                self._thumb_imgs.append(ctk_img)
+                img_lbl = ctk.CTkLabel(cell, image=ctk_img, text="", cursor="hand2")
+                img_lbl.pack(pady=(4, 0))
+                for w in (cell, img_lbl):
+                    w.bind("<Button-1>", lambda e, fp=fpath, fn=fname: self._select(fp, fn))
+            except Exception:
+                ctk.CTkLabel(cell, text="?", text_color=FG2).pack(pady=16)
+                cell.bind("<Button-1>", lambda e, fp=fpath, fn=fname: self._select(fp, fn))
+
+            ctk.CTkButton(
+                cell, text="✕", width=20, height=16,
+                fg_color="transparent", hover_color=RED, text_color=FG2,
+                font=("Helvetica", 9), corner_radius=2,
+                command=lambda fn=fname, c=cell: self._delete(fn, c),
+            ).pack()
+
+    def _select(self, fpath, fname):
+        self.result = (fpath, 0, fname)
+        self.destroy()
+
+    def _delete(self, fname, cell):
+        try:
+            os.remove(os.path.join(self._lib_dir, fname))
+        except Exception:
+            pass
+        cell.destroy()
+
+    def _browse_file(self):
+        path = native_open_image(title=self._app.T("multi_upload_pick"))
+        if not path:
+            return
+        gif_frame = 0
+        if path.lower().endswith(".gif"):
+            try:
+                n = Image.open(path).n_frames
+                if n > 1:
+                    chosen = self._app._pick_gif_frame(path, n)
+                    if chosen is None:
+                        return
+                    gif_frame = chosen
+            except Exception:
+                pass
+        self.result = (path, gif_frame, None)
+        self.destroy()
+
+
+def pick_library_image(parent, app):
+    """Open LibraryPickerDialog for D1–D4 icons (72×72). Returns (src_path, gif_frame, thumb_fname) or None."""
+    dlg = LibraryPickerDialog(parent, app)
+    return dlg.result
+
+
+def pick_main_library_image(parent, app):
+    """Open LibraryPickerDialog for main display images (96×82, 3 cols). Returns (src_path, gif_frame, thumb_fname) or None."""
+    dlg = LibraryPickerDialog(parent, app, lib_dir=MAIN_LIBRARY_DIR,
+                              thumb_w=96, thumb_h=82, cols=3)
+    return dlg.result
+
+
+# ── Multi Upload Dialog ────────────────────────────────────────────────────────
+
+class MultiUploadDialog(ctk.CTkToplevel):
+    """Upload images to D1–D4 in one go, with library thumbnails per slot."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._app = app
+        self.title(app.T("multi_upload_title"))
+        self.configure(fg_color=BG)
+        self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        # (src_path, gif_frame, thumb_fname) or None per slot
+        self._selections = [None] * 4
+        self._tile_imgs = [None] * 4     # CTkImage refs
+        self._tile_lbls = [None] * 4     # preview CTkLabel per tile
+        self._status_lbls = [None] * 4
+        self._status_bars = [None] * 4
+        self._upload_btn = None
+
+        self._load_initial_thumbs()
+        self._build_ui()
+
+        self.update_idletasks()
+        pw = app.winfo_rootx() + app.winfo_width() // 2
+        ph = app.winfo_rooty() + app.winfo_height() // 2
+        w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{pw - w//2}+{ph - h//2}")
+
+    def _load_initial_thumbs(self):
+        """Pre-fill selections from last-uploaded images stored in config."""
+        last = _load_icon_last()
+        for i in range(4):
+            fname = last.get(str(i))
+            if fname:
+                fpath = os.path.join(ICON_LIBRARY_DIR, fname)
+                if os.path.exists(fpath):
+                    self._selections[i] = (fpath, 0, fname)
+
+    def _build_ui(self):
+        # Title
+        ctk.CTkLabel(self, text=self._app.T("multi_upload_title"),
+                     font=("Helvetica", 13, "bold"), text_color=FG).pack(
+                         padx=16, pady=(14, 10), anchor="w")
+
+        # Tile row
+        tile_row = ctk.CTkFrame(self, fg_color="transparent")
+        tile_row.pack(fill="x", padx=12, pady=(0, 8))
+
+        for i in range(4):
+            tile = ctk.CTkFrame(tile_row, fg_color=BG3, corner_radius=6,
+                                width=106, height=148)
+            tile.pack(side="left", padx=4)
+            tile.pack_propagate(False)
+
+            ctk.CTkLabel(tile, text=f"D{i+1}", font=("Helvetica", 10, "bold"),
+                         text_color=YLW).pack(pady=(6, 0))
+
+            preview = ctk.CTkLabel(tile, text="+", text_color=FG2,
+                                   font=("Helvetica", 20), width=80, height=72,
+                                   fg_color=BG2, corner_radius=4, cursor="hand2")
+            preview.pack(padx=4, pady=2)
+            self._tile_lbls[i] = preview
+
+            for w in (tile, preview):
+                w.bind("<Button-1>", lambda e, ix=i: self._pick_slot(ix))
+
+            ctk.CTkButton(
+                tile, text="↑", height=22, corner_radius=4, width=80,
+                fg_color=BLUE, hover_color="#0884be", text_color=FG,
+                font=("Helvetica", 11, "bold"),
+                command=lambda ix=i: self._upload_single(ix),
+            ).pack(padx=4, pady=(0, 6))
+
+            # Show pre-loaded thumb if any
+            if self._selections[i]:
+                self._update_tile_thumb(i, self._selections[i][0])
+
+        # Status rows
+        status_frame = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
+        status_frame.pack(fill="x", padx=12, pady=(0, 8))
+
+        for i in range(4):
+            row = ctk.CTkFrame(status_frame, fg_color="transparent")
+            row.pack(fill="x", padx=8, pady=(4 if i == 0 else 0, 0))
+
+            ctk.CTkLabel(row, text=f"D{i+1}:", font=("Helvetica", 10, "bold"),
+                         text_color=YLW, width=28, anchor="w").pack(side="left")
+
+            lbl = ctk.CTkLabel(row, text="—", font=("Helvetica", 10),
+                               text_color=FG2, anchor="w")
+            lbl.pack(side="left", fill="x", expand=True)
+            self._status_lbls[i] = lbl
+
+            bar = ctk.CTkProgressBar(row, mode="determinate",
+                                     progress_color=BLUE, fg_color=BG3,
+                                     height=4, corner_radius=0, width=80)
+            bar.set(0)
+            bar.pack(side="right", padx=(8, 0))
+            self._status_bars[i] = bar
+
+        # padding row to close gap
+        ctk.CTkFrame(status_frame, fg_color="transparent", height=6).pack()
+
+        # Button row
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(fill="x", padx=12, pady=(0, 14))
+
+        ctk.CTkButton(
+            btn_row, text=self._app.T("gif_frame_cancel"),
+            fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
+            font=("Helvetica", 11), height=34, corner_radius=6, width=110,
+            command=self.destroy,
+        ).pack(side="right", padx=(6, 0))
+
+        self._upload_btn = ctk.CTkButton(
+            btn_row, text=self._app.T("multi_upload_start"),
+            fg_color=BLUE, hover_color="#0884be", text_color=FG,
+            font=("Helvetica", 11, "bold"), height=34, corner_radius=6,
+            command=self._start_upload,
+        )
+        self._upload_btn.pack(side="right")
+
+    def _update_tile_thumb(self, idx, fpath):
+        try:
+            img = Image.open(fpath).convert("RGB").resize((72, 72), Image.LANCZOS)
+            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(72, 72))
+            self._tile_imgs[idx] = ctk_img
+            self._tile_lbls[idx].configure(image=ctk_img, text="")
+        except Exception:
+            pass
+
+    def _pick_slot(self, idx):
+        result = pick_library_image(self, self._app)
+        if result is None:
+            return
+        self._selections[idx] = result
+        self._update_tile_thumb(idx, result[0])
+        self._status_lbls[idx].configure(text="—", text_color=FG2)
+
+    def _upload_single(self, idx):
+        if not self._selections[idx]:
+            self._pick_slot(idx)
+        if not self._selections[idx]:
+            return
+        self._upload_btn.configure(state="disabled")
+        was_running = self._app._stop_cpu_proc()
+        items = [(idx, *self._selections[idx])]
+        threading.Thread(
+            target=self._upload_loop, args=(items, was_running), daemon=True
+        ).start()
+
+    def _start_upload(self):
+        items = [(i, *self._selections[i]) for i in range(4)
+                 if self._selections[i] is not None]
+        if not items:
+            return
+
+        self._upload_btn.configure(state="disabled")
+        was_running = self._app._stop_cpu_proc()
+
+        threading.Thread(
+            target=self._upload_loop, args=(items, was_running), daemon=True
+        ).start()
+
+    def _upload_loop(self, items, was_running):
+        stored = _load_icon_last()
+        first = True
+        for idx, src, gif_frame, thumb_fname in items:
+            # Skip if unchanged
+            resolved = thumb_fname or _compute_lib_hash(src, gif_frame)
+            if resolved and resolved == stored.get(str(idx)):
+                self.after(0, lambda i=idx: self._set_status(i, "skipped"))
+                continue
+
+            self.after(0, lambda i=idx: self._set_status(i, "uploading"))
+            time.sleep(2.5 if (first and was_running) else 0.5)
+            first = False
+
+            cmd = _cmd("upload", str(idx), src)
+            if gif_frame:
+                cmd = _cmd("upload", str(idx), src, "--frame", str(gif_frame))
+
+            bar = self._status_bars[idx]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+            for line in proc.stdout:
+                if line.startswith("PROGRESS:"):
+                    try:
+                        pct = int(line.strip()[9:])
+                        self.after(0, lambda v=pct, b=bar: b.set(v / 100.0))
+                    except ValueError:
+                        pass
+            proc.wait()
+            ok = proc.returncode == 0
+            err_hint = (proc.stderr.read().strip().splitlines() or [""])[-1]
+
+            if ok:
+                # Save to library and update last-used
+                new_fname = thumb_fname or _save_to_library(src, gif_frame)
+                if new_fname:
+                    _save_icon_last(idx, new_fname)
+
+            self.after(0, lambda i=idx, s=ok, e=err_hint: self._set_status(i, s, e))
+            self.after(0, lambda b=bar: b.set(0))
+
+        if was_running:
+            self.after(0, self._app._start_cpu_auto)
+        self.after(0, lambda: self._upload_btn.configure(state="normal"))
+
+    def _set_status(self, idx, state, err=""):
+        lbl = self._status_lbls[idx]
+        if state == "uploading":
+            lbl.configure(text=self._app.T("image_uploading", d=idx+1),
+                          text_color=BLUE)
+        elif state == "skipped":
+            lbl.configure(text=self._app.T("image_unchanged", d=idx+1),
+                          text_color=FG2)
+        elif state is True:
+            lbl.configure(text=self._app.T("image_uploaded", d=idx+1),
+                          text_color=GRN)
+        else:
+            text = (f"D{idx+1}: {err}" if err
+                    else self._app.T("image_error", d=idx+1))
+            lbl.configure(text=text, text_color=RED)
 
 
 def _build_kb_layout():
@@ -1805,9 +2280,20 @@ class App(ctk.CTk):
             "numpad_subtitle"
         ).pack(pady=(8, 4))
 
-        self._img_btns        = []
-        self._upload_btns     = []
-        self._upload_bars     = []
+        # Upload images button — at the top
+        multi_row = ctk.CTkFrame(b3, fg_color="transparent")
+        multi_row.pack(fill="x", padx=8, pady=(0, 8))
+        self._reg(
+            ctk.CTkButton(
+                multi_row, text="",
+                height=34, corner_radius=6,
+                fg_color="#7c3aed", hover_color="#6d28d9", text_color=FG,
+                font=("Helvetica", 11, "bold"),
+                command=self._open_multi_upload,
+            ),
+            "multi_upload_btn"
+        ).pack(fill="x")
+
         self._btn_type_menus  = []
         self._folder_btns     = []
 
@@ -1838,7 +2324,7 @@ class App(ctk.CTk):
 
             # Action row
             action_row = ctk.CTkFrame(card, fg_color="transparent")
-            action_row.pack(fill="x", padx=4, pady=(2, 2))
+            action_row.pack(fill="x", padx=4, pady=(2, 6))
 
             self._reg(
                 ctk.CTkLabel(action_row, text="", font=("Helvetica", 10),
@@ -1885,36 +2371,6 @@ class App(ctk.CTk):
                           fg_color=GRN, text_color=FG, hover_color="#18a348",
                           font=("Helvetica", 10, "bold"), corner_radius=4,
                           ).pack(side="left", padx=(0, 4))
-
-            # Image row
-            image_row = ctk.CTkFrame(card, fg_color="transparent")
-            image_row.pack(fill="x", padx=4, pady=(0, 4))
-
-            self._reg(
-                ctk.CTkLabel(image_row, text="", font=("Helvetica", 10),
-                             text_color=FG2, width=50, anchor="w"),
-                "image_label"
-            ).pack(side="left", padx=(4, 2))
-
-            upload_btn = self._reg(
-                ctk.CTkButton(
-                    image_row, text="",
-                    fg_color=BLUE, text_color=FG, hover_color="#0884be",
-                    font=("Helvetica", 11), height=30, corner_radius=4,
-                    command=lambda ix=idx: self._upload_image(ix),
-                ),
-                "main_display_upload"
-            )
-            upload_btn.pack(side="left", padx=(2, 4), expand=True)
-            self._upload_btns.append(upload_btn)
-            self._img_btns.append(upload_btn)
-
-            bar = ctk.CTkProgressBar(card, mode="determinate",
-                                     progress_color=BLUE, fg_color=BG3,
-                                     height=4, corner_radius=0)
-            bar.set(0)
-            bar.pack(fill="x", padx=4, pady=(0, 4))
-            self._upload_bars.append(bar)
 
         self._numpad_type_internal = _TYPE_INTERNAL
         self._numpad_type_labels_fn = _type_labels
@@ -2632,6 +3088,12 @@ class App(ctk.CTk):
         save_buttons(buttons)
         self._numpad_info.configure(text=self.T("action_saved", d=idx+1), text_color=GRN)
 
+    def _open_multi_upload(self):
+        if hasattr(self, "_multi_upload_win") and self._multi_upload_win.winfo_exists():
+            self._multi_upload_win.focus()
+            return
+        self._multi_upload_win = MultiUploadDialog(self)
+
     def _reset_buttons_flash(self):
         was_running = self._stop_cpu_proc()
 
@@ -2719,27 +3181,21 @@ class App(ctk.CTk):
         return None if cancelled[0] else result[0]
 
     def _upload_image(self, idx):
-        path = native_open_image(title=f"Bild für D{idx+1} wählen")
-        if not path:
+        result = pick_library_image(self, self)
+        if result is None:
             return
+        path, gif_frame, thumb_fname = result
 
-        gif_frame = 0
-        if path.lower().endswith(".gif"):
-            try:
-                n = Image.open(path).n_frames
-                if n > 1:
-                    chosen = self._pick_gif_frame(path, n)
-                    if chosen is None:
-                        return
-                    gif_frame = chosen
-            except Exception:
-                pass
+        # Skip if image unchanged
+        stored = _load_icon_last().get(str(idx))
+        resolved = thumb_fname or _compute_lib_hash(path, gif_frame)
+        if resolved and resolved == stored:
+            self._numpad_info.configure(
+                text=self.T("image_unchanged", d=idx+1), text_color=FG2)
+            return
 
         self._numpad_info.configure(text=self.T("image_uploading", d=idx+1),
                                     text_color=BLUE)
-
-        bar = self._upload_bars[idx]
-        bar.set(0)
 
         was_running = self._cpu_proc and self._cpu_proc.poll() is None
         if was_running:
@@ -2754,21 +3210,18 @@ class App(ctk.CTk):
                 cmd = _cmd("upload", str(idx), path, "--frame", str(gif_frame))
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True)
-            for line in proc.stdout:
-                if line.startswith("PROGRESS:"):
-                    try:
-                        pct = int(line.strip()[9:])
-                        self.after(0, lambda v=pct: bar.set(v / 100.0))
-                    except ValueError:
-                        pass
+            proc.stdout.read()
             proc.wait()
             ok = proc.returncode == 0
+            if ok:
+                new_fname = thumb_fname or _save_to_library(path, gif_frame)
+                if new_fname:
+                    _save_icon_last(idx, new_fname)
             if was_running:
                 self.after(0, self._start_cpu_auto)
             err_hint = (proc.stderr.read().strip().splitlines() or [""])[-1]
 
             def finish():
-                bar.set(0)
                 self._numpad_info.configure(
                     text=(self.T("image_uploaded", d=idx+1) if ok
                           else f"D{idx+1}: Fehler — {err_hint}" if err_hint
@@ -2816,21 +3269,18 @@ class App(ctk.CTk):
         threading.Thread(target=run, daemon=True).start()
 
     def _upload_main_image(self):
-        path = native_open_image(title=self.T("main_display_upload"))
-        if not path:
+        result = pick_main_library_image(self, self)
+        if result is None:
             return
+        path, gif_frame, thumb_fname = result
 
-        gif_frame = 0
-        if path.lower().endswith(".gif"):
-            try:
-                n = Image.open(path).n_frames
-                if n > 1:
-                    chosen = self._pick_gif_frame(path, n)
-                    if chosen is None:
-                        return
-                    gif_frame = chosen
-            except Exception:
-                pass
+        # Skip if unchanged
+        stored = _load_icon_last().get("main")
+        resolved = thumb_fname or _compute_main_lib_hash(path, gif_frame)
+        if resolved and resolved == stored:
+            self._main_status.configure(
+                text=self.T("main_display_unchanged"), text_color=FG2)
+            return
 
         self._main_status.configure(text=self.T("main_display_uploading"),
                                     text_color=BLUE)
@@ -2880,6 +3330,11 @@ class App(ctk.CTk):
                 err_hint = (proc.stderr.read().strip().splitlines() or [""])[-1]
                 if ok:
                     break
+
+            if ok:
+                new_fname = thumb_fname or _save_to_main_library(path, gif_frame)
+                if new_fname:
+                    _save_icon_last("main", new_fname)
 
             def finish():
                 self._main_bar.set(0)

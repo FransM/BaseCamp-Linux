@@ -120,5 +120,16 @@
   "zone_applied": "Zonen gesetzt ✓",
   "zone_error": "Fehler",
   "error": "Fehler",
-  "waiting_for_keyboard": "Warte auf Tastatur…"
+  "waiting_for_keyboard": "Warte auf Tastatur…",
+  "multi_upload_btn": "Bilder uploaden",
+  "multi_upload_title": "Bilder uploaden",
+  "multi_upload_pick": "Bild wählen",
+  "multi_upload_pick_title": "Bild wählen",
+  "multi_upload_browse": "Neue Datei wählen…",
+  "multi_upload_library": "Bildbibliothek",
+  "multi_upload_empty": "Noch keine Bilder — lade zuerst ein Bild hoch",
+  "multi_upload_start": "Alle hochladen",
+  "image_unchanged": "D{d}: Bild unverändert — übersprungen",
+  "image_btn": "Bild hochladen",
+  "main_display_unchanged": "Bild unverändert — übersprungen"
 }

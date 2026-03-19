@@ -120,5 +120,16 @@
   "zone_applied": "Zones applied ✓",
   "zone_error": "Error",
   "error": "Error",
-  "waiting_for_keyboard": "Waiting for keyboard…"
+  "waiting_for_keyboard": "Waiting for keyboard…",
+  "multi_upload_btn": "Upload Images",
+  "multi_upload_title": "Upload Images",
+  "multi_upload_pick": "Choose Image",
+  "multi_upload_pick_title": "Choose Image",
+  "multi_upload_browse": "Browse new file…",
+  "multi_upload_library": "Image Library",
+  "multi_upload_empty": "No images yet — upload one first",
+  "multi_upload_start": "Upload All",
+  "image_unchanged": "D{d}: Image unchanged — skipped",
+  "image_btn": "Upload Image",
+  "main_display_unchanged": "Image unchanged — skipped"
 }
