@@ -42,16 +42,6 @@ BUTTON_FILE = os.path.join(CONFIG_DIR, "buttons.json")
 
 CPU_INTERVAL = 0.2
 
-UPLOAD_LOG = os.path.join("/tmp", "basecamp_d1d4_upload.log")
-_upload_log_fh = None
-
-def _dlog(msg):
-    """Write debug message to upload log file."""
-    if _upload_log_fh:
-        ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        _upload_log_fh.write(f"[{ts}] {msg}\n")
-        _upload_log_fh.flush()
-
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def make_packet(*args):
@@ -199,20 +189,15 @@ def _erase_session(dev, session_num, sectors=(0x01, 0x02)):
     Sends a separate 21 XX command for each sector and polls until 80 fa.
     sectors: tuple of (sector1_cmd, sector2_cmd) — depends on button index.
     """
-    _dlog(f"  Erase session {session_num}: sectors={[hex(s) for s in sectors]}")
-    for sector_idx, sector_cmd in enumerate(sectors, start=1):
-        _dlog(f"    Sector {sector_idx}: cmd=0x{sector_cmd:02x}")
+    for sector_cmd in sectors:
         _ctrl_set_report(dev, bytes([0xaa, 0x55, 0x21, sector_cmd]))
         _ctrl_get_report(dev)
-        for i in range(100):
+        for _ in range(100):
             time.sleep(0.030)
             _ctrl_set_report(dev, bytes([0xaa, 0x55, 0x80, 0x00]))
             r = _ctrl_get_report(dev)
             if r[2:4] == bytes([0x80, 0xfa]):
-                _dlog(f"    Sector {sector_idx}: erased after {i+1} polls")
                 break
-        else:
-            _dlog(f"    Sector {sector_idx}: WARNING — never got 80 fa after 100 polls!")
         _ctrl_set_report(dev, bytes([0xaa, 0x55, 0x21, 0x00]))
         _ctrl_get_report(dev)
 
@@ -227,10 +212,8 @@ def _upload_icon_image(dev, button_idx, img_bytes):
     """
     assert len(img_bytes) == ICON_IMG_SIZE
     chk = sum(img_bytes) & 0xFFFF
-    _dlog(f"Upload start: button={button_idx} size={len(img_bytes)} checksum=0x{chk:04x}")
 
     # Init interrupt endpoint
-    _dlog("Init interrupt endpoint (11 12 + 3x 11 14)")
     dev.write(EP_OUT, make_packet(0x11, 0x12))
     try: dev.read(EP_IN, PKT_SIZE, timeout=1000)
     except Exception: pass
@@ -254,15 +237,12 @@ def _upload_icon_image(dev, button_idx, img_bytes):
     _erase_session(dev, 2, sectors)
     time.sleep(2.0)
     print("PROGRESS:55", flush=True)
-    _dlog("Erase sessions complete, starting handshake")
-
     # Handshake + descriptor, retry once if descriptor poll times out
     chk = sum(img_bytes) & 0xFFFF
     desc = bytes([0xaa, 0x55, 0x10, 0x80, 0x28, 0x00,
                   chk & 0xFF, chk >> 8,
                   0x00, 0x00, 0x02, 0x01, button_idx])
     for _try in range(3):
-        _dlog(f"  Descriptor attempt {_try+1}: desc={desc.hex()}")
         _ctrl_set_report(dev, bytes([0xaa, 0x55, 0x21, 0x04]))
         _ctrl_get_report(dev)
         _ctrl_set_report(dev, bytes([0xaa, 0x55, 0x22, 0x00]))
@@ -270,20 +250,16 @@ def _upload_icon_image(dev, button_idx, img_bytes):
         _ctrl_set_report(dev, desc)
         time.sleep(0.130)
         r = _ctrl_get_report(dev)
-        _dlog(f"  Descriptor response: {bytes(r[:8]).hex()}")
         if r[2:4] == bytes([0x10, 0xfa]):
-            _dlog("  Descriptor ready (fa)")
             break
         for _poll in range(100):
             time.sleep(0.150)
             r = _ctrl_get_report(dev)
             if r[2:4] == bytes([0x10, 0xfa]):
-                _dlog(f"  Descriptor ready after {_poll+1} extra polls")
                 break
         else:
-            _dlog(f"  Descriptor never ready after attempt {_try+1}")
             if _try < 2:
-                time.sleep(3.0)  # extra wait before retry
+                time.sleep(3.0)
                 continue
             raise RuntimeError("Descriptor never became ready (fa)")
         break
@@ -291,26 +267,19 @@ def _upload_icon_image(dev, button_idx, img_bytes):
 
     # Stream chunks: resend same chunk until committed (fa), then advance offset.
     # This matches Windows behavior: only advance to next chunk after fa confirms commit.
-    _dlog(f"Streaming {ICON_IMG_SIZE} bytes in 64-byte chunks")
     target = ICON_IMG_SIZE
-    bytes_committed = 0
     next_offset = 0
-    fb_count = 0
-    for attempt in range(600):
+    for _ in range(600):
         chunk = img_bytes[next_offset:next_offset + 64]
         _ctrl_set_report(dev, chunk)
         time.sleep(0.030)
         r = _ctrl_get_report(dev)
         if r[2:4] == bytes([0x10, 0xfa]):
-            bytes_committed = int.from_bytes(r[4:6], 'little')
-            next_offset = bytes_committed
-            pct = 60 + int(bytes_committed * 40 / target)
+            next_offset = int.from_bytes(r[4:6], 'little')
+            pct = 60 + int(next_offset * 40 / target)
             print(f"PROGRESS:{pct}", flush=True)
-            if bytes_committed >= target:
-                _dlog(f"Chunks complete: {attempt+1} attempts, {fb_count} fb retries")
+            if next_offset >= target:
                 break
-        else:
-            fb_count += 1
         # if fb: don't advance next_offset, retry same chunk next iteration
 
     # Wait for display update signal on interrupt endpoint (max 4s)
@@ -804,38 +773,23 @@ def upload_main_display(image_path, frame=0, activate=False):
 
 def upload_icon(button_idx, image_path, frame=0):
     """Upload a custom image (PNG/JPG/GIF frame) to a numpad button display."""
-    global _upload_log_fh
-    _upload_log_fh = open(UPLOAD_LOG, "w")
-    _dlog(f"BaseCamp Linux — D1-D4 Upload Debug Log")
-    _dlog(f"button={button_idx+1} (D{button_idx+1}) path={image_path} frame={frame}")
+    img_bytes = image_to_rgb565(image_path, frame=frame)
+    dev = usb.core.find(idVendor=VID, idProduct=PID)
+    if dev is None:
+        print("Keyboard not found!", file=sys.stderr)
+        sys.exit(1)
+    _claim(dev)
     try:
-        img_bytes = image_to_rgb565(image_path, frame=frame)
-        dev = usb.core.find(idVendor=VID, idProduct=PID)
-        if dev is None:
-            _dlog("ERROR: Keyboard not found!")
-            print("Keyboard not found!", file=sys.stderr)
-            sys.exit(1)
-        _dlog(f"Keyboard found, claiming Interface {INTERFACE}")
-        _claim(dev)
-        try:
-            _upload_icon_image(dev, button_idx, img_bytes)
-            _dlog("Upload finished successfully")
-        finally:
-            # Release interface before USB reset to restore numpad
-            usb.util.release_interface(dev, INTERFACE)
-            if getattr(dev, '_reattach', False):
-                try:
-                    dev.attach_kernel_driver(INTERFACE)
-                except Exception:
-                    pass
-            usb.util.dispose_resources(dev)
-    except Exception as e:
-        _dlog(f"ERROR: {e}")
-        raise
+        _upload_icon_image(dev, button_idx, img_bytes)
     finally:
-        if _upload_log_fh:
-            _upload_log_fh.close()
-            _upload_log_fh = None
+        # Release interface before USB reset to restore numpad
+        usb.util.release_interface(dev, INTERFACE)
+        if getattr(dev, '_reattach', False):
+            try:
+                dev.attach_kernel_driver(INTERFACE)
+            except Exception:
+                pass
+        usb.util.dispose_resources(dev)
 
 def set_icon_once(button_idx, variant, action=None, action_type=0x04):
     dev = usb.core.find(idVendor=VID, idProduct=PID)
