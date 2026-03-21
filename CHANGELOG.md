@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.4.2] - 2026-03-21 (Beta)
+
+### Makalu 67 Mouse — RGB Control (New Device)
+- Full RGB control panel for the Mountain Makalu 67 gaming mouse (VID 0x3282, PID 0x0003)
+- Effects: Static, Breathing, RGB Breathing, Rainbow, Responsive, Yeti, Off
+- Dual-zone color support for Breathing and Yeti (Zone 1 + Zone 2 colors)
+- Speed control: Slow / Medium / Fast (confirmed via USB capture)
+- Brightness: 5 levels — 0 / 25 / 50 / 75 / 100 (dropdown, confirmed via USB capture)
+- Rainbow direction: ← / → (confirmed via USB capture)
+- 12 color presets (standard gaming colors) — click to apply instantly
+- All controls push to the mouse immediately without a separate Apply button
+- UI shows only the controls relevant to the selected effect
+
+### Keyboard Main Display
+- Added **Volume** mode to the display mode selector
+
+### D1–D4 Image Upload
+- Fixed upload checksum: was hardcoded `0x6be9`, now correctly computed from pixel data
+- Added debug log file at `/tmp/basecamp_d1d4_upload.log` for troubleshooting upload issues
+
+### Internal
+- Device code restructured into `devices/everest_max/` and `devices/makalu67/`
+- Shared utilities extracted to `shared/` (config, image_utils, ui_helpers)
+- Protocol documentation moved to `protocol/`
+- README screenshots moved to `docs/`
+
+---
+
 ## [1.4.1] - 2026-03-19
 
 ### Upload Images & Image Library

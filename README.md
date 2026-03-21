@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="gitlogo.png" alt="BaseCamp Linux" width="480"/>
+  <img src="docs/gitlogo.png" alt="BaseCamp Linux" width="480"/>
 </p>
 
 # BaseCamp Linux
@@ -15,7 +15,7 @@ Mountain Base Camp is only available on Windows — this project brings display 
 ## Screenshot
 
 <p align="center">
-  <img src="gitgui.png" alt="BaseCamp Linux GUI" width="320"/>
+  <img src="docs/gitgui.png" alt="BaseCamp Linux GUI" width="320"/>
 </p>
 
 The GUI is split into a persistent **dashboard** at the top and six collapsible sections below:
@@ -47,7 +47,7 @@ The GUI is split into a persistent **dashboard** at the top and six collapsible 
 ## Custom RGB Mode
 
 <p align="center">
-  <img src="customrgb.png" alt="Custom RGB Mode Editor" width="600"/>
+  <img src="docs/customrgb.png" alt="Custom RGB Mode Editor" width="600"/>
 </p>
 
 Click **Open Key Color Editor** in the Custom RGB Mode section to open the editor.
@@ -98,7 +98,7 @@ A built-in **Synthwave** preset is included as a starting point.
 ### Upload Images
 
 <p align="center">
-  <img src="multiupload.png" alt="Upload Images Dialog" width="400"/>
+  <img src="docs/multiupload.png" alt="Upload Images Dialog" width="400"/>
 </p>
 
 Click **Upload Images** in the Numpad Keys section to open the multi-upload dialog.
@@ -118,7 +118,7 @@ The last image used per slot is remembered and shown as the tile preview next ti
 ### Image Library
 
 <p align="center">
-  <img src="iconlibrary.png" alt="Image Library" width="320"/>
+  <img src="docs/iconlibrary.png" alt="Image Library" width="320"/>
 </p>
 
 Every image you upload to D1–D4 or the main display is automatically saved to a local library (`~/.config/mountain-time-sync/icon_library/`). The library opens whenever you click a tile or the individual upload button.
