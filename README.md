@@ -72,7 +72,7 @@ The mouse panel (VID `0x3282`, PID `0x0003`) provides full control over all Maka
   <img src="docs/customrgbMouse.png" alt="BaseCamp Linux — Mouse Custom RGB Editor" width="600"/>
 </p>
 
-Click **Open Key Color Editor** to open the per-LED editor. The Makalu 67 has 8 individually addressable LEDs arranged around the mouse body.
+Click **Open Key Color Editor** to open the per-LED editor. The Makalu 67 has 8 individually addressable LEDs arranged in a large ring on top of the mouse.
 
 - Click an LED to select it, Ctrl+click to multi-select
 - Pick a color from the HSV color wheel or quick swatches
