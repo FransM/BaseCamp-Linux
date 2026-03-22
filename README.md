@@ -4,33 +4,41 @@
 
 # BaseCamp Linux
 
-**Unofficial Linux companion app for the Mountain Everest Max keyboard.**
+**Unofficial Linux companion app for Mountain peripherals.**
 
-Mountain Base Camp is only available on Windows — this project brings display control, button actions, monitor metrics and OBS integration to Linux.
+Mountain Base Camp is only available on Windows — this project brings full device control for the **Everest Max keyboard** and **Makalu 67 mouse** to Linux: display control, RGB lighting, button actions, monitor metrics, DPI, button remapping and OBS integration.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Platform](https://img.shields.io/badge/Platform-Linux-black) ![License](https://img.shields.io/badge/License-GPL%20v3%20%2B%20Non--Commercial-red)
 
 ---
 
-## Screenshot
+## Screenshots
 
 <p align="center">
-  <img src="docs/gitgui.png" alt="BaseCamp Linux GUI" width="320"/>
+  <img src="docs/gitgui.png" alt="BaseCamp Linux — Keyboard Panel" width="320"/>
+  &nbsp;&nbsp;
+  <img src="docs/gitguiMouse.png" alt="BaseCamp Linux — Mouse Panel" width="320"/>
 </p>
 
-The GUI is split into a persistent **dashboard** at the top and six collapsible sections below:
+<p align="center">
+  <img src="docs/customrgbMouse.png" alt="BaseCamp Linux — Mouse Custom RGB Editor" width="600"/>
+</p>
+
+---
+
+## Keyboard — Everest Max
+
+The keyboard panel is split into a persistent **dashboard** at the top and collapsible sections below:
 
 - **Dashboard** — Live clock display with 24H/12H toggle, language switcher (DE/EN + custom), Analog/Digital display style, splash screen and autostart toggles
 - **Monitor Mode** — Start/stop live keyboard display with CPU%, GPU%, RAM%, HDD% and Network MB/s metrics
 - **Main Display** — Switch between image and clock mode, upload any image to the keyboard's main display — automatically converted to the correct format
 - **Numpad Keys** — Assign actions (Shell, URL, Folder, App) and custom button images (including GIF frame picker) to D1–D4 — automatically converted to the correct format
 - **RGB Lighting** — Control keyboard RGB effects (Wave, Tornado, Reactive, Yeti, Matrix, and more) with speed, brightness, color and direction — settings saved automatically
-- **Custom RGB Mode** — Per-key color editor: click or drag-select keys, assign colors, use the eyedropper (Alt+click), undo (Ctrl+Z), and save/load named presets — side LEDs fully selectable around both keyboard and numpad bezels (see [Custom RGB Mode](#custom-rgb-mode) below)
+- **Custom RGB Mode** — Per-key color editor: click or drag-select keys, assign colors, use the eyedropper (Alt+click), undo (Ctrl+Z), and save/load named presets — side LEDs fully selectable around both keyboard and numpad bezels (see [Custom RGB Mode — Keyboard](#custom-rgb-mode--keyboard) below)
 - **OBS Integration** — Connect to OBS via WebSocket and trigger scene switches, recording or streaming from any D-button
 
----
-
-## Features
+### Features
 
 - **Display styles** — Switch between Analog and Digital clock on the keyboard display
 - **24H / 12H** — Toggle clock format
@@ -41,10 +49,68 @@ The GUI is split into a persistent **dashboard** at the top and six collapsible 
 - **Main display upload** — Upload any image to the keyboard's main display — with Image Library support for quick reuse
 - **RGB Lighting** — Full RGB effect control: Wave, Tornado, Tornado Rainbow, Reactive, Yeti, Matrix, Off — with speed, brightness, color pickers and direction — settings saved to config
 - **Custom RGB Mode** — Per-key color editor with rubber band selection, eyedropper, undo, and named presets — side LEDs selectable individually around keyboard and numpad — includes built-in Synthwave preset
+- **OBS integration** — Connect to OBS via WebSocket and trigger scene switches, recording or streaming from D1–D4 — settings save automatically on change
+- **System tray** — Minimize to tray, runs in the background
+- **Internationalization** — UI language switchable at runtime via external JSON files (DE + EN included, add your own)
 
 ---
 
-## Custom RGB Mode
+## Mouse — Makalu 67
+
+<p align="center">
+  <img src="docs/gitguiMouse.png" alt="BaseCamp Linux — Mouse Panel" width="320"/>
+</p>
+
+The mouse panel (VID `0x3282`, PID `0x0003`) provides full control over all Makalu 67 settings — everything saves to the mouse flash and persists across reboots and power cycles.
+
+### RGB Lighting
+
+- Effects: Static, Breathing, RGB Breathing, Rainbow, Responsive, Yeti, Off
+- Dual-zone color support for Breathing and Yeti (Zone 1 + Zone 2)
+- Speed: Slow / Medium / Fast
+- Brightness: 0 / 25 / 50 / 75 / 100
+- Rainbow direction: ← / →
+- Color presets: 12 quick-select swatches
+
+### Custom RGB
+
+<p align="center">
+  <img src="docs/customrgbMouse.png" alt="BaseCamp Linux — Mouse Custom RGB Editor" width="600"/>
+</p>
+
+Click **Open Key Color Editor** to open the per-LED editor. The Makalu 67 has 8 individually addressable LEDs arranged around the mouse body.
+
+- Click an LED to select it, Ctrl+click to multi-select
+- Pick a color from the HSV color wheel or quick swatches
+- Undo (up to 20 steps)
+- Save and load named presets — selected preset is remembered and restored on next open
+
+### DPI
+
+- 5 configurable DPI levels (50–19,000, step 50)
+- Reads current values from the mouse on open, polls for profile changes every 1.5 s
+- Cycle through levels with the DPI button on the mouse
+- Reset to factory defaults (400 / 800 / 1600 / 3200 / 6400)
+
+### Button Remap
+
+- Remap any of the 6 physical buttons (Left, Right, Middle, Back, Forward, DPI+)
+- **Categories:** Mouse, DPI, Scroll, Sniper
+- **DPI Sniper** — hold a button to temporarily drop to a lower DPI (e.g. 400) for precision aim; profile DPI is restored automatically on release — no software running required, handled entirely by the mouse firmware
+- Configurable Sniper DPI via slider + text field
+- Left-button remap includes a 10-second safety confirmation dialog — automatically reverts if not confirmed
+- Assignments saved to config and restored on next launch
+
+### Settings
+
+- **Polling Rate** — 125 / 250 / 500 / 1000 Hz
+- **Button Response** — Debounce time: 2 / 4 / 6 / 8 / 10 / 12 ms
+- **Angle Snapping** — On / Off
+- **Lift-Off Distance** — Low / High
+
+---
+
+## Custom RGB Mode — Keyboard
 
 <p align="center">
   <img src="docs/customrgb.png" alt="Custom RGB Mode Editor" width="600"/>
@@ -87,9 +153,6 @@ Side LEDs are shown as small squares around the keyboard and numpad bezels and w
 | **Delete** | Remove a saved preset |
 
 A built-in **Synthwave** preset is included as a starting point.
-- **OBS integration** — Connect to OBS via WebSocket and trigger scene switches, recording or streaming from D1–D4 — settings save automatically on change
-- **System tray** — Minimize to tray, runs in the background
-- **Internationalization** — UI language switchable at runtime via external JSON files (DE + EN included, add your own)
 
 ---
 
@@ -239,40 +302,45 @@ python3 gui.py
 
 ### USB permissions (required once, AppImage + source installs)
 
+Both the keyboard (PID `0x0001`) and the Makalu 67 mouse (PID `0x0003`) need USB access. Add both rules in one step:
+
 #### Debian / Ubuntu / Linux Mint
 
 ```bash
-sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+sudo tee /etc/udev/rules.d/99-mountain.rules <<EOF
 SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0660", GROUP="plugdev", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 sudo usermod -aG plugdev $USER
 ```
 
-> Log out and back in after adding the group, then unplug and replug the keyboard.
+> Log out and back in after adding the group, then unplug and replug the keyboard and mouse.
 
 #### Fedora / Nobara
 
 ```bash
-sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+sudo tee /etc/udev/rules.d/99-mountain.rules <<EOF
 SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-> Unplug and replug the keyboard. No group changes needed.
+> Unplug and replug the keyboard and mouse. No group changes needed.
 
 #### Arch / CachyOS / Manjaro
 
 ```bash
 bash   # switch to bash if using Fish
-sudo tee /etc/udev/rules.d/99-mountain-everest-max.rules <<EOF
+sudo tee /etc/udev/rules.d/99-mountain.rules <<EOF
 SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-> Unplug and replug the keyboard. No group changes needed.
+> Unplug and replug the keyboard and mouse. No group changes needed.
 
 ---
 
@@ -282,11 +350,14 @@ Copy `lang/en.json` to `lang/xx.json` (e.g. `lang/fr.json`), translate the value
 
 ---
 
-## Keyboard compatibility
+## Device compatibility
 
-Tested with: **Mountain Everest Max** (VID `0x3282`, PID `0x0001`)
+| Device | VID | PID | Status |
+|--------|-----|-----|--------|
+| Mountain Everest Max (keyboard) | `0x3282` | `0x0001` | Fully supported |
+| Mountain Makalu 67 (mouse) | `0x3282` | `0x0003` | Fully supported |
 
-Other Mountain keyboards may work but are untested.
+Other Mountain peripherals may work but are untested.
 
 ---
 

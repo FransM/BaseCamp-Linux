@@ -29,9 +29,13 @@ ZONE_FILE        = os.path.join(CONFIG_DIR, "zone_colors.json")
 RGB_FILE         = os.path.join(CONFIG_DIR, "rgb_settings.json")
 PER_KEY_FILE     = os.path.join(CONFIG_DIR, "per_key_colors.json")
 PRESET_FILE      = os.path.join(CONFIG_DIR, "rgb_presets.json")
-ICON_LAST_FILE   = os.path.join(CONFIG_DIR, "icon_last.json")
-ICON_LIBRARY_DIR = os.path.join(CONFIG_DIR, "icon_library")
-MAIN_LIBRARY_DIR = os.path.join(CONFIG_DIR, "main_library")
+ICON_LAST_FILE      = os.path.join(CONFIG_DIR, "icon_last.json")
+ICON_LIBRARY_DIR    = os.path.join(CONFIG_DIR, "icon_library")
+MAIN_LIBRARY_DIR    = os.path.join(CONFIG_DIR, "main_library")
+MAKALU_LED_FILE     = os.path.join(CONFIG_DIR, "makalu_leds.json")
+MAKALU_PRESET_FILE  = os.path.join(CONFIG_DIR, "makalu_presets.json")
+MAKALU_DPI_FILE     = os.path.join(CONFIG_DIR, "makalu_dpi.json")
+MAKALU_REMAP_FILE   = os.path.join(CONFIG_DIR, "makalu_remap.json")
 
 # Keep these for backward compatibility in code that imports them by old names
 RGB_PRESETS_FILE = PRESET_FILE
@@ -292,6 +296,85 @@ def _load_presets():
 def _save_presets(presets):
     with open(PRESET_FILE, "w") as f:
         f.write(json.dumps(presets, indent=2))
+
+
+# ── Makalu 67 LED storage ───────────────────────────────────────────────────────
+
+def _load_makalu_leds():
+    try:
+        d = json.loads(open(MAKALU_LED_FILE).read())
+        leds = [tuple(c) for c in d.get("leds", [])]
+        leds = (leds + [(255, 255, 255)] * 8)[:8]
+        bri    = int(d.get("brightness", 100))
+        preset = d.get("preset", "")
+        return leds, bri, preset
+    except Exception:
+        return [(255, 255, 255)] * 8, 100, ""
+
+
+def _save_makalu_leds(leds, bri, preset=""):
+    with open(MAKALU_LED_FILE, "w") as f:
+        f.write(json.dumps({"leds": [list(c) for c in leds], "brightness": bri, "preset": preset}))
+
+
+def _load_makalu_presets():
+    _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _FROZEN = getattr(sys, "frozen", False)
+    _RES = getattr(sys, "_MEIPASS", _HERE) if _FROZEN else _HERE
+    defaults = {}
+    try:
+        defaults = json.loads(open(os.path.join(_RES, "default_makalu_presets.json")).read())
+    except Exception:
+        pass
+    try:
+        user = json.loads(open(MAKALU_PRESET_FILE).read())
+        defaults.update(user)
+    except Exception:
+        pass
+    return defaults
+
+
+def _save_makalu_presets(presets):
+    with open(MAKALU_PRESET_FILE, "w") as f:
+        f.write(json.dumps(presets, indent=2))
+
+
+DPI_DEFAULTS = [400, 800, 1600, 3200, 6400]
+
+
+def _load_makalu_dpi():
+    try:
+        d = json.loads(open(MAKALU_DPI_FILE).read())
+        values = [int(v) for v in d.get("levels", DPI_DEFAULTS)]
+        if len(values) == 5:
+            return values
+    except Exception:
+        pass
+    return list(DPI_DEFAULTS)
+
+
+def _save_makalu_dpi(levels):
+    with open(MAKALU_DPI_FILE, "w") as f:
+        f.write(json.dumps({"levels": levels}))
+
+
+REMAP_DEFAULTS = {"1": "left", "2": "right", "3": "middle",
+                  "4": "back", "5": "forward", "6": "dpi+"}
+
+
+def _load_makalu_remap():
+    try:
+        d = json.loads(open(MAKALU_REMAP_FILE).read())
+        result = dict(REMAP_DEFAULTS)
+        result.update({k: v for k, v in d.items() if k in REMAP_DEFAULTS})
+        return result
+    except Exception:
+        return dict(REMAP_DEFAULTS)
+
+
+def _save_makalu_remap(assignments):
+    with open(MAKALU_REMAP_FILE, "w") as f:
+        f.write(json.dumps(assignments))
 
 
 # ── Icon library helpers ────────────────────────────────────────────────────────

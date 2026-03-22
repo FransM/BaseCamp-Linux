@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.5.0] - 2026-03-22
+
+### Makalu 67 Mouse — Button Remap
+
+- New **Button Remap** section in the Makalu 67 panel
+- Remap any of the 6 physical buttons (Left, Right, Middle, Back, Forward, DPI+) to a different function
+- Categories: Mouse, DPI, Scroll, Sniper
+- New **DPI Sniper** function: assign a button to temporarily switch to a lower DPI while held — profile DPI is restored automatically on release (no software polling required, handled by mouse firmware)
+- DPI Sniper value is configurable via slider + input field (50–19,000, step 50)
+- Left button remap includes a 10-second safety confirmation dialog — automatically reverts if not confirmed
+- Assignments are saved to config and restored on next launch
+
+### Makalu 67 Mouse — DPI
+
+- DPI settings panel: 5 configurable DPI levels, cycle through them with the DPI button on the mouse
+- Reads current DPI values from the mouse on panel open and polls for profile changes every 1.5 seconds
+- Reset button restores factory defaults
+
+### Makalu 67 Mouse — Settings
+
+- Mouse settings panel: Polling Rate (125 / 250 / 500 / 1000 Hz), Button Response (debounce 2–12 ms), Angle Snapping (on/off), Lift-Off Distance (Low/High)
+
+### Internationalisation
+
+- Full DE/EN language support for the entire Makalu 67 panel (RGB, Custom RGB, DPI, Settings, Button Remap)
+- All section titles, labels, dropdowns, status messages and button grid update live when switching language
+
+### Internal
+
+- `controller.py`: extracted `_run_cmd()` helper — all HID commands now share a single open/send/get/close pattern instead of duplicating it per function
+- `panel.py`: extracted `_fetch_dpi()` helper — `_dpi_load_from_device` and `_dpi_poll` no longer duplicate the subprocess/parse logic
+- `panel.py`: removed dead `_REMAP_LABELS` / `_REMAP_LABEL_TO_KEY` class attributes (superseded by i18n translation maps)
+- Fixed `rgb code` / `rgb code2` CLI commands in controller.py that would crash at runtime after the `_send_lighting` refactor
+
+---
+
 ## [1.4.2] - 2026-03-21 (Beta)
 
 ### Makalu 67 Mouse — RGB Control (New Device)
