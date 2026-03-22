@@ -27,6 +27,11 @@
 - Full DE/EN language support for the entire Makalu 67 panel (RGB, Custom RGB, DPI, Settings, Button Remap)
 - All section titles, labels, dropdowns, status messages and button grid update live when switching language
 
+### Presets
+
+- 6 built-in color presets ship with the app for both the **keyboard** (Custom RGB) and the **Makalu 67** (Custom RGB): Synthwave, Ocean, Ember, Forest, Arctic, Galaxy
+- Presets load automatically on first launch — no setup required
+
 ### Internal
 
 - `controller.py`: extracted `_run_cmd()` helper — all HID commands now share a single open/send/get/close pattern instead of duplicating it per function
