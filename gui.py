@@ -483,7 +483,8 @@ class App(ctk.CTk):
     def _check_devices(self):
         """Periodic USB presence check (runs in main thread — /sys reads are <1ms)."""
         kb_present  = _check_usb_presence(self.EVEREST_MAX_VID, self.EVEREST_MAX_PID)
-        mouse_present = _check_usb_presence(self.MAKALU67_VID, self.MAKALU67_PID)
+        mouse_present = (_check_usb_presence(self.MAKALU67_VID, self.MAKALU67_PID)
+                         or _check_usb_presence(self.MAKALU67_VID, 0x0002))
         dp_present  = _check_usb_presence(self.DISPLAYPAD_VID, self.DISPLAYPAD_PID)
         self._update_device_status(kb_present, mouse_present, dp_present)
         self.after(5000, self._check_devices)

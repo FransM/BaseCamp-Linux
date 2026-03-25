@@ -368,15 +368,21 @@ def _save_makalu_dpi(levels):
 REMAP_DEFAULTS = {"1": "left", "2": "right", "3": "middle",
                   "4": "back", "5": "forward", "6": "dpi+"}
 
+REMAP_DEFAULTS_MAX = {"1": "left", "2": "right", "3": "middle",
+                      "4": "dpi+", "5": "disabled", "6": "disabled",
+                      "7": "forward", "8": "back"}
 
-def _load_makalu_remap():
+
+def _load_makalu_remap(defaults=None):
+    if defaults is None:
+        defaults = REMAP_DEFAULTS
     try:
         d = json.loads(open(MAKALU_REMAP_FILE).read())
-        result = dict(REMAP_DEFAULTS)
-        result.update({k: v for k, v in d.items() if k in REMAP_DEFAULTS})
+        result = dict(defaults)
+        result.update({k: v for k, v in d.items() if k in defaults})
         return result
     except Exception:
-        return dict(REMAP_DEFAULTS)
+        return dict(defaults)
 
 
 def _save_makalu_remap(assignments):

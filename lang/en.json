@@ -177,6 +177,8 @@
   "makalu_remap_btn_back": "Back",
   "makalu_remap_btn_forward": "Forward",
   "makalu_remap_btn_dpi": "DPI+",
+  "makalu_remap_btn_5": "Btn 5",
+  "makalu_remap_btn_6": "Btn 6",
   "makalu_remap_applied": "Applied",
   "makalu_remap_reverted": "Reverted",
   "makalu_remap_keep_title": "Keep Assignment?",

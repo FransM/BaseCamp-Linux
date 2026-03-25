@@ -11,6 +11,7 @@ from shared.ui_helpers import (
 from shared.config import (
     _load_makalu_dpi, _save_makalu_dpi, DPI_DEFAULTS,
     _load_makalu_remap, _save_makalu_remap,
+    REMAP_DEFAULTS, REMAP_DEFAULTS_MAX,
 )
 
 # ── Mouse LED canvas layout (confirmed by USB capture) ─────────────────────────
@@ -55,7 +56,7 @@ _EFFECT_NAMES = [e[0] for e in _RGB_EFFECTS]
 
 
 class Makalu67Panel(ctk.CTkFrame):
-    """Panel for Makalu 67 mouse."""
+    """Panel for Makalu 67 / Makalu Max mouse."""
 
     VID = 0x3282
     PID = 0x0003
@@ -66,6 +67,18 @@ class Makalu67Panel(ctk.CTkFrame):
         self._connected      = False
         self._sections       = []
         self._custom_rgb_win = None
+
+        # Detect which model is connected
+        from devices.makalu67.controller import detect_model, PID_MAX
+        pid, model = detect_model()
+        self._is_max = (pid == PID_MAX) if pid else False
+        self._model_name = model or "Makalu 67"
+        if pid:
+            self.PID = pid
+        self._dpi_min = 100 if self._is_max else 50
+        if self._is_max:
+            self._REMAP_BTN_NAMES = self._REMAP_BTN_NAMES_MAX
+            self._BTN_LANG_KEYS = self._BTN_LANG_KEYS_MAX
 
         self._build_ui()
 
@@ -333,7 +346,8 @@ class Makalu67Panel(ctk.CTkFrame):
         slider_row.pack(fill="x", padx=10, pady=(4, 4))
         self._dpi_slider_var = tk.DoubleVar(value=self._dpi_values[0])
         ctk.CTkSlider(
-            slider_row, from_=50, to=19000, number_of_steps=379,
+            slider_row, from_=self._dpi_min, to=19000,
+            number_of_steps=(19000 - self._dpi_min) // 50,
             variable=self._dpi_slider_var,
             command=self._on_dpi_slider,
             width=180, height=16,
@@ -395,7 +409,7 @@ class Makalu67Panel(ctk.CTkFrame):
 
     def _on_dpi_slider(self, val):
         dpi = round(float(val) / 50) * 50
-        dpi = max(50, min(19000, dpi))
+        dpi = max(self._dpi_min, min(19000, dpi))
         self._dpi_values[self._dpi_active] = dpi
         self._dpi_entry_var.set(str(dpi))
         self._dpi_update_btn_labels()
@@ -405,7 +419,7 @@ class Makalu67Panel(ctk.CTkFrame):
             dpi = int(self._dpi_entry_var.get())
         except ValueError:
             dpi = self._dpi_values[self._dpi_active]
-        dpi = round(max(50, min(19000, dpi)) / 50) * 50
+        dpi = round(max(self._dpi_min, min(19000, dpi)) / 50) * 50
         self._dpi_values[self._dpi_active] = dpi
         self._dpi_entry_var.set(str(dpi))
         self._dpi_slider_var.set(dpi)
@@ -475,7 +489,7 @@ class Makalu67Panel(ctk.CTkFrame):
         "Sniper": ["sniper"],
     }
 
-    _REMAP_BTN_NAMES = {
+    _REMAP_BTN_NAMES_67 = {
         "1": "Left Btn",
         "2": "Right Btn",
         "3": "Middle Btn",
@@ -483,6 +497,17 @@ class Makalu67Panel(ctk.CTkFrame):
         "5": "Forward",
         "6": "DPI+",
     }
+    _REMAP_BTN_NAMES_MAX = {
+        "1": "Left Btn",
+        "2": "Right Btn",
+        "3": "Middle Btn",
+        "4": "DPI",
+        "5": "Btn 5",
+        "6": "Btn 6",
+        "7": "Forward",
+        "8": "Back",
+    }
+    _REMAP_BTN_NAMES = _REMAP_BTN_NAMES_67  # set in __init__
 
     # ── Remap translation helpers ─────────────────────────────────────────────
 
@@ -499,7 +524,7 @@ class Makalu67Panel(ctk.CTkFrame):
         "disabled":    "makalu_remap_fn_disabled",
         "sniper":      "makalu_remap_fn_sniper",
     }
-    _BTN_LANG_KEYS = {
+    _BTN_LANG_KEYS_67 = {
         "1": "makalu_remap_btn_left",
         "2": "makalu_remap_btn_right",
         "3": "makalu_remap_btn_middle",
@@ -507,6 +532,17 @@ class Makalu67Panel(ctk.CTkFrame):
         "5": "makalu_remap_btn_forward",
         "6": "makalu_remap_btn_dpi",
     }
+    _BTN_LANG_KEYS_MAX = {
+        "1": "makalu_remap_btn_left",
+        "2": "makalu_remap_btn_right",
+        "3": "makalu_remap_btn_middle",
+        "4": "makalu_remap_btn_dpi",
+        "5": "makalu_remap_btn_5",
+        "6": "makalu_remap_btn_6",
+        "7": "makalu_remap_btn_forward",
+        "8": "makalu_remap_btn_back",
+    }
+    _BTN_LANG_KEYS = _BTN_LANG_KEYS_67  # set in __init__
     _CAT_LANG_KEYS = {
         "Mouse":  "makalu_remap_cat_mouse",
         "DPI":    "makalu_remap_cat_dpi",
@@ -531,7 +567,8 @@ class Makalu67Panel(ctk.CTkFrame):
         self._build_remap_content(s.content)
 
     def _build_remap_content(self, parent):
-        self._remap_assignments = _load_makalu_remap()
+        defaults = REMAP_DEFAULTS_MAX if self._is_max else REMAP_DEFAULTS
+        self._remap_assignments = _load_makalu_remap(defaults)
         self._remap_active = "1"  # selected physical button
         self._remap_cat_key = "Mouse"  # internal category key (always English)
         self._remap_current_fn_keys = list(self._REMAP_CATEGORIES["Mouse"])
@@ -609,7 +646,8 @@ class Makalu67Panel(ctk.CTkFrame):
         self._sniper_dpi = 400
         self._sniper_slider_var = tk.DoubleVar(value=400)
         ctk.CTkSlider(
-            self._sniper_row, from_=50, to=19000, number_of_steps=379,
+            self._sniper_row, from_=self._dpi_min, to=19000,
+            number_of_steps=(19000 - self._dpi_min) // 50,
             variable=self._sniper_slider_var,
             command=self._on_sniper_slider,
             width=110, height=16,
@@ -709,7 +747,7 @@ class Makalu67Panel(ctk.CTkFrame):
 
     def _on_sniper_slider(self, val):
         dpi = round(float(val) / 50) * 50
-        dpi = max(50, min(19000, dpi))
+        dpi = max(self._dpi_min, min(19000, dpi))
         self._sniper_dpi = dpi
         self._sniper_entry_var.set(str(dpi))
 
@@ -718,7 +756,7 @@ class Makalu67Panel(ctk.CTkFrame):
             dpi = int(self._sniper_entry_var.get())
         except ValueError:
             dpi = self._sniper_dpi
-        dpi = round(max(50, min(19000, dpi)) / 50) * 50
+        dpi = round(max(self._dpi_min, min(19000, dpi)) / 50) * 50
         self._sniper_dpi = dpi
         self._sniper_entry_var.set(str(dpi))
         self._sniper_slider_var.set(dpi)

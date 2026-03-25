@@ -49,7 +49,9 @@ except ImportError:
     HID_AVAILABLE = False
 
 VID = 0x3282
-PID = 0x0003
+PID_67  = 0x0003   # Makalu 67
+PID_MAX = 0x0002   # Makalu Max
+PID = PID_67       # default, updated at runtime by detect_model()
 
 REPORT_ID        = 0xA1
 RESP_ID          = 0xA0
@@ -67,6 +69,9 @@ BTN_MIDDLE  = 3
 BTN_BACK    = 4
 BTN_FORWARD = 5
 BTN_DPI     = 6
+# Makalu Max extra buttons
+BTN_MAX_FORWARD = 7
+BTN_MAX_BACK    = 8
 
 # Function codes (confirmed by USB capture): (category, code)
 REMAP_FUNCTIONS = {
@@ -82,8 +87,8 @@ REMAP_FUNCTIONS = {
     "disabled":   (0xFF, 0x01),
 }
 
-# Default assignments per physical button
-REMAP_DEFAULTS = {
+# Default assignments per physical button — Makalu 67
+REMAP_DEFAULTS_67 = {
     BTN_LEFT:    "left",
     BTN_RIGHT:   "right",
     BTN_MIDDLE:  "middle",
@@ -91,6 +96,20 @@ REMAP_DEFAULTS = {
     BTN_FORWARD: "forward",
     BTN_DPI:     "dpi+",
 }
+
+# Default assignments — Makalu Max (different button layout)
+REMAP_DEFAULTS_MAX = {
+    BTN_LEFT:        "left",
+    BTN_RIGHT:       "right",
+    BTN_MIDDLE:      "middle",
+    BTN_DPI:         "dpi+",      # btn 4 = DPI on Max
+    5:               "disabled",   # btn 5 = behind DPI
+    6:               "disabled",   # btn 6 = side below 7/8
+    BTN_MAX_FORWARD: "forward",   # btn 7 = forward
+    BTN_MAX_BACK:    "back",      # btn 8 = back
+}
+
+REMAP_DEFAULTS = REMAP_DEFAULTS_67  # updated at runtime
 
 # Confirmed by USB capture: 1000→500→250→125 Hz
 POLLING_RATE_MAP = {1000: 0x01, 500: 0x02, 250: 0x04, 125: 0x08}
@@ -116,24 +135,40 @@ EFFECT_CUSTOM       = 0x0F  # Per-LED custom colors (confirmed by USB capture)
 
 # ── Device access ─────────────────────────────────────────────────────────────
 
+def detect_model():
+    """Detect which Makalu is connected. Returns (pid, model_name) or (None, None)."""
+    global PID, DPI_MIN, REMAP_DEFAULTS
+    if not HID_AVAILABLE:
+        return None, None
+    for pid, name in [(PID_67, "Makalu 67"), (PID_MAX, "Makalu Max")]:
+        for d in hid.enumerate(VID, pid):
+            if d.get('interface_number') == 1:
+                PID = pid
+                if pid == PID_MAX:
+                    DPI_MIN = 100
+                    REMAP_DEFAULTS = REMAP_DEFAULTS_MAX
+                else:
+                    DPI_MIN = 50
+                    REMAP_DEFAULTS = REMAP_DEFAULTS_67
+                return pid, name
+    return None, None
+
+
 def find_path():
     """Return path of Interface 1 hidraw node, or None."""
     if not HID_AVAILABLE:
         return None
-    seen = set()
-    for d in hid.enumerate(VID, PID):
-        if d.get('interface_number') == 1:
-            p = d['path']
-            if p not in seen:
-                seen.add(p)
-                return p
+    for pid in (PID_67, PID_MAX):
+        for d in hid.enumerate(VID, pid):
+            if d.get('interface_number') == 1:
+                return d['path']
     return None
 
 
 def open_device():
     path = find_path()
     if path is None:
-        raise RuntimeError("Makalu 67 not found (VID=0x3282 PID=0x0003 IF1)")
+        raise RuntimeError("Makalu mouse not found (VID=0x3282 PID=0x0003/0x0002 IF1)")
     dev = hid.Device(path=path)
     return dev
 
