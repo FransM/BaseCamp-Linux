@@ -6,7 +6,7 @@
 
 **Unofficial Linux companion app for Mountain peripherals.**
 
-Mountain Base Camp is only available on Windows — this project brings full device control for the **Everest Max keyboard**, **Makalu 67 mouse** and **DisplayPad** to Linux: display control, RGB lighting, button actions, monitor metrics, DPI, button remapping, multi-page display management and OBS integration.
+Mountain Base Camp is only available on Windows — this project brings full device control for the **Everest Max keyboard**, **Everest 60 keyboard**, **Makalu 67 mouse**, **Makalu Max mouse** and **DisplayPad** to Linux: display control, RGB lighting, button actions, monitor metrics, DPI, button remapping, multi-page display management and OBS integration.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Platform](https://img.shields.io/badge/Platform-Linux-black) ![License](https://img.shields.io/badge/License-GPL%20v3%20%2B%20Non--Commercial-red)
 
@@ -106,13 +106,31 @@ The keyboard panel is split into a persistent **dashboard** at the top and colla
 
 ---
 
-## Mouse — Makalu 67
+## Keyboard — Everest 60
+
+The Everest 60 panel provides RGB lighting control for the Mountain Everest 60 (ANSI and ISO variants). The app detects which keyboard is connected and automatically switches the panel and layout.
+
+### RGB Lighting
+
+- Effects: Static, Breathing, Breathing Rainbow, Wave, Wave Rainbow, Tornado, Tornado Rainbow, Reactive, Yeti, Off
+- Speed, brightness, dual-color and direction controls
+- Settings saved to config and restored on next launch
+
+### Custom RGB
+
+- Per-key color editor with 60% ANSI layout (61 keys)
+- Click, drag-select, eyedropper and undo — same controls as Everest Max
+- Separate presets and config from Everest Max
+
+---
+
+## Mouse — Makalu 67 / Makalu Max
 
 <p align="center">
   <img src="docs/gitguiMouse.png" alt="BaseCamp Linux — Mouse Panel" width="320"/>
 </p>
 
-The mouse panel (VID `0x3282`, PID `0x0003`) provides full control over all Makalu 67 settings — everything saves to the mouse flash and persists across reboots and power cycles.
+The mouse panel supports both the **Makalu 67** (PID `0x0003`) and **Makalu Max** (PID `0x0002`). The app detects which mouse is connected and shows the model name in the switcher button and panel header. The Makalu Max supports 8 programmable buttons (vs 6 on the Makalu 67). All settings save to mouse flash and persist across reboots.
 
 ### RGB Lighting
 
@@ -353,15 +371,32 @@ python3 gui.py
 
 ### USB permissions (required once, AppImage + source installs)
 
-The keyboard (PID `0x0001`), Makalu 67 mouse (PID `0x0003`) and DisplayPad (PID `0x0009`) all need USB access:
+All Mountain devices need USB access. The rules below cover every supported device:
+
+| Device | PID |
+|--------|-----|
+| Everest Max | `0x0001` |
+| Makalu Max | `0x0002` |
+| Makalu 67 | `0x0003` |
+| Everest 60 ANSI | `0x0005` |
+| Everest 60 ISO | `0x0006` |
+| DisplayPad | `0x0009` |
 
 #### Debian / Ubuntu / Linux Mint
 
 ```bash
 sudo tee /etc/udev/rules.d/99-mountain.rules <<EOF
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0660", GROUP="plugdev", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0002", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0005", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0006", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0002", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0005", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0006", MODE="0660", GROUP="plugdev", TAG+="uaccess"
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0660", GROUP="plugdev", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
@@ -374,10 +409,18 @@ sudo usermod -aG plugdev $USER
 
 ```bash
 sudo tee /etc/udev/rules.d/99-mountain.rules <<EOF
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666"
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0002", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0005", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0006", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0002", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0005", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0006", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
@@ -389,10 +432,18 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ```bash
 bash   # switch to bash if using Fish
 sudo tee /etc/udev/rules.d/99-mountain.rules <<EOF
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666"
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0002", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0005", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0006", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0002", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0003", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0005", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0006", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0009", MODE="0666", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
@@ -412,10 +463,11 @@ Copy `lang/en.json` to `lang/xx.json` (e.g. `lang/fr.json`), translate the value
 | Device | VID | PID | Status |
 |--------|-----|-----|--------|
 | Mountain Everest Max (keyboard) | `0x3282` | `0x0001` | Fully supported |
+| Mountain Everest 60 ANSI (keyboard) | `0x3282` | `0x0005` | RGB supported |
+| Mountain Everest 60 ISO (keyboard) | `0x3282` | `0x0006` | RGB supported |
 | Mountain Makalu 67 (mouse) | `0x3282` | `0x0003` | Fully supported |
+| Mountain Makalu Max (mouse) | `0x3282` | `0x0002` | Fully supported |
 | Mountain DisplayPad | `0x3282` | `0x0009` | Fully supported |
-
-Other Mountain peripherals may work but are untested.
 
 ---
 

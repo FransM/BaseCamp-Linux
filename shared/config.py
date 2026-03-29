@@ -306,6 +306,43 @@ def _save_presets(presets):
         f.write(json.dumps(presets, indent=2))
 
 
+# ── Everest 60 per-key storage ─────────────────────────────────────────────────
+
+PER_KEY_60_FILE = os.path.join(CONFIG_DIR, "per_key_60_colors.json")
+PRESET_60_FILE  = os.path.join(CONFIG_DIR, "rgb60_presets.json")
+
+
+def _load_per_key_60():
+    try:
+        d = json.loads(open(PER_KEY_60_FILE).read())
+        leds = [tuple(c) for c in d.get("leds", [])]
+        leds = (leds + [(20, 20, 20)] * 61)[:61]
+        bri  = int(d.get("brightness", 100))
+        return leds, [], bri
+    except Exception:
+        return [(20, 20, 20)] * 61, [], 100
+
+
+def _save_per_key_60(leds, _side, bri):
+    with open(PER_KEY_60_FILE, "w") as f:
+        f.write(json.dumps({
+            "leds": [list(c) for c in leds],
+            "brightness": bri,
+        }, indent=2))
+
+
+def _load_presets_60():
+    try:
+        return json.loads(open(PRESET_60_FILE).read())
+    except Exception:
+        return {}
+
+
+def _save_presets_60(presets):
+    with open(PRESET_60_FILE, "w") as f:
+        f.write(json.dumps(presets, indent=2))
+
+
 # ── Makalu 67 LED storage ───────────────────────────────────────────────────────
 
 def _load_makalu_leds():

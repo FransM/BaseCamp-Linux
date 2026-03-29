@@ -473,6 +473,49 @@ _KB_CANVAS_H = (14 + int(12 * 0.82)) + 5 * int(32 * 0.82) + int(30 * 0.82) + 18 
 _SIDE_SZ     = 9
 _SIDE_OFFSET = 12
 
+
+def _build_kb60_layout():
+    """Return 60% ANSI key layout: (label, led_idx, x, y, w, h)."""
+    SC = 0.82
+    KH = int(30 * SC)
+    RS = int(32 * SC)
+    IW = int(460 * SC)
+    OX = 14
+    OY = 14
+
+    def sbet(specs, inner_w, y):
+        total = sum(int(w * SC) for _, _, w in specs)
+        gap   = (inner_w - total) / max(1, len(specs) - 1)
+        res, x = [], OX
+        for lbl, idx, cw in specs:
+            pw = int(cw * SC)
+            res.append((lbl, idx, int(x), y, pw, KH))
+            x += pw + gap
+        return res
+
+    L = []
+    L += sbet([('Esc',0,30),('`',1,30),('1',2,30),('2',3,30),('3',4,30),
+               ('4',5,30),('5',6,30),('6',7,30),('7',8,30),('8',9,30),
+               ('9',10,30),('0',11,30),('-',12,30),('=',13,30),('⌫',14,58)], IW, OY)
+    L += sbet([('Tab',15,46),('Q',16,30),('W',17,30),('E',18,30),('R',19,30),
+               ('T',20,30),('Y',21,30),('U',22,30),('I',23,30),('O',24,30),
+               ('P',25,30),('[',26,30),(']',27,30),('\\',28,46)], IW, OY+RS)
+    L += sbet([('Caps',29,54),('A',30,30),('S',31,30),('D',32,30),('F',33,30),
+               ('G',34,30),('H',35,30),('J',36,30),('K',37,30),('L',38,30),
+               (';',39,30),("'",40,30),('↵',41,68)], IW, OY+2*RS)
+    L += sbet([('⇧',42,78),('Z',43,30),('X',44,30),('C',45,30),('V',46,30),
+               ('B',47,30),('N',48,30),('M',49,30),(',',50,30),('.',51,30),
+               ('/',52,30),('⇧',53,90)], IW, OY+3*RS)
+    L += sbet([('Ctrl',54,38),('⊞',55,38),('Alt',56,38),(' ',57,190),
+               ('Alt',58,38),('Fn',59,38),('Ctrl',60,38)], IW, OY+4*RS)
+    return L
+
+
+_KB60_LAYOUT   = _build_kb60_layout()
+_KB60_CANVAS_W = 14 + int(460 * 0.82) + 14
+_KB60_CANVAS_H = 14 + 4 * int(32 * 0.82) + int(30 * 0.82) + 18
+_KB60_NUM_LEDS = 61
+
 _QUICK_COLORS = [
     ("#ff0000", (255, 0, 0)), ("#ff8800", (255, 136, 0)),
     ("#ffff00", (255, 255, 0)), ("#00ff00", (0, 255, 0)),
@@ -496,20 +539,40 @@ _SIDE_ZONE_INDICES = [
 # ── CustomRGBWindow ────────────────────────────────────────────────────────────
 
 class CustomRGBWindow(ctk.CTkToplevel):
-    def __init__(self, app):
+    def __init__(self, app, layout=None, canvas_w=None, canvas_h=None,
+                 num_leds=126, has_side_leds=True, num_side_leds=45,
+                 has_numpad=True, has_persist=True,
+                 load_per_key=None, save_per_key=None,
+                 load_presets=None, save_presets=None,
+                 apply_cmd=None):
         super().__init__(app)
         self.title("Custom RGB — Per Key")
         self.resizable(False, False)
         self._app = app
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        from shared.config import _load_per_key, _save_per_key, _load_presets, _save_presets
-        self._load_per_key  = _load_per_key
-        self._save_per_key  = _save_per_key
-        self._load_presets  = _load_presets
-        self._save_presets  = _save_presets
+        self._layout     = layout    if layout    is not None else _KB_LAYOUT
+        self._canvas_w   = canvas_w  if canvas_w  is not None else _KB_CANVAS_W
+        self._canvas_h   = canvas_h  if canvas_h  is not None else _KB_CANVAS_H
+        self._num_leds   = num_leds
+        self._has_side   = has_side_leds
+        self._num_side   = num_side_leds
+        self._has_numpad = has_numpad
+        self._has_persist = has_persist
+        self._side_yo    = _SIDE_OFFSET if has_side_leds else 0
+        self._side_sz    = _SIDE_SZ     if has_side_leds else 0
+        self._apply_cmd  = apply_cmd
 
-        self._leds, self._side_leds, self._bri = _load_per_key()
+        from shared.config import (_load_per_key as _lpk, _save_per_key as _spk,
+                                    _load_presets as _lpr, _save_presets as _spr)
+        self._load_per_key = load_per_key or _lpk
+        self._save_per_key = save_per_key or _spk
+        self._load_presets = load_presets or _lpr
+        self._save_presets = save_presets or _spr
+
+        self._leds, raw_side, self._bri = self._load_per_key()
+        self._leds      = (list(self._leds) + [(20, 20, 20)] * num_leds)[:num_leds]
+        self._side_leds = list(raw_side) if has_side_leds else []
         self._selected   = set()
         self._fill_rgb   = (255, 0, 0)
         self._drag_rect  = None
@@ -524,7 +587,7 @@ class CustomRGBWindow(ctk.CTkToplevel):
         PAD = 12
         self.configure(fg_color=BG)
 
-        self._cv = tk.Canvas(self, width=_KB_CANVAS_W, height=_KB_CANVAS_H,
+        self._cv = tk.Canvas(self, width=self._canvas_w, height=self._canvas_h,
                              bg="#111118", highlightthickness=0, bd=0)
         self._cv.pack(padx=PAD, pady=(PAD, 4))
         self._cv.bind("<Button-1>",        self._on_click)
@@ -641,10 +704,11 @@ class CustomRGBWindow(ctk.CTkToplevel):
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
                       font=("Helvetica", 11, "bold"),
                       command=self._apply).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(btns, text="Persist to Slot", width=120, height=32,
-                      fg_color="#166534", hover_color="#14532d", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._persist).pack(side="left", padx=4)
+        if self._has_persist:
+            ctk.CTkButton(btns, text="Persist to Slot", width=120, height=32,
+                          fg_color="#166534", hover_color="#14532d", text_color=FG,
+                          font=("Helvetica", 11),
+                          command=self._persist).pack(side="left", padx=4)
         ctk.CTkButton(btns, text="Save Profile", width=100, height=32,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
@@ -663,25 +727,27 @@ class CustomRGBWindow(ctk.CTkToplevel):
         self._led_item.clear()
 
         SC  = 0.82
-        YO  = _SIDE_OFFSET
-        SZ  = _SIDE_SZ
+        YO  = self._side_yo
+        SZ  = self._side_sz
         GAP = 2
 
         bx1  = 11;  by1 = 11 + YO
-        bx2  = 14 + int(642 * SC) + 4
-        by2  = _KB_CANVAS_H - YO - 6
-        npx  = 14 + int(642 * SC) + 32
-        npbx1 = npx - 3
-        npbx2 = npx + int(166 * SC) + 3
+        bx2  = 14 + int(642 * SC) + 4 if self._has_numpad else self._canvas_w - 11
+        by2  = self._canvas_h - YO - 6
 
         self._cv.create_rectangle(bx1, by1, bx2, by2,
                                   fill="#1a1a22", outline="#333", width=1)
-        self._cv.create_rectangle(npbx1, by1, npbx2, by2,
-                                  fill="#1a1a22", outline="#333", width=1)
 
-        for (lbl, idx, x, y, w, h) in _KB_LAYOUT:
+        if self._has_numpad:
+            npx   = 14 + int(642 * SC) + 32
+            npbx1 = npx - 3
+            npbx2 = npx + int(166 * SC) + 3
+            self._cv.create_rectangle(npbx1, by1, npbx2, by2,
+                                      fill="#1a1a22", outline="#333", width=1)
+
+        for (lbl, idx, x, y, w, h) in self._layout:
             yo    = y + YO
-            color = _rgb_hex(self._leds[idx]) if idx is not None and 0 <= idx <= 125 else "#252530"
+            color = _rgb_hex(self._leds[idx]) if idx is not None and 0 <= idx < self._num_leds else "#252530"
             sel   = idx in self._selected
             item  = self._cv.create_rectangle(
                 x, yo, x + w, yo + h,
@@ -697,51 +763,53 @@ class CustomRGBWindow(ctk.CTkToplevel):
                 self._item_led[item] = idx
                 self._led_item[idx]  = item
 
-        def hstrip(indices, x1, x2, y):
-            n = len(indices)
-            for i, si in enumerate(indices):
-                px = int(x1 + i * (x2 - x1 - SZ) / max(1, n - 1)) if n > 1 else (x1 + x2 - SZ) // 2
-                color = _rgb_hex(self._side_leds[si])
-                sel   = (200 + si) in self._selected
-                item  = self._cv.create_rectangle(px, y, px + SZ, y + SZ,
-                            fill=color,
-                            outline="#00d4ff" if sel else "#555",
-                            width=2 if sel else 1)
-                self._item_led[item]     = 200 + si
-                self._led_item[200 + si] = item
+        if self._has_side:
+            def hstrip(indices, x1, x2, y):
+                n = len(indices)
+                for i, si in enumerate(indices):
+                    px = int(x1 + i * (x2 - x1 - SZ) / max(1, n - 1)) if n > 1 else (x1 + x2 - SZ) // 2
+                    color = _rgb_hex(self._side_leds[si])
+                    sel   = (200 + si) in self._selected
+                    item  = self._cv.create_rectangle(px, y, px + SZ, y + SZ,
+                                fill=color,
+                                outline="#00d4ff" if sel else "#555",
+                                width=2 if sel else 1)
+                    self._item_led[item]     = 200 + si
+                    self._led_item[200 + si] = item
 
-        def vstrip(indices, y1, y2, x):
-            n = len(indices)
-            for i, si in enumerate(indices):
-                py = int(y1 + i * (y2 - y1 - SZ) / max(1, n - 1)) if n > 1 else (y1 + y2 - SZ) // 2
-                color = _rgb_hex(self._side_leds[si])
-                sel   = (200 + si) in self._selected
-                item  = self._cv.create_rectangle(x, py, x + SZ, py + SZ,
-                            fill=color,
-                            outline="#00d4ff" if sel else "#555",
-                            width=2 if sel else 1)
-                self._item_led[item]     = 200 + si
-                self._led_item[200 + si] = item
+            def vstrip(indices, y1, y2, x):
+                n = len(indices)
+                for i, si in enumerate(indices):
+                    py = int(y1 + i * (y2 - y1 - SZ) / max(1, n - 1)) if n > 1 else (y1 + y2 - SZ) // 2
+                    color = _rgb_hex(self._side_leds[si])
+                    sel   = (200 + si) in self._selected
+                    item  = self._cv.create_rectangle(x, py, x + SZ, py + SZ,
+                                fill=color,
+                                outline="#00d4ff" if sel else "#555",
+                                width=2 if sel else 1)
+                    self._item_led[item]     = 200 + si
+                    self._led_item[200 + si] = item
 
-        hstrip([13,14,15,7,6,5,4,3,2,1,0],            bx1, bx2,   by1 - GAP - SZ)
-        vstrip([9,8,10,11],                             by1, by2,   bx2 + GAP)
-        hstrip([20,21,22,23,24,25,26,27,28,29,30,12],  bx1, bx2,   by2 + GAP)
-        vstrip([16,17,18,19],                           by1, by2,   bx1 - GAP - SZ)
-        hstrip([44,43,42],      npbx1, npbx2, by1 - GAP - SZ)
-        vstrip([41,40,39,38],   by1,   by2,   npbx2 + GAP)
-        hstrip([35,36,37],      npbx1, npbx2, by2 + GAP)
-        vstrip([31,32,33,34],   by1,   by2,   npbx1 - GAP - SZ)
+            hstrip([13,14,15,7,6,5,4,3,2,1,0],            bx1, bx2,   by1 - GAP - SZ)
+            vstrip([9,8,10,11],                             by1, by2,   bx2 + GAP)
+            hstrip([20,21,22,23,24,25,26,27,28,29,30,12],  bx1, bx2,   by2 + GAP)
+            vstrip([16,17,18,19],                           by1, by2,   bx1 - GAP - SZ)
+            if self._has_numpad:
+                hstrip([44,43,42],      npbx1, npbx2, by1 - GAP - SZ)
+                vstrip([41,40,39,38],   by1,   by2,   npbx2 + GAP)
+                hstrip([35,36,37],      npbx1, npbx2, by2 + GAP)
+                vstrip([31,32,33,34],   by1,   by2,   npbx1 - GAP - SZ)
 
     def _refresh_key(self, idx):
         item = self._led_item.get(idx)
         if item is None:
             return
         sel = idx in self._selected
-        if 200 <= idx <= 244:
+        if self._has_side and 200 <= idx < 200 + self._num_side:
             color   = _rgb_hex(self._side_leds[idx - 200])
             outline = "#00d4ff" if sel else "#555"
         else:
-            color   = _rgb_hex(self._leds[idx]) if 0 <= idx <= 125 else "#252530"
+            color   = _rgb_hex(self._leds[idx]) if 0 <= idx < self._num_leds else "#252530"
             outline = "#00d4ff" if sel else "#111"
         self._cv.itemconfigure(item, fill=color, outline=outline, width=2 if sel else 1)
 
@@ -843,21 +911,22 @@ class CustomRGBWindow(ctk.CTkToplevel):
     def _fill_selected(self):
         self._push_undo()
         for idx in self._selected:
-            if 0 <= idx <= 125:
+            if 0 <= idx < self._num_leds:
                 self._leds[idx] = self._fill_rgb
-            elif 200 <= idx <= 244:
+            elif self._has_side and 200 <= idx < 200 + self._num_side:
                 self._side_leds[idx - 200] = self._fill_rgb
             self._refresh_key(idx)
 
     def _fill_all(self, rgb):
         self._push_undo()
-        self._leds = [rgb] * 126
-        self._side_leds = [rgb] * 45
+        self._leds = [rgb] * self._num_leds
+        self._side_leds = [rgb] * self._num_side if self._has_side else []
         self._draw_keys()
 
     def _select_all(self):
-        self._selected = {idx for _, idx, *_ in _KB_LAYOUT if idx is not None and 0 <= idx <= 125}
-        self._selected.update(200 + i for i in range(45))
+        self._selected = {idx for _, idx, *_ in self._layout if idx is not None and 0 <= idx < self._num_leds}
+        if self._has_side:
+            self._selected.update(200 + i for i in range(self._num_side))
         self._draw_keys()
         self._update_sel_lbl()
 
@@ -887,9 +956,9 @@ class CustomRGBWindow(ctk.CTkToplevel):
         idx = self._key_at(e.x, e.y)
         if idx is None:
             return
-        if 200 <= idx <= 244:
+        if self._has_side and 200 <= idx < 200 + self._num_side:
             col = self._side_leds[idx - 200]
-        elif 0 <= idx <= 125:
+        elif 0 <= idx < self._num_leds:
             col = self._leds[idx]
         else:
             return
@@ -910,10 +979,11 @@ class CustomRGBWindow(ctk.CTkToplevel):
         self._push_undo()
         d = presets[name]
         leds = [tuple(c) for c in d.get("leds", [])]
-        self._leds = (leds + [(20, 20, 20)] * 126)[:126]
-        raw = d.get("side", [])
-        if isinstance(raw, list) and len(raw) == 45:
-            self._side_leds = [tuple(c) for c in raw]
+        self._leds = (leds + [(20, 20, 20)] * self._num_leds)[:self._num_leds]
+        if self._has_side:
+            raw = d.get("side", [])
+            if isinstance(raw, list) and len(raw) == self._num_side:
+                self._side_leds = [tuple(c) for c in raw]
         bri = int(d.get("brightness", 100))
         self._bri_sl.set(bri)
         self._bri_val.configure(text=str(bri))
@@ -940,9 +1010,11 @@ class CustomRGBWindow(ctk.CTkToplevel):
             if not name:
                 return
             presets = self._load_presets()
-            presets[name] = {"leds":  [list(c) for c in self._leds],
-                              "side":  [list(c) for c in self._side_leds],
-                              "brightness": self._current_bri()}
+            entry = {"leds": [list(c) for c in self._leds],
+                     "brightness": self._current_bri()}
+            if self._has_side:
+                entry["side"] = [list(c) for c in self._side_leds]
+            presets[name] = entry
             self._save_presets(presets)
             self._preset_refresh()
             self._preset_combo.set(name)
@@ -970,11 +1042,14 @@ class CustomRGBWindow(ctk.CTkToplevel):
 
     def _build_payload(self):
         import json as _j
-        return _j.dumps({"leds":  [list(c) for c in self._leds],
-                          "side":  [list(c) for c in self._side_leds],
-                          "brightness": self._current_bri()})
+        d = {"leds": [list(c) for c in self._leds], "brightness": self._current_bri()}
+        if self._has_side:
+            d["side"] = [list(c) for c in self._side_leds]
+        return _j.dumps(d)
 
     def _cmd(self, *args):
+        if self._apply_cmd:
+            return self._apply_cmd(*args)
         return self._app._cmd(*args)
 
     def _apply(self):
@@ -1025,10 +1100,12 @@ class CustomRGBWindow(ctk.CTkToplevel):
             title="Save RGB Profile")
         if not path:
             return
+        profile = {"leds": [list(c) for c in self._leds],
+                   "brightness": self._current_bri()}
+        if self._has_side:
+            profile["side"] = [list(c) for c in self._side_leds]
         with open(path, "w") as f:
-            f.write(_j.dumps({"leds":  [list(c) for c in self._leds],
-                               "side":  [list(c) for c in self._side_leds],
-                               "brightness": self._current_bri()}, indent=2))
+            f.write(_j.dumps(profile, indent=2))
         self._status.configure(text="Saved ✓", text_color=GRN)
 
     def _load_profile(self):
@@ -1043,12 +1120,13 @@ class CustomRGBWindow(ctk.CTkToplevel):
         try:
             d = _j.loads(open(path).read())
             leds = [tuple(c) for c in d.get("leds", [])]
-            self._leds = (leds + [(20, 20, 20)] * 126)[:126]
-            raw = d.get("side", [])
-            if isinstance(raw, list) and len(raw) == 45:
-                self._side_leds = [tuple(c) for c in raw]
-            else:
-                self._side_leds = [(255, 255, 255)] * 45
+            self._leds = (leds + [(20, 20, 20)] * self._num_leds)[:self._num_leds]
+            if self._has_side:
+                raw = d.get("side", [])
+                if isinstance(raw, list) and len(raw) == self._num_side:
+                    self._side_leds = [tuple(c) for c in raw]
+                else:
+                    self._side_leds = [(255, 255, 255)] * self._num_side
             self._bri_sl.set(int(d.get("brightness", 100)))
             self._bri_val.configure(text=str(int(d.get("brightness", 100))))
             self._draw_keys()

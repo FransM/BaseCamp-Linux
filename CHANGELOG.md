@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.6.3-beta] - 2026-03-29
+
+### Mountain Everest 60 Keyboard — Full Support
+
+- **Automatic detection**: Everest 60 ANSI (PID `0x0005`) and ISO (PID `0x0006`) detected automatically on startup — dedicated panel with RGB controls
+- **RGB Lighting**: Full effect control — Static, Breathing, Breathing Rainbow, Wave, Wave Rainbow, Tornado, Tornado Rainbow, Reactive, Yeti, Off — with speed, brightness, color pickers and direction
+- **Custom RGB Mode**: Per-key color editor with 60% ANSI layout (61 keys) — separate config and presets from Everest Max
+- **Keyboard switcher label**: Shows "Everest Max" or "Everest 60" depending on which keyboard is detected (like "Makalu 67" / "Makalu Max" for mouse)
+- **Protocol**: Interface 2, magic bytes `0x46 0x23 0xEA`, 65-byte HID Feature Reports — based on OpenRGB reverse-engineering
+
+### Custom RGB Window — Layout Adaptability
+
+- `CustomRGBWindow` now accepts layout parameters — automatically adapts to the connected keyboard:
+  - **Everest Max**: Full layout with numpad, nav cluster, and 45 side LEDs
+  - **Everest 60**: Compact 60% layout (61 keys, no numpad, no side LEDs, no "Persist to Slot")
+- Separate per-key config and presets per keyboard model — settings don't interfere
+
+### USB Access / udev Rules
+
+- Updated `99-mountain.rules` with all supported devices: Everest Max (`0x0001`), Makalu Max (`0x0002`), Makalu 67 (`0x0003`), Everest 60 ANSI (`0x0005`), Everest 60 ISO (`0x0006`), DisplayPad (`0x0009`)
+- Added `hidraw` rules for all devices (previously only DisplayPad had hidraw access)
+- Updated README installation instructions with complete udev rules
+
+### Build
+
+- Added `everest60-controller` binary to AppImage
+- Added `everest60-controller.spec` for PyInstaller builds
+
+---
+
 ## [1.6.2-beta] - 2026-03-28
 
 ### Makalu Max (PID 0x0002) — Full Support

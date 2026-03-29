@@ -78,8 +78,10 @@ from shared.ui_helpers import (
     AccordionSection,
     _KB_LAYOUT, _KB_CANVAS_W, _KB_CANVAS_H, _SIDE_SZ, _SIDE_OFFSET,
     _QUICK_COLORS, _SIDE_ZONE_INDICES,
+    _KB60_LAYOUT, _KB60_CANVAS_W, _KB60_CANVAS_H, _KB60_NUM_LEDS,
 )
 from devices.everest_max.panel import EverestMaxPanel
+from devices.everest60.panel import Everest60Panel
 from devices.makalu67.panel import Makalu67Panel
 from devices.displaypad.panel import DisplayPadPanel
 from devices.obs.panel import OBSPanel
@@ -157,12 +159,15 @@ def _check_usb_presence(vid, pid):
 
 class App(ctk.CTk):
     # VID/PID constants for supported devices
-    EVEREST_MAX_VID  = 0x3282
-    EVEREST_MAX_PID  = 0x0001
-    MAKALU67_VID     = 0x3282
-    MAKALU67_PID     = 0x0003
-    DISPLAYPAD_VID   = 0x3282
-    DISPLAYPAD_PID   = 0x0009
+    EVEREST_MAX_VID     = 0x3282
+    EVEREST_MAX_PID     = 0x0001
+    EVEREST60_VID       = 0x3282
+    EVEREST60_PID_ANSI  = 0x0005
+    EVEREST60_PID_ISO   = 0x0006
+    MAKALU67_VID        = 0x3282
+    MAKALU67_PID        = 0x0003
+    DISPLAYPAD_VID      = 0x3282
+    DISPLAYPAD_PID      = 0x0009
 
     def __init__(self):
         super().__init__()
@@ -198,10 +203,11 @@ class App(ctk.CTk):
 
         self._lang_var = tk.StringVar()
 
-        self._active_device = None   # "everest_max" | "makalu67" | "displaypad"
+        self._active_device = None   # "everest_max" | "everest60" | "makalu67" | "displaypad"
         self._panels        = {}     # populated in _build_ui
-        self._dev_present   = {"everest_max": False, "makalu67": False,
-                               "displaypad": False, "obs": False}
+        self._kb_panel_id   = "everest_max"   # which keyboard panel is active
+        self._dev_present   = {"everest_max": False, "everest60": False,
+                               "makalu67": False, "displaypad": False, "obs": False}
 
         self._build_ui()
 
@@ -230,6 +236,11 @@ class App(ctk.CTk):
             script = os.path.join(_HERE, "devices", "makalu67", "controller.py")
             if _FROZEN:
                 return [os.path.join(_BIN, "makalu-controller")] + list(args)
+            return [PYTHON, script] + list(args)
+        if device_id == "everest60":
+            script = os.path.join(_HERE, "devices", "everest60", "controller.py")
+            if _FROZEN:
+                return [os.path.join(_BIN, "everest60-controller")] + list(args)
             return [PYTHON, script] + list(args)
         return _cmd(*args)
 
@@ -383,7 +394,7 @@ class App(ctk.CTk):
             row1, text="Keyboard", font=("Helvetica", 11, "bold"),
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
             height=28, corner_radius=4,
-            command=lambda: self._switch_device("everest_max"))
+            command=lambda: self._switch_device(self._kb_panel_id))
         self._sw_keyboard_btn.pack(side="left", padx=4)
 
         self._sw_mouse_btn = ctk.CTkButton(
@@ -417,11 +428,13 @@ class App(ctk.CTk):
         # Instantiate panels (OBS first — other panels reference it)
         self._obs_panel         = OBSPanel(self._panel_area, self)
         self._everest_panel     = EverestMaxPanel(self._panel_area, self)
+        self._everest60_panel   = Everest60Panel(self._panel_area, self)
         self._makalu_panel      = Makalu67Panel(self._panel_area, self)
         self._displaypad_panel  = DisplayPadPanel(self._panel_area, self)
 
         self._panels = {
             "everest_max": self._everest_panel,
+            "everest60":   self._everest60_panel,
             "makalu67":    self._makalu_panel,
             "displaypad":  self._displaypad_panel,
             "obs":         self._obs_panel,
@@ -469,37 +482,66 @@ class App(ctk.CTk):
 
     def _check_devices(self):
         """Periodic USB presence check (runs in main thread — /sys reads are <1ms)."""
-        kb_present    = _check_usb_presence(self.EVEREST_MAX_VID, self.EVEREST_MAX_PID)
-        mouse_present = (_check_usb_presence(self.MAKALU67_VID, self.MAKALU67_PID)
-                         or _check_usb_presence(self.MAKALU67_VID, 0x0002))
-        dp_present    = _check_usb_presence(self.DISPLAYPAD_VID, self.DISPLAYPAD_PID)
-        self._update_device_status(kb_present, mouse_present, dp_present)
+        kb_max_present = _check_usb_presence(self.EVEREST_MAX_VID, self.EVEREST_MAX_PID)
+        kb_60_present  = (_check_usb_presence(self.EVEREST60_VID, self.EVEREST60_PID_ANSI)
+                          or _check_usb_presence(self.EVEREST60_VID, self.EVEREST60_PID_ISO))
+        mouse_present  = (_check_usb_presence(self.MAKALU67_VID, self.MAKALU67_PID)
+                          or _check_usb_presence(self.MAKALU67_VID, 0x0002))
+        dp_present     = _check_usb_presence(self.DISPLAYPAD_VID, self.DISPLAYPAD_PID)
+        self._update_device_status(kb_max_present, kb_60_present, mouse_present, dp_present)
         self.after(5000, self._check_devices)
 
-    def _update_device_status(self, kb_present, mouse_present, dp_present=False):
+    def _update_device_status(self, kb_max_present, kb_60_present=False,
+                               mouse_present=False, dp_present=False):
         """Update switcher button appearance based on device presence."""
         obs_connected = hasattr(self, "_obs_panel") and self._obs_panel.is_connected()
-        self._dev_present["everest_max"] = kb_present
+        self._dev_present["everest_max"] = kb_max_present
+        self._dev_present["everest60"]   = kb_60_present
         self._dev_present["makalu67"]    = mouse_present
         self._dev_present["displaypad"]  = dp_present
         self._dev_present["obs"]         = obs_connected
+        # Determine active keyboard panel (Everest 60 takes priority if connected)
+        if kb_60_present:
+            self._kb_panel_id = "everest60"
+        elif kb_max_present:
+            self._kb_panel_id = "everest_max"
+        # If active device is a keyboard type that's no longer connected, stay on it
+        # (don't force-switch; user may have manually navigated)
         # Update button labels
         mouse_label = getattr(self._makalu_panel, "_model_name", "Mouse") if hasattr(self, "_makalu_panel") else "Mouse"
-        self._sw_keyboard_btn.configure(text="Keyboard")
+        if kb_60_present and hasattr(self, "_everest60_panel"):
+            kb_label = getattr(self._everest60_panel, "_model_name", "Everest 60")
+        elif kb_max_present:
+            kb_label = "Everest Max"
+        else:
+            kb_label = "Keyboard"
+        self._sw_keyboard_btn.configure(text=kb_label)
         self._sw_mouse_btn.configure(text=mouse_label)
         self._sw_displaypad_btn.configure(text="DisplayPad")
         self._refresh_switcher_colors()
         # Notify panels
         if hasattr(self, "_makalu_panel"):
             self._makalu_panel.set_connected(mouse_present)
+        if hasattr(self, "_everest60_panel"):
+            self._everest60_panel.set_connected(kb_60_present)
 
     def _refresh_switcher_colors(self):
         """Apply fg_color/text_color to each switcher button: blue=active, green=present, gray=absent."""
+        # Keyboard button covers both Everest Max and Everest 60
+        kb_active  = self._active_device in ("everest_max", "everest60")
+        kb_present = (self._dev_present.get("everest_max", False)
+                      or self._dev_present.get("everest60", False))
+        if kb_active:
+            self._sw_keyboard_btn.configure(fg_color=BLUE, text_color=FG)
+        elif kb_present:
+            self._sw_keyboard_btn.configure(fg_color=GRN, text_color=FG)
+        else:
+            self._sw_keyboard_btn.configure(fg_color=BG2, text_color=FG2)
+
         for dev_id, btn in [
-            ("everest_max", self._sw_keyboard_btn),
-            ("makalu67",    self._sw_mouse_btn),
-            ("displaypad",  self._sw_displaypad_btn),
-            ("obs",         self._sw_obs_btn),
+            ("makalu67",   self._sw_mouse_btn),
+            ("displaypad", self._sw_displaypad_btn),
+            ("obs",        self._sw_obs_btn),
         ]:
             active  = self._active_device == dev_id
             present = self._dev_present.get(dev_id, False)
