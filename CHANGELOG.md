@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.1-beta] - 2026-03-31
+
+### Bug Fixes
+
+- **Auto-detection fix:** Device detection now runs immediately on startup instead of after 1 second — if only an Everest 60 is connected, the app auto-switches to the Everest 60 panel without requiring a manual change
+- **Crash fix (`_rgb_apply_row`):** Fixed a crash on startup where `_rgb_update_controls()` was called before the apply button row was created — reordered initialization to prevent `AttributeError`
+- **Everest 60 layout corrected:** Added arrow key cluster — row 4 now has small right shift + ↑ + Del, row 5 has ← ↓ → instead of a wide Ctrl. Total visible keys: 65 (was incorrectly 61)
+
+---
+
 ## [1.7.0] - 2026-03-29
 
 ### Macro System — New Feature

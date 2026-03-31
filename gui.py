@@ -223,7 +223,8 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._hide_window)
         self.bind("<Unmap>", lambda e: self._hide_window() if self.state() == "iconic" else None)
         self.after(500, self._start_cpu_auto_clean)
-        self.after(1000, self._check_devices)
+        # Run first device check immediately so the correct panel is shown
+        self._check_devices()
 
     # ── subprocess command builder ────────────────────────────────────────────
 
@@ -511,12 +512,16 @@ class App(ctk.CTk):
         self._dev_present["displaypad"]  = dp_present
         self._dev_present["obs"]         = obs_connected
         # Determine active keyboard panel (Everest 60 takes priority if connected)
+        old_kb_id = self._kb_panel_id
         if kb_60_present:
             self._kb_panel_id = "everest60"
         elif kb_max_present:
             self._kb_panel_id = "everest_max"
-        # If active device is a keyboard type that's no longer connected, stay on it
-        # (don't force-switch; user may have manually navigated)
+        # Auto-switch if viewing a keyboard panel that changed
+        if (self._active_device in ("everest_max", "everest60")
+                and self._kb_panel_id != old_kb_id):
+            self._active_device = None  # force re-switch
+            self._switch_device(self._kb_panel_id)
         # Update button labels
         mouse_label = getattr(self._makalu_panel, "_model_name", "Mouse") if hasattr(self, "_makalu_panel") else "Mouse"
         if kb_60_present and hasattr(self, "_everest60_panel"):

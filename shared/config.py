@@ -318,11 +318,11 @@ def _load_per_key_60():
     try:
         d = json.loads(open(PER_KEY_60_FILE).read())
         leds = [tuple(c) for c in d.get("leds", [])]
-        leds = (leds + [(20, 20, 20)] * 61)[:61]
+        leds = (leds + [(20, 20, 20)] * 65)[:65]
         bri  = int(d.get("brightness", 100))
         return leds, [], bri
     except Exception:
-        return [(20, 20, 20)] * 61, [], 100
+        return [(20, 20, 20)] * 65, [], 100
 
 
 def _save_per_key_60(leds, _side, bri):

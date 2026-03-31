@@ -475,7 +475,10 @@ _SIDE_OFFSET = 12
 
 
 def _build_kb60_layout():
-    """Return 60% ANSI key layout: (label, led_idx, x, y, w, h)."""
+    """Return Everest 60 key layout with arrow keys: (label, led_idx, x, y, w, h).
+    Row 4 has small right shift + arrow up + Del.
+    Row 5 has arrow left/down/right instead of large Ctrl.
+    """
     SC = 0.82
     KH = int(30 * SC)
     RS = int(32 * SC)
@@ -494,27 +497,32 @@ def _build_kb60_layout():
         return res
 
     L = []
+    # Row 0: Esc ` 1-0 - = Backspace (15 keys, idx 0-14)
     L += sbet([('Esc',0,30),('`',1,30),('1',2,30),('2',3,30),('3',4,30),
                ('4',5,30),('5',6,30),('6',7,30),('7',8,30),('8',9,30),
                ('9',10,30),('0',11,30),('-',12,30),('=',13,30),('⌫',14,58)], IW, OY)
+    # Row 1: Tab Q-P [ ] \ (14 keys, idx 15-28)
     L += sbet([('Tab',15,46),('Q',16,30),('W',17,30),('E',18,30),('R',19,30),
                ('T',20,30),('Y',21,30),('U',22,30),('I',23,30),('O',24,30),
                ('P',25,30),('[',26,30),(']',27,30),('\\',28,46)], IW, OY+RS)
+    # Row 2: Caps A-L ; ' Enter (13 keys, idx 29-41)
     L += sbet([('Caps',29,54),('A',30,30),('S',31,30),('D',32,30),('F',33,30),
                ('G',34,30),('H',35,30),('J',36,30),('K',37,30),('L',38,30),
                (';',39,30),("'",40,30),('↵',41,68)], IW, OY+2*RS)
+    # Row 3: Shift Z-/ small-Shift ↑ Del (15 keys, idx 42-56)
     L += sbet([('⇧',42,78),('Z',43,30),('X',44,30),('C',45,30),('V',46,30),
                ('B',47,30),('N',48,30),('M',49,30),(',',50,30),('.',51,30),
-               ('/',52,30),('⇧',53,90)], IW, OY+3*RS)
-    L += sbet([('Ctrl',54,38),('⊞',55,38),('Alt',56,38),(' ',57,190),
-               ('Alt',58,38),('Fn',59,38),('Ctrl',60,38)], IW, OY+4*RS)
+               ('/',52,30),('⇧',53,44),('↑',54,30),('Del',55,30)], IW, OY+3*RS)
+    # Row 4: Ctrl Win Alt Space Alt Fn ← ↓ → (9 keys, idx 56-64)
+    L += sbet([('Ctrl',56,38),('⊞',57,38),('Alt',58,38),(' ',59,152),
+               ('Alt',60,30),('Fn',61,30),('←',62,30),('↓',63,30),('→',64,30)], IW, OY+4*RS)
     return L
 
 
 _KB60_LAYOUT   = _build_kb60_layout()
 _KB60_CANVAS_W = 14 + int(460 * 0.82) + 14
 _KB60_CANVAS_H = 14 + 4 * int(32 * 0.82) + int(30 * 0.82) + 18
-_KB60_NUM_LEDS = 61
+_KB60_NUM_LEDS = 65
 
 _QUICK_COLORS = [
     ("#ff0000", (255, 0, 0)), ("#ff8800", (255, 136, 0)),

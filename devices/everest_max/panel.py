@@ -555,7 +555,6 @@ class EverestMaxPanel(ctk.CTkFrame):
             self._rgb_c2_btn.configure(fg_color=_c2h, hover_color=_c2h)
         if "direction" in _rgb_saved and _rgb_saved["direction"] in self._rgb_dir_val_map:
             self._rgb_dir_var.set(_rgb_saved["direction"])
-        self._rgb_update_controls()
 
         rgb_apply_row = ctk.CTkFrame(c, fg_color="transparent")
         self._rgb_apply_row = rgb_apply_row
@@ -569,6 +568,8 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_status = ctk.CTkLabel(rgb_apply_row, text="", text_color=FG2,
                                          font=("Helvetica", 11))
         self._rgb_status.pack(side="left", padx=(10, 0))
+
+        self._rgb_update_controls()
 
         self._rgb_section = s5
         self._rgb_update_controls()
