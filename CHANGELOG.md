@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.2-beta] - 2026-04-02
+
+### Everest 60 — Protocol Fixes (thanks to FransM for reverse-engineering)
+
+- **Effect fix:** `0x17` (SendModeDetails) now correctly sends the effect code in buf[5] — was incorrectly set to profile number, which is why only Static worked (Static=0x01 happened to equal profile=1)
+- **Mode switch fix:** `0x16` (SetMode) now sends effect code in buf[5] to activate the mode
+- **Response verification:** After each `set_report`, verifies `get_report` echoes the command byte — retries up to 3× if device is busy
+- **Timing fix:** Added 50ms sleep after `get_feature_report` for device stability
+- **Custom RGB fix:** Fixed buffer overflow in per-key mode — `COLORS_PER_PKT` was 56 (colors) but only 14 fit in a 65-byte HID report (14 × 4 bytes = 56 bytes payload). This caused the "Broken pipe" IOCTL error on Apply
+- **Dual color support:** Breathing, Wave, and Tornado effects now support a second color — both in the protocol layer and the GUI (Color 2 picker)
+
+---
+
 ## [1.7.1-beta] - 2026-03-31
 
 ### Bug Fixes

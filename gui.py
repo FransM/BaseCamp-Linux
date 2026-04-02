@@ -222,6 +222,9 @@ class App(ctk.CTk):
         self._setup_tray()
         self.protocol("WM_DELETE_WINDOW", self._hide_window)
         self.bind("<Unmap>", lambda e: self._hide_window() if self.state() == "iconic" else None)
+        # Recover from display sleep — force refresh on re-map/focus
+        self.bind("<Map>", self._on_window_restore)
+        self.bind("<FocusIn>", self._on_window_restore)
         self.after(500, self._start_cpu_auto_clean)
         # Run first device check immediately so the correct panel is shown
         self._check_devices()
@@ -595,6 +598,14 @@ class App(ctk.CTk):
             else:
                 cmd = [sys.executable, TRAY_HELPER, str(os.getpid()), lang_file]
         self._tray_proc = subprocess.Popen(cmd, env=env)
+
+    def _on_window_restore(self, event=None):
+        """Force UI refresh after display sleep/wake or window re-map."""
+        try:
+            self.update_idletasks()
+            self.lift()
+        except Exception:
+            pass
 
     def _hide_window(self):
         self.withdraw()

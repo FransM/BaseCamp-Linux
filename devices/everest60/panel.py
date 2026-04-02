@@ -104,11 +104,11 @@ class Everest60Panel(ctk.CTkFrame):
         _RGB_EFFECTS = [
             # (display_name, cli_sub, has_speed, has_bri, has_c1, has_c2, has_dir)
             ("Static",            "static",           False, True,  True,  False, False),
-            ("Breathing",         "breathing",        True,  True,  True,  False, False),
+            ("Breathing",         "breathing",        True,  True,  True,  True,  False),
             ("Breathing Rainbow", "breathing-rainbow",True,  True,  False, False, False),
-            ("Wave",              "wave",             True,  True,  True,  False, True),
+            ("Wave",              "wave",             True,  True,  True,  True,  True),
             ("Wave Rainbow",      "wave-rainbow",     True,  True,  False, False, True),
-            ("Tornado",           "tornado",          True,  True,  True,  False, True),
+            ("Tornado",           "tornado",          True,  True,  True,  True,  True),
             ("Tornado Rainbow",   "tornado-rainbow",  True,  True,  False, False, True),
             ("Reactive",          "reactive",         True,  True,  True,  True,  False),
             ("Yeti",              "yeti",             True,  True,  True,  True,  False),
@@ -299,15 +299,18 @@ class Everest60Panel(ctk.CTkFrame):
         elif sub == "static":
             cmd = self._cmd("rgb", "static", str(r1), str(g1), str(b1), str(bri))
         elif sub == "breathing":
-            cmd = self._cmd("rgb", "breathing", str(r1), str(g1), str(b1), str(bri), str(speed))
+            cmd = self._cmd("rgb", "breathing", str(r1), str(g1), str(b1),
+                            str(r2), str(g2), str(b2), str(bri), str(speed))
         elif sub == "breathing-rainbow":
             cmd = self._cmd("rgb", "breathing-rainbow", str(bri), str(speed))
         elif sub == "wave":
-            cmd = self._cmd("rgb", "wave", str(r1), str(g1), str(b1), str(bri), str(speed), str(direction))
+            cmd = self._cmd("rgb", "wave", str(r1), str(g1), str(b1),
+                            str(r2), str(g2), str(b2), str(bri), str(speed), str(direction))
         elif sub == "wave-rainbow":
             cmd = self._cmd("rgb", "wave-rainbow", str(bri), str(speed), str(direction))
         elif sub == "tornado":
-            cmd = self._cmd("rgb", "tornado", str(r1), str(g1), str(b1), str(bri), str(speed), str(direction))
+            cmd = self._cmd("rgb", "tornado", str(r1), str(g1), str(b1),
+                            str(r2), str(g2), str(b2), str(bri), str(speed), str(direction))
         elif sub == "tornado-rainbow":
             cmd = self._cmd("rgb", "tornado-rainbow", str(bri), str(speed), str(direction))
         elif sub == "reactive":

@@ -8,6 +8,11 @@ Reverse-engineered from OpenRGB MountainKeyboard60Controller.
 Report size: 65 bytes (Report ID 0x00 + 64 bytes data).
 Magic bytes [2..4] = 0x46 0x23 0xEA on every command.
 
+SetMode (cmd=0x16):
+  [1]    = 0x16
+  [2..4] = 0x46 0x23 0xEA
+  [5]    = effect code (activates the mode)
+
 SendModeDetails (cmd=0x17):
   [1]    = 0x17
   [2..4] = 0x46 0x23 0xEA
@@ -19,9 +24,12 @@ SendModeDetails (cmd=0x17):
   [12..14] = color1 R,G,B
   [15..17] = color2 R,G,B
 
+After set_report, get_report should echo cmd byte in resp[0].
+If not, retry (device may be busy).
+
 Direct color mode (custom per-key):
   Begin:  cmd=0x34, [5]=brightness×25, [6]=0xC0
-  Map:    cmd=0x35, [5]=stream_ctl (0x0E first, 0x0A rest), then RGBA×56
+  Map:    cmd=0x35, [5]=stream_ctl (0x0E first, 0x0A rest), then 14 × RGBA (56 bytes)
   End:    cmd=0x36
 """
 import sys
@@ -94,11 +102,17 @@ def open_device():
     return dev
 
 
-def _send(dev, buf):
-    """Send feature report and read response."""
-    dev.send_feature_report(bytes(buf))
-    time.sleep(0.05)
-    dev.get_feature_report(0x00, 65)
+def _send(dev, buf, retries=3):
+    """Send feature report, verify response echoes cmd byte, retry if not."""
+    cmd = buf[1]
+    for attempt in range(retries):
+        dev.send_feature_report(bytes(buf))
+        time.sleep(0.05)
+        resp = dev.get_feature_report(0x00, 65)
+        time.sleep(0.05)
+        if resp and len(resp) >= 2 and resp[0] == cmd:
+            return resp
+    return resp if 'resp' in dir() else None
 
 
 def _make_buf(cmd):
@@ -125,6 +139,7 @@ def _speed_val(pct):
 def _send_mode(dev, effect, speed=50, brightness=100,
                r1=255, g1=255, b1=255, r2=0, g2=0, b2=0,
                color_mode=COLOR_SINGLE, direction=0):
+    # Step 1: Send mode details (cmd 0x17) — effect code in [5]
     buf = _make_buf(0x17)
     buf[5]  = effect
     buf[7]  = _speed_val(speed)
@@ -137,6 +152,11 @@ def _send_mode(dev, effect, speed=50, brightness=100,
     buf[15] = r2 & 0xFF
     buf[16] = g2 & 0xFF
     buf[17] = b2 & 0xFF
+    _send(dev, buf)
+
+    # Step 2: Switch mode (cmd 0x16) — activates the effect
+    buf = _make_buf(0x16)
+    buf[5] = effect
     _send(dev, buf)
 
 
@@ -157,11 +177,11 @@ def set_lighting_static(r, g, b, brightness=100):
         dev.close()
 
 
-def set_lighting_breathing(r=255, g=0, b=0, brightness=100, speed=50):
+def set_lighting_breathing(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50):
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_BREATHING, speed=speed, brightness=brightness,
-                   r1=r, g1=g, b1=b)
+                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2)
     finally:
         dev.close()
 
@@ -175,11 +195,11 @@ def set_lighting_breathing_rainbow(brightness=100, speed=50):
         dev.close()
 
 
-def set_lighting_wave(r=255, g=0, b=0, brightness=100, speed=50, direction=0):
+def set_lighting_wave(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50, direction=0):
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_WAVE, speed=speed, brightness=brightness,
-                   r1=r, g1=g, b1=b, direction=direction)
+                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2, direction=direction)
     finally:
         dev.close()
 
@@ -193,11 +213,11 @@ def set_lighting_wave_rainbow(brightness=100, speed=50, direction=0):
         dev.close()
 
 
-def set_lighting_tornado(r=255, g=0, b=0, brightness=100, speed=50, direction=0):
+def set_lighting_tornado(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50, direction=0):
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_TORNADO, speed=speed, brightness=brightness,
-                   r1=r, g1=g, b1=b, direction=direction)
+                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2, direction=direction)
     finally:
         dev.close()
 
@@ -243,8 +263,8 @@ def set_lighting_custom(colors, brightness=100):
         buf[6] = 0xC0
         _send(dev, buf)
 
-        # Map — 56 RGBA colors per packet (65 - 9 header bytes = 56)
-        COLORS_PER_PKT = 56
+        # Map — 14 RGBA colors per packet (65 - 6 header bytes = 59, 59//4 = 14)
+        COLORS_PER_PKT = 14
         idx = 0
         pkt_no = 0
         while idx < NUM_KEYS:
@@ -310,37 +330,46 @@ def main():
                 bri = int(sub_args[4]) if len(sub_args) > 4 else 100
                 set_lighting_static(r, g, b, brightness=bri)
             elif sub == "breathing":
-                r = int(sub_args[1]) if len(sub_args) > 1 else 255
-                g = int(sub_args[2]) if len(sub_args) > 2 else 0
-                b = int(sub_args[3]) if len(sub_args) > 3 else 0
-                bri = int(sub_args[4]) if len(sub_args) > 4 else 100
-                spd = int(sub_args[5]) if len(sub_args) > 5 else 50
-                set_lighting_breathing(r, g, b, brightness=bri, speed=spd)
+                r  = int(sub_args[1]) if len(sub_args) > 1 else 255
+                g  = int(sub_args[2]) if len(sub_args) > 2 else 0
+                b  = int(sub_args[3]) if len(sub_args) > 3 else 0
+                r2 = int(sub_args[4]) if len(sub_args) > 4 else 0
+                g2 = int(sub_args[5]) if len(sub_args) > 5 else 0
+                b2 = int(sub_args[6]) if len(sub_args) > 6 else 0
+                bri = int(sub_args[7]) if len(sub_args) > 7 else 100
+                spd = int(sub_args[8]) if len(sub_args) > 8 else 50
+                set_lighting_breathing(r, g, b, r2, g2, b2, brightness=bri, speed=spd)
             elif sub == "breathing-rainbow":
                 bri = int(sub_args[1]) if len(sub_args) > 1 else 100
                 spd = int(sub_args[2]) if len(sub_args) > 2 else 50
                 set_lighting_breathing_rainbow(brightness=bri, speed=spd)
             elif sub == "wave":
-                r = int(sub_args[1]) if len(sub_args) > 1 else 255
-                g = int(sub_args[2]) if len(sub_args) > 2 else 0
-                b = int(sub_args[3]) if len(sub_args) > 3 else 0
-                bri = int(sub_args[4]) if len(sub_args) > 4 else 100
-                spd = int(sub_args[5]) if len(sub_args) > 5 else 50
-                d   = int(sub_args[6]) if len(sub_args) > 6 else 0
-                set_lighting_wave(r, g, b, brightness=bri, speed=spd, direction=d)
+                r  = int(sub_args[1]) if len(sub_args) > 1 else 255
+                g  = int(sub_args[2]) if len(sub_args) > 2 else 0
+                b  = int(sub_args[3]) if len(sub_args) > 3 else 0
+                r2 = int(sub_args[4]) if len(sub_args) > 4 else 0
+                g2 = int(sub_args[5]) if len(sub_args) > 5 else 0
+                b2 = int(sub_args[6]) if len(sub_args) > 6 else 0
+                bri = int(sub_args[7]) if len(sub_args) > 7 else 100
+                spd = int(sub_args[8]) if len(sub_args) > 8 else 50
+                d   = int(sub_args[9]) if len(sub_args) > 9 else 0
+                set_lighting_wave(r, g, b, r2, g2, b2, brightness=bri, speed=spd, direction=d)
             elif sub == "wave-rainbow":
                 bri = int(sub_args[1]) if len(sub_args) > 1 else 100
                 spd = int(sub_args[2]) if len(sub_args) > 2 else 50
                 d   = int(sub_args[3]) if len(sub_args) > 3 else 0
                 set_lighting_wave_rainbow(brightness=bri, speed=spd, direction=d)
             elif sub == "tornado":
-                r = int(sub_args[1]) if len(sub_args) > 1 else 255
-                g = int(sub_args[2]) if len(sub_args) > 2 else 0
-                b = int(sub_args[3]) if len(sub_args) > 3 else 0
-                bri = int(sub_args[4]) if len(sub_args) > 4 else 100
-                spd = int(sub_args[5]) if len(sub_args) > 5 else 50
-                d   = int(sub_args[6]) if len(sub_args) > 6 else 0
-                set_lighting_tornado(r, g, b, brightness=bri, speed=spd, direction=d)
+                r  = int(sub_args[1]) if len(sub_args) > 1 else 255
+                g  = int(sub_args[2]) if len(sub_args) > 2 else 0
+                b  = int(sub_args[3]) if len(sub_args) > 3 else 0
+                r2 = int(sub_args[4]) if len(sub_args) > 4 else 0
+                g2 = int(sub_args[5]) if len(sub_args) > 5 else 0
+                b2 = int(sub_args[6]) if len(sub_args) > 6 else 0
+                bri = int(sub_args[7]) if len(sub_args) > 7 else 100
+                spd = int(sub_args[8]) if len(sub_args) > 8 else 50
+                d   = int(sub_args[9]) if len(sub_args) > 9 else 0
+                set_lighting_tornado(r, g, b, r2, g2, b2, brightness=bri, speed=spd, direction=d)
             elif sub == "tornado-rainbow":
                 bri = int(sub_args[1]) if len(sub_args) > 1 else 100
                 spd = int(sub_args[2]) if len(sub_args) > 2 else 50
