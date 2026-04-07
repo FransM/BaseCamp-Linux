@@ -108,7 +108,7 @@ class Everest60Panel(ctk.CTkFrame):
             ("Breathing Rainbow", "breathing-rainbow",True,  True,  False, False, False),
             ("Wave",              "wave",             True,  True,  True,  True,  True),
             ("Wave Rainbow",      "wave-rainbow",     True,  True,  False, False, True),
-            ("Tornado",           "tornado",          True,  True,  True,  True,  True),
+            ("Tornado",           "tornado",          True,  True,  True,  False, True),
             ("Tornado Rainbow",   "tornado-rainbow",  True,  True,  False, False, True),
             ("Reactive",          "reactive",         True,  True,  True,  True,  False),
             ("Yeti",              "yeti",             True,  True,  True,  True,  False),
@@ -310,7 +310,7 @@ class Everest60Panel(ctk.CTkFrame):
             cmd = self._cmd("rgb", "wave-rainbow", str(bri), str(speed), str(direction))
         elif sub == "tornado":
             cmd = self._cmd("rgb", "tornado", str(r1), str(g1), str(b1),
-                            str(r2), str(g2), str(b2), str(bri), str(speed), str(direction))
+                            str(bri), str(speed), str(direction))
         elif sub == "tornado-rainbow":
             cmd = self._cmd("rgb", "tornado-rainbow", str(bri), str(speed), str(direction))
         elif sub == "reactive":

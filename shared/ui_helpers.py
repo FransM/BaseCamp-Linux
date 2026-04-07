@@ -475,9 +475,10 @@ _SIDE_OFFSET = 12
 
 
 def _build_kb60_layout():
-    """Return Everest 60 key layout with arrow keys: (label, led_idx, x, y, w, h).
-    Row 4 has small right shift + arrow up + Del.
-    Row 5 has arrow left/down/right instead of large Ctrl.
+    """Return Everest 60 key layout: (label, led_idx, x, y, w, h).
+    64 keys total — no backtick key on Everest 60.
+    Row 3 has small right shift + arrow up + Del.
+    Row 4 has arrow left/down/right aligned under row 3.
     """
     SC = 0.82
     KH = int(30 * SC)
@@ -499,51 +500,41 @@ def _build_kb60_layout():
     KW = int(30 * SC)     # standard key width
     KG = int(2 * SC)      # gap between keys
 
-    def row(specs, y):
-        """Place keys left-to-right with fixed gap. Width in specs is in unscaled units."""
-        res, x = [], OX
-        for lbl, idx, cw in specs:
-            pw = int(cw * SC)
-            res.append((lbl, idx, int(x), y, pw, KH))
-            x += pw + KG
-        return res
-
     L = []
-    # Row 0: Esc ` 1-0 - = Backspace (15 keys, idx 0-14)
-    L += row([('Esc',0,30),('`',1,30),('1',2,30),('2',3,30),('3',4,30),
-              ('4',5,30),('5',6,30),('6',7,30),('7',8,30),('8',9,30),
-              ('9',10,30),('0',11,30),('-',12,30),('=',13,30),('⌫',14,58)], OY)
-    # Row 1: Tab Q-P [ ] \ (14 keys, idx 15-28)
-    L += row([('Tab',15,46),('Q',16,30),('W',17,30),('E',18,30),('R',19,30),
-              ('T',20,30),('Y',21,30),('U',22,30),('I',23,30),('O',24,30),
-              ('P',25,30),('[',26,30),(']',27,30),('\\',28,46)], OY+RS)
-    # Row 2: Caps A-L ; ' Enter (13 keys, idx 29-41)
-    L += row([('Caps',29,54),('A',30,30),('S',31,30),('D',32,30),('F',33,30),
-              ('G',34,30),('H',35,30),('J',36,30),('K',37,30),('L',38,30),
-              (';',39,30),("'",40,30),('↵',41,68)], OY+2*RS)
-    # Row 3: Shift Z-/ small-Shift ↑ Del (14 keys, idx 42-55)
-    L += row([('⇧',42,70),('Z',43,30),('X',44,30),('C',45,30),('V',46,30),
-              ('B',47,30),('N',48,30),('M',49,30),(',',50,30),('.',51,30),
-              ('/',52,30),('⇧',53,36),('↑',54,30),('Del',55,30)], OY+3*RS)
-    # Row 4: Ctrl Win Alt Space Alt Fn ← ↓ → (9 keys, idx 56-64)
-    # Arrow keys must align vertically: ↓ under ↑, → under Del
-    # Build left side with row(), then place arrows at fixed positions matching row 3
-    left = row([('Ctrl',56,38),('⊞',57,30),('Alt',58,38),(' ',59,211),
-                ('Alt',60,30),('Fn',61,30)], OY+4*RS)
+    # Row 0: Esc 1-0 - = Backspace (14 keys, idx 0-13) — no backtick
+    L += sbet([('Esc',0,30),('1',1,30),('2',2,30),('3',3,30),('4',4,30),
+               ('5',5,30),('6',6,30),('7',7,30),('8',8,30),('9',9,30),
+               ('0',10,30),('-',11,30),('=',12,30),('⌫',13,60)], IW, OY)
+    # Row 1: Tab Q-P [ ] \ (14 keys, idx 14-27)
+    L += sbet([('Tab',14,45),('Q',15,30),('W',16,30),('E',17,30),('R',18,30),
+               ('T',19,30),('Y',20,30),('U',21,30),('I',22,30),('O',23,30),
+               ('P',24,30),('[',25,30),(']',26,30),('\\',27,45)], IW, OY+RS)
+    # Row 2: Caps A-L ; ' Enter (13 keys, idx 28-40)
+    L += sbet([('Caps',28,53),('A',29,30),('S',30,30),('D',31,30),('F',32,30),
+               ('G',33,30),('H',34,30),('J',35,30),('K',36,30),('L',37,30),
+               (';',38,30),("'",39,30),('↵',40,67)], IW, OY+2*RS)
+    # Row 3: Shift Z-/ small-Shift ↑ Del (14 keys, idx 41-54)
+    L += sbet([('⇧',41,60),('Z',42,30),('X',43,30),('C',44,30),('V',45,30),
+               ('B',46,30),('N',47,30),('M',48,30),(',',49,30),('.',50,30),
+               ('/',51,30),('⇧',52,30),('↑',53,30),('Del',54,30)], IW, OY+3*RS)
+    # Row 4: Ctrl Win Alt Space Alt Fn ← ↓ → (9 keys, idx 55-63)
+    # Place left side with sbet(), then align arrows under row 3
+    left = sbet([('Ctrl',55,38),('⊞',56,30),('Alt',57,38),(' ',58,194),
+                 ('Alt',59,30),('Fn',60,30)], IW, OY+4*RS)
     L += left
-    # Get ↑ and Del x-positions from row 3 for alignment
+    # Align arrows under ↑ and Del from row 3
     arrow_up_x = next(x for lbl, _, x, _, _, _ in L if lbl == '↑')
     del_x      = next(x for lbl, _, x, _, _, _ in L if lbl == 'Del')
-    L.append(('←', 62, arrow_up_x - KW - KG, OY+4*RS, KW, KH))
-    L.append(('↓', 63, arrow_up_x, OY+4*RS, KW, KH))
-    L.append(('→', 64, del_x, OY+4*RS, KW, KH))
+    L.append(('←', 61, arrow_up_x - KW - KG, OY+4*RS, KW, KH))
+    L.append(('↓', 62, arrow_up_x, OY+4*RS, KW, KH))
+    L.append(('→', 63, del_x, OY+4*RS, KW, KH))
     return L
 
 
 _KB60_LAYOUT   = _build_kb60_layout()
 _KB60_CANVAS_W = max(x + w for _, _, x, _, w, _ in _KB60_LAYOUT) + 14
 _KB60_CANVAS_H = 14 + 4 * int(32 * 0.82) + int(30 * 0.82) + 18
-_KB60_NUM_LEDS = 65
+_KB60_NUM_LEDS = 64
 
 _QUICK_COLORS = [
     ("#ff0000", (255, 0, 0)), ("#ff8800", (255, 136, 0)),

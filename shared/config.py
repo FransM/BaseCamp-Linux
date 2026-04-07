@@ -318,11 +318,11 @@ def _load_per_key_60():
     try:
         d = json.loads(open(PER_KEY_60_FILE).read())
         leds = [tuple(c) for c in d.get("leds", [])]
-        leds = (leds + [(20, 20, 20)] * 65)[:65]
+        leds = (leds + [(20, 20, 20)] * 64)[:64]
         bri  = int(d.get("brightness", 100))
         return leds, [], bri
     except Exception:
-        return [(20, 20, 20)] * 65, [], 100
+        return [(20, 20, 20)] * 64, [], 100
 
 
 def _save_per_key_60(leds, _side, bri):
@@ -334,10 +334,20 @@ def _save_per_key_60(leds, _side, bri):
 
 
 def _load_presets_60():
+    _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _FROZEN = getattr(sys, "frozen", False)
+    _RES = getattr(sys, "_MEIPASS", _HERE) if _FROZEN else _HERE
+    defaults = {}
     try:
-        return json.loads(open(PRESET_60_FILE).read())
+        defaults = json.loads(open(os.path.join(_RES, "default_presets_60.json")).read())
     except Exception:
-        return {}
+        pass
+    try:
+        user = json.loads(open(PRESET_60_FILE).read())
+        defaults.update(user)
+    except Exception:
+        pass
+    return defaults
 
 
 def _save_presets_60(presets):

@@ -4,14 +4,15 @@ Mountain Everest 60 Controller
 VID: 0x3282, PID: 0x0005 (ANSI) / 0x0006 (ISO)
 Protocol: HID Feature Reports on Interface 2
 
-Reverse-engineered from OpenRGB MountainKeyboard60Controller.
+Reverse-engineered from OpenRGB MountainKeyboard60Controller + FransM's findings.
 Report size: 65 bytes (Report ID 0x00 + 64 bytes data).
 Magic bytes [2..4] = 0x46 0x23 0xEA on every command.
 
 SetMode (cmd=0x16):
   [1]    = 0x16
   [2..4] = 0x46 0x23 0xEA
-  [5]    = effect code (activates the mode)
+  [5]    = 0x01
+  [9]    = effect code (activates the mode)
 
 SendModeDetails (cmd=0x17):
   [1]    = 0x17
@@ -19,17 +20,18 @@ SendModeDetails (cmd=0x17):
   [5]    = effect code
   [7]    = speed   × 25   (0/25/50/75/100)
   [8]    = brightness × 25
-  [9]    = color_mode (0=single, 1=rainbow cycle)
+  [9]    = color_mode (0=single, 2=rainbow cycle, 0x10=dual)
   [10]   = direction
   [12..14] = color1 R,G,B
   [15..17] = color2 R,G,B
 
-After set_report, get_report should echo cmd byte in resp[0].
+After set_report, get_report should echo cmd byte in resp[1].
 If not, retry (device may be busy).
 
 Direct color mode (custom per-key):
   Begin:  cmd=0x34, [5]=brightness×25, [6]=0xC0
-  Map:    cmd=0x35, [5]=stream_ctl (0x0E first, 0x0A rest), then 14 × RGBA (56 bytes)
+  Map:    cmd=0x35, [5]=stream_ctl (0x0E=more, 0x0A=last), then 14 × RGBI (56 bytes)
+          byte[3] of each entry = LED hardware index (LEDIDX mapping)
   End:    cmd=0x36
 """
 import sys
@@ -61,13 +63,29 @@ EFFECT_OFF       = 0x09
 
 # Color mode
 COLOR_SINGLE  = 0x00
-COLOR_RAINBOW = 0x01
+COLOR_RAINBOW = 0x02
+COLOR_DUAL    = 0x10
 
 # Direction values (Wave/Tornado)
 DIR_WAVE    = {"L→R": 0x00, "T→B": 0x02, "R→L": 0x04, "B→T": 0x06}
-DIR_TORNADO = {"CW": 0x00, "CCW": 0x01}
+DIR_TORNADO = {"CW": 0x0A, "CCW": 0x09}
 
 NUM_KEYS = 191
+
+# LED hardware index mapping — maps logical key position to firmware LED address.
+# WIP: based on FransM's reverse-engineering, some indices may need correction.
+LEDIDX = [
+    # Row 0: ESC  1    2    3    4    5    6    7    8    9    0    -    =   BSPC
+    0,   22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,
+    # Row 1: TAB  Q    W    E    R    T    Y    U    I    O    P    [    ]    \
+    42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,
+    # Row 2: CAPS A    S    D    F    G    H    J    K    L    ;    '   ENTER
+    63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  76,
+    # Row 3: LSFT Z    X    C    V    B    N    M    ,    .    /   RSFT  ↑   DEL
+    84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  97,  95,  56,
+    # Row 4: LCTL LWIN LALT SPC  RALT FN   ←    ↓    →
+    105, 106, 107, 110, 113, 115, 119, 120, 121,
+]
 
 
 def detect_model():
@@ -75,6 +93,7 @@ def detect_model():
     global PID
     if not HID_AVAILABLE:
         return None, None
+
     for pid, name in [(PID_ANSI, "Everest 60"), (PID_ISO, "Everest 60 ISO")]:
         for d in hid.enumerate(VID, pid):
             if d.get('interface_number') == INTERFACE:
@@ -103,14 +122,14 @@ def open_device():
 
 
 def _send(dev, buf, retries=3):
-    """Send feature report, verify response echoes cmd byte, retry if not."""
+    """Send feature report, verify response echoes cmd byte in resp[1], retry if not."""
     cmd = buf[1]
     for attempt in range(retries):
         dev.send_feature_report(bytes(buf))
         time.sleep(0.05)
         resp = dev.get_feature_report(0x00, 65)
         time.sleep(0.05)
-        if resp and len(resp) >= 2 and resp[0] == cmd:
+        if resp and len(resp) >= 2 and resp[1] == cmd:
             return resp
     return resp if 'resp' in dir() else None
 
@@ -138,25 +157,28 @@ def _speed_val(pct):
 
 def _send_mode(dev, effect, speed=50, brightness=100,
                r1=255, g1=255, b1=255, r2=0, g2=0, b2=0,
-               color_mode=COLOR_SINGLE, direction=0):
-    # Step 1: Send mode details (cmd 0x17) — effect code in [5]
+               color_mode=COLOR_DUAL, direction=0):
+    # Step 1: Switch mode (cmd 0x16) — activates the effect
+    buf = _make_buf(0x16)
+    buf[5] = 1
+    buf[9] = effect
+    _send(dev, buf)
+
+    # Step 2: Send mode details (cmd 0x17) — colors/speed/brightness
     buf = _make_buf(0x17)
     buf[5]  = effect
     buf[7]  = _speed_val(speed)
     buf[8]  = _brightness_val(brightness)
     buf[9]  = color_mode
     buf[10] = direction
-    buf[12] = r1 & 0xFF
-    buf[13] = g1 & 0xFF
-    buf[14] = b1 & 0xFF
-    buf[15] = r2 & 0xFF
-    buf[16] = g2 & 0xFF
-    buf[17] = b2 & 0xFF
-    _send(dev, buf)
-
-    # Step 2: Switch mode (cmd 0x16) — activates the effect
-    buf = _make_buf(0x16)
-    buf[5] = effect
+    if color_mode != COLOR_RAINBOW:
+        buf[12] = r1 & 0xFF
+        buf[13] = g1 & 0xFF
+        buf[14] = b1 & 0xFF
+        if color_mode == COLOR_DUAL:
+            buf[15] = r2 & 0xFF
+            buf[16] = g2 & 0xFF
+            buf[17] = b2 & 0xFF
     _send(dev, buf)
 
 
@@ -171,7 +193,7 @@ def set_lighting_off(brightness=100):
 def set_lighting_static(r, g, b, brightness=100):
     dev = open_device()
     try:
-        _send_mode(dev, EFFECT_STATIC, brightness=brightness,
+        _send_mode(dev, EFFECT_STATIC, color_mode=COLOR_SINGLE, brightness=brightness,
                    r1=r, g1=g, b1=b)
     finally:
         dev.close()
@@ -213,11 +235,11 @@ def set_lighting_wave_rainbow(brightness=100, speed=50, direction=0):
         dev.close()
 
 
-def set_lighting_tornado(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50, direction=0):
+def set_lighting_tornado(r=255, g=0, b=0, brightness=100, speed=50, direction=0):
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_TORNADO, speed=speed, brightness=brightness,
-                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2, direction=direction)
+                   color_mode=COLOR_SINGLE, r1=r, g1=g, b1=b, direction=10 - direction)
     finally:
         dev.close()
 
@@ -226,7 +248,7 @@ def set_lighting_tornado_rainbow(brightness=100, speed=50, direction=0):
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_TORNADO, speed=speed, brightness=brightness,
-                   color_mode=COLOR_RAINBOW, direction=direction)
+                   color_mode=COLOR_RAINBOW, direction=10 - direction)
     finally:
         dev.close()
 
@@ -250,39 +272,40 @@ def set_lighting_yeti(r=255, g=0, b=0, r2=0, g2=0, b2=255, brightness=100, speed
 
 
 def set_lighting_custom(colors, brightness=100):
-    """Set per-key RGB. colors: list of 191 (r,g,b) tuples."""
-    colors = list(colors)[:NUM_KEYS]
-    while len(colors) < NUM_KEYS:
+    """Set per-key RGB. colors: list of 64 (r,g,b) tuples mapped via LEDIDX."""
+    num_keys = len(LEDIDX)
+    colors = list(colors)[:num_keys]
+    while len(colors) < num_keys:
         colors.append((0, 0, 0))
 
     dev = open_device()
     try:
+        _send_mode(dev, EFFECT_CUSTOM, brightness=brightness, color_mode=0)
+
         # Begin
         buf = _make_buf(0x34)
         buf[5] = _brightness_val(brightness)
         buf[6] = 0xC0
         _send(dev, buf)
 
-        # Map — 14 RGBA colors per packet (65 - 6 header bytes = 59, 59//4 = 14)
+        # Map — 14 RGBI entries per packet (65 - 6 header bytes = 59, 59//4 = 14)
         COLORS_PER_PKT = 14
         idx = 0
-        pkt_no = 0
-        while idx < NUM_KEYS:
+        while idx < num_keys:
             buf = _make_buf(0x35)
-            buf[5] = 0x0E if pkt_no == 0 else 0x0A
             pos = 6
             count = 0
-            while idx < NUM_KEYS and count < COLORS_PER_PKT:
+            while idx < num_keys and count < COLORS_PER_PKT:
                 r, g, b = colors[idx]
                 buf[pos]     = r & 0xFF
                 buf[pos + 1] = g & 0xFF
                 buf[pos + 2] = b & 0xFF
-                buf[pos + 3] = 0xFF  # alpha/padding
+                buf[pos + 3] = LEDIDX[idx]
                 pos += 4
                 idx += 1
                 count += 1
+            buf[5] = 0x0A if idx == num_keys else 0x0E
             _send(dev, buf)
-            pkt_no += 1
 
         # End
         _send(dev, _make_buf(0x36))
@@ -363,13 +386,10 @@ def main():
                 r  = int(sub_args[1]) if len(sub_args) > 1 else 255
                 g  = int(sub_args[2]) if len(sub_args) > 2 else 0
                 b  = int(sub_args[3]) if len(sub_args) > 3 else 0
-                r2 = int(sub_args[4]) if len(sub_args) > 4 else 0
-                g2 = int(sub_args[5]) if len(sub_args) > 5 else 0
-                b2 = int(sub_args[6]) if len(sub_args) > 6 else 0
-                bri = int(sub_args[7]) if len(sub_args) > 7 else 100
-                spd = int(sub_args[8]) if len(sub_args) > 8 else 50
-                d   = int(sub_args[9]) if len(sub_args) > 9 else 0
-                set_lighting_tornado(r, g, b, r2, g2, b2, brightness=bri, speed=spd, direction=d)
+                bri = int(sub_args[4]) if len(sub_args) > 4 else 100
+                spd = int(sub_args[5]) if len(sub_args) > 5 else 50
+                d   = int(sub_args[6]) if len(sub_args) > 6 else 0
+                set_lighting_tornado(r, g, b, brightness=bri, speed=spd, direction=d)
             elif sub == "tornado-rainbow":
                 bri = int(sub_args[1]) if len(sub_args) > 1 else 100
                 spd = int(sub_args[2]) if len(sub_args) > 2 else 50
