@@ -82,7 +82,7 @@ LEDIDX = [
     # Row 2: CAPS A    S    D    F    G    H    J    K    L    ;    '   ENTER
     63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  76,
     # Row 3: LSFT Z    X    C    V    B    N    M    ,    .    /   RSFT  ↑   DEL
-    84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  97,  95,  56,
+    84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  97,  99,  56,
     # Row 4: LCTL LWIN LALT SPC  RALT FN   ←    ↓    →
     105, 106, 107, 110, 113, 115, 119, 120, 121,
 ]
@@ -288,21 +288,26 @@ def set_lighting_custom(colors, brightness=100):
         buf[6] = 0xC0
         _send(dev, buf)
 
-        # Map — 14 RGBI entries per packet (65 - 6 header bytes = 59, 59//4 = 14)
+        # Map — 14 RGBI entries per packet (65 - 9 header bytes = 56, 56//4 = 14)
         COLORS_PER_PKT = 14
         idx = 0
         while idx < num_keys:
             buf = _make_buf(0x35)
-            pos = 6
+            pos = 9
             count = 0
             while idx < num_keys and count < COLORS_PER_PKT:
                 r, g, b = colors[idx]
-                buf[pos]     = r & 0xFF
-                buf[pos + 1] = g & 0xFF
-                buf[pos + 2] = b & 0xFF
-                buf[pos + 3] = LEDIDX[idx]
+                buf[pos] = LEDIDX[idx]
+                buf[pos + 1] = r & 0xFF
+                buf[pos + 2] = g & 0xFF
+                buf[pos + 3] = b & 0xFF
                 pos += 4
                 idx += 1
+                count += 1
+            # fill remaining bytes
+            while count < COLORS_PER_PKT:
+                buf[pos] = 0xff
+                pos += 4
                 count += 1
             buf[5] = 0x0A if idx == num_keys else 0x0E
             _send(dev, buf)
