@@ -1,0 +1,8 @@
+{
+  "id": "dp_clock",
+  "name": "DisplayPad Clock",
+  "version": "1.0",
+  "author": "FransM",
+  "type": "service",
+  "description": "Live clock on a DisplayPad button"
+}
