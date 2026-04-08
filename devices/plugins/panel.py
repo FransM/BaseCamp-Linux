@@ -1,9 +1,18 @@
-"""Plugin Manager panel -- view, enable, disable installed plugins."""
+"""Plugin Manager panel -- view, enable, disable, install plugins."""
+import json
 import os
+import shutil
+import threading
+import urllib.request
+import zipfile
+import tempfile
 import customtkinter as ctk
 from PIL import Image
 
 from shared.ui_helpers import BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER
+from shared.config import CONFIG_DIR
+
+_PLUGINS_DIR = os.path.join(CONFIG_DIR, "plugins")
 
 # Type badge colors
 _TYPE_COLORS = {
@@ -52,11 +61,62 @@ class PluginManagerPanel(ctk.CTkFrame):
         self._list_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._list_frame.pack(fill="x", padx=8, pady=(0, 8))
 
-        # Restart hint (shown after enable/disable)
+        # Restart hint (shown after enable/disable/install)
         self._restart_lbl = ctk.CTkLabel(
             self, text="", font=("Helvetica", 10, "bold"),
             text_color=YLW)
-        self._restart_lbl.pack(fill="x", padx=16, pady=(0, 10))
+        self._restart_lbl.pack(fill="x", padx=16, pady=(0, 4))
+
+        # Install section
+        install_frame = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
+        install_frame.pack(fill="x", padx=16, pady=(4, 4))
+
+        install_hdr = ctk.CTkFrame(install_frame, fg_color="transparent")
+        install_hdr.pack(fill="x", padx=10, pady=(8, 4))
+
+        self._install_title = ctk.CTkLabel(
+            install_hdr, text=self.T("pluginmgr_install"),
+            font=("Helvetica", 11, "bold"), text_color=FG)
+        self._install_title.pack(side="left")
+
+        self._install_hint = ctk.CTkLabel(
+            install_frame, text=self.T("pluginmgr_install_hint"),
+            font=("Helvetica", 9), text_color=FG2)
+        self._install_hint.pack(fill="x", padx=10, pady=(0, 4))
+
+        input_row = ctk.CTkFrame(install_frame, fg_color="transparent")
+        input_row.pack(fill="x", padx=10, pady=(0, 8))
+
+        self._install_entry = ctk.CTkEntry(
+            input_row, placeholder_text=self.T("pluginmgr_install_url"),
+            fg_color=BG3, border_color=BORDER, text_color=FG,
+            font=("Helvetica", 10), height=28)
+        self._install_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+        self._browse_btn = ctk.CTkButton(
+            input_row, text=self.T("pluginmgr_install_browse"),
+            font=("Helvetica", 9), fg_color=BG3, hover_color=BORDER,
+            text_color=FG2, height=28, width=70, corner_radius=4,
+            command=self._browse_folder)
+        self._browse_btn.pack(side="left", padx=(0, 4))
+
+        self._install_btn = ctk.CTkButton(
+            input_row, text=self.T("pluginmgr_install_btn"),
+            font=("Helvetica", 10, "bold"),
+            fg_color=BLUE, hover_color="#0284c7", text_color=FG,
+            height=28, width=80, corner_radius=4,
+            command=self._do_install)
+        self._install_btn.pack(side="left")
+
+        self._install_status = ctk.CTkLabel(
+            install_frame, text="", font=("Helvetica", 9), text_color=FG2)
+        self._install_status.pack(fill="x", padx=10, pady=(0, 6))
+
+        # More plugins link
+        self._more_lbl = ctk.CTkLabel(
+            self, text=self.T("pluginmgr_more"),
+            font=("Helvetica", 9), text_color=FG2)
+        self._more_lbl.pack(fill="x", padx=16, pady=(2, 10))
 
         self._populate()
 
@@ -278,9 +338,164 @@ class PluginManagerPanel(ctk.CTkFrame):
         self._restart_lbl.configure(text=self.T("pluginmgr_restart"))
         self._populate()
 
+    # ── Install ──────────────────────────────────────────────────────────────
+
+    def _browse_folder(self):
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="Select plugin folder")
+        if path:
+            self._install_entry.delete(0, "end")
+            self._install_entry.insert(0, path)
+
+    def _do_install(self):
+        src = self._install_entry.get().strip()
+        if not src:
+            return
+        self._install_btn.configure(state="disabled")
+        self._install_status.configure(text="Installing...", text_color=YLW)
+
+        if os.path.isdir(src):
+            # Local folder
+            self._install_from_folder(src)
+        elif "github.com" in src:
+            # GitHub URL — download in background
+            threading.Thread(target=self._install_from_github, args=(src,),
+                             daemon=True).start()
+        else:
+            self._install_btn.configure(state="normal")
+            self._install_status.configure(
+                text=self.T("pluginmgr_install_fail", err="Not a folder or GitHub URL"),
+                text_color=RED)
+
+    def _install_from_folder(self, src):
+        """Install plugin from a local folder."""
+        try:
+            manifest_path = os.path.join(src, "plugin.json")
+            if not os.path.isfile(manifest_path):
+                self._install_status.configure(
+                    text=self.T("pluginmgr_install_fail", err="No plugin.json found"),
+                    text_color=RED)
+                self._install_btn.configure(state="normal")
+                return
+
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            pid = manifest.get("id", "")
+            if not pid:
+                self._install_status.configure(
+                    text=self.T("pluginmgr_install_fail", err="No id in plugin.json"),
+                    text_color=RED)
+                self._install_btn.configure(state="normal")
+                return
+
+            dest = os.path.join(_PLUGINS_DIR, pid)
+            if os.path.exists(dest):
+                # Overwrite existing (update)
+                shutil.rmtree(dest)
+
+            shutil.copytree(src, dest)
+            # Remove __pycache__ if copied
+            cache = os.path.join(dest, "__pycache__")
+            if os.path.isdir(cache):
+                shutil.rmtree(cache)
+
+            self._install_status.configure(
+                text=self.T("pluginmgr_install_ok"), text_color=GRN)
+            self._restart_lbl.configure(text=self.T("pluginmgr_restart"))
+            self._install_btn.configure(state="normal")
+
+            # Re-discover to show the new plugin in the list
+            self._app._plugin_manager.discover()
+            self._populate()
+
+        except Exception as e:
+            self._install_status.configure(
+                text=self.T("pluginmgr_install_fail", err=str(e)),
+                text_color=RED)
+            self._install_btn.configure(state="normal")
+
+    def _install_from_github(self, url):
+        """Download plugin from GitHub and install. Runs in background thread."""
+        try:
+            # Convert GitHub URL to zip download URL
+            # Supports: github.com/user/repo/tree/branch/path/to/plugin
+            #           github.com/user/repo
+            url = url.rstrip("/")
+            if "github.com" not in url:
+                raise ValueError("Not a GitHub URL")
+
+            # Parse owner/repo and optional path
+            parts = url.split("github.com/", 1)[1].split("/")
+            owner = parts[0]
+            repo = parts[1] if len(parts) > 1 else ""
+            branch = "main"
+            subpath = ""
+
+            if len(parts) > 3 and parts[2] == "tree":
+                branch = parts[3]
+                subpath = "/".join(parts[4:]) if len(parts) > 4 else ""
+
+            # Download repo as zip
+            zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
+            tmp = tempfile.mkdtemp()
+            zip_path = os.path.join(tmp, "repo.zip")
+
+            req = urllib.request.Request(zip_url)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                with open(zip_path, "wb") as f:
+                    f.write(resp.read())
+
+            # Extract
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp)
+
+            # Find the plugin folder
+            extracted_root = os.path.join(tmp, f"{repo}-{branch}")
+            if subpath:
+                plugin_dir = os.path.join(extracted_root, subpath)
+            else:
+                # Look for plugin.json in root or first subfolder
+                if os.path.isfile(os.path.join(extracted_root, "plugin.json")):
+                    plugin_dir = extracted_root
+                else:
+                    # Check subfolders
+                    plugin_dir = None
+                    for d in os.listdir(extracted_root):
+                        candidate = os.path.join(extracted_root, d)
+                        if os.path.isdir(candidate) and os.path.isfile(
+                                os.path.join(candidate, "plugin.json")):
+                            plugin_dir = candidate
+                            break
+                    if not plugin_dir:
+                        raise FileNotFoundError("No plugin.json found in repository")
+
+            # Install from the found folder
+            self.after(0, lambda: self._install_from_folder(plugin_dir))
+
+            # Cleanup temp dir after a delay
+            def _cleanup():
+                try:
+                    shutil.rmtree(tmp, ignore_errors=True)
+                except Exception:
+                    pass
+            self.after(5000, _cleanup)
+
+        except Exception as e:
+            self.after(0, lambda: [
+                self._install_status.configure(
+                    text=self.T("pluginmgr_install_fail", err=str(e)),
+                    text_color=RED),
+                self._install_btn.configure(state="normal")
+            ])
+
     # ── i18n ──────────────────────────────────────────────────────────────────
 
     def apply_lang(self):
         self._title_lbl.configure(text=self.T("pluginmgr_title"))
         self._hint_lbl.configure(text=self.T("pluginmgr_hint"))
+        self._install_title.configure(text=self.T("pluginmgr_install"))
+        self._install_hint.configure(text=self.T("pluginmgr_install_hint"))
+        self._install_btn.configure(text=self.T("pluginmgr_install_btn"))
+        self._browse_btn.configure(text=self.T("pluginmgr_install_browse"))
+        self._more_lbl.configure(text=self.T("pluginmgr_more"))
         self._populate()

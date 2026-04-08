@@ -733,6 +733,9 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._browse_btns  = []
         self._obs_combos   = []
         self._macro_combos = []
+        self._hue_combos   = []
+        self._hue_values_map = []
+        self._hue_bri_target = {}  # idx -> "group:1" or "light:3"
         self._cards       = []
 
         self._build_ui()
@@ -794,6 +797,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             # Always reset layout
             self._obs_combos[i].pack_forget()
             self._macro_combos[i].pack_forget()
+            self._hue_combos[i].pack_forget()
             self._cmd_entries[i].pack_forget()
             self._browse_btns[i].pack_forget()
             self._cmd_entries[i].pack(side="left", padx=4, expand=True, fill="x")
@@ -845,6 +849,26 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     self._browse_btns[i].pack_forget()
                     self._populate_macro_combo(self._macro_combos[i], cmd, btn_idx=i)
                     self._macro_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+                # "hue_toggle" / "hue_scene": show hue picker
+                elif btype in ("hue_toggle", "hue_scene"):
+                    self._cmd_entries[i].pack_forget()
+                    self._browse_btns[i].pack_forget()
+                    self._populate_hue_combo(self._hue_combos[i], btype, cmd, btn_idx=i)
+                    self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+                # "hue_bri": combo for light/group + entry for %
+                elif btype == "hue_bri":
+                    self._browse_btns[i].pack_forget()
+                    # Split "group:1:50" into target "group:1" + pct "50"
+                    if cmd.count(":") >= 2:
+                        target = cmd.rsplit(":", 1)[0]
+                        pct = cmd.rsplit(":", 1)[1]
+                    else:
+                        target, pct = "", "50"
+                    self._hue_bri_target[i] = target
+                    self._populate_hue_combo(self._hue_combos[i], btype, target, btn_idx=None)
+                    self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+                    self._cmd_entries[i].configure(state="normal", placeholder_text="%")
+                    self._act_cmd[i].set(pct)
 
         # Update page selector
         self._page_selector.set(
@@ -925,6 +949,15 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._macro_combos.append(macro_combo)
             # not packed yet — shown only when macro type selected
 
+            hue_combo = ctk.CTkComboBox(
+                row, values=[], width=140, height=30,
+                font=("Helvetica", 11),
+                fg_color=BG2, button_color=BLUE, border_color=BORDER,
+                text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
+                dropdown_hover_color=BG3,
+                command=lambda val, ix=i: self._on_hue_select(val, ix))
+            self._hue_combos.append(hue_combo)
+
             folder_btn = ctk.CTkButton(
                 row, text="", image=self._folder_img_dim,
                 width=30, height=30,
@@ -968,9 +1001,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         else:
             btn.configure(state="disabled", image=self._folder_img_dim)
 
-        # Show/hide OBS combo / macro combo vs entry+browse
+        # Show/hide OBS combo / macro combo / hue combo vs entry+browse
         self._obs_combos[idx].pack_forget()
         self._macro_combos[idx].pack_forget()
+        self._hue_combos[idx].pack_forget()
         self._cmd_entries[idx].pack_forget()
         self._browse_btns[idx].pack_forget()
         if internal == "obs":
@@ -990,6 +1024,21 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         elif internal == "macro":
             self._populate_macro_combo(self._macro_combos[idx], self._act_cmd[idx].get(), btn_idx=idx)
             self._macro_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
+        elif internal in ("hue_toggle", "hue_scene"):
+            self._populate_hue_combo(self._hue_combos[idx], internal, self._act_cmd[idx].get(), btn_idx=idx)
+            self._hue_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
+        elif internal == "hue_bri":
+            # Split stored value "group:1:50" into target "group:1" + pct "50"
+            cur = self._act_cmd[idx].get()
+            parts = cur.rsplit(":", 1) if cur.count(":") >= 2 else (cur, "50")
+            target, pct = parts[0], parts[1] if len(parts) > 1 else "50"
+            self._populate_hue_combo(self._hue_combos[idx], internal, target, btn_idx=None)
+            self._hue_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
+            self._cmd_entries[idx].pack(side="left", padx=(0, 4), fill="x")
+            self._cmd_entries[idx].configure(state="normal", placeholder_text="%")
+            self._act_cmd[idx].set(pct)
+            # Rebuild full value when combo changes
+            self._hue_bri_target[idx] = target
         else:
             self._cmd_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
             self._browse_btns[idx].pack(side="left", padx=(0, 4))
@@ -1048,6 +1097,91 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, IndexError):
             pass
         self._apply(idx)
+
+    def _populate_hue_combo(self, combo, hue_type, current_val="", btn_idx=None):
+        """Build dropdown values for hue_toggle or hue_scene from the Hue plugin state."""
+        pm = getattr(self._app, "_plugin_manager", None)
+        hue = None
+        if pm:
+            hue = pm._instances.get("hue_control")
+        items = []       # display labels
+        values_map = []  # internal values (light:1, group:2, ...)
+        if hue_type == "hue_toggle":
+            # Groups first, then lights
+            if hue and hue._groups:
+                for gid in sorted(hue._groups, key=lambda g: hue._groups[g].get("name", "")):
+                    name = hue._groups[gid].get("name", f"Group {gid}")
+                    items.append(f"\u25CF {name}")
+                    values_map.append(f"group:{gid}")
+            if hue and hue._lights:
+                for lid in sorted(hue._lights, key=lambda l: hue._lights[l].get("name", "")):
+                    name = hue._lights[lid].get("name", f"Light {lid}")
+                    items.append(f"\u2022 {name}")
+                    values_map.append(f"light:{lid}")
+        elif hue_type == "hue_scene":
+            if hue and hue._scenes:
+                for sid in sorted(hue._scenes, key=lambda s: hue._scenes[s].get("name", "")):
+                    sinfo = hue._scenes[sid]
+                    name = sinfo.get("name", f"Scene {sid}")
+                    gid = sinfo.get("group", "")
+                    gname = hue._groups.get(gid, {}).get("name", "") if hue else ""
+                    lbl = f"{name} ({gname})" if gname else name
+                    items.append(lbl)
+                    values_map.append(f"{gid}:{sid}")
+        elif hue_type == "hue_bri":
+            # Same list as toggle — just groups + lights
+            if hue and hue._groups:
+                for gid in sorted(hue._groups, key=lambda g: hue._groups[g].get("name", "")):
+                    name = hue._groups[gid].get("name", f"Group {gid}")
+                    items.append(f"\u25CF {name}")
+                    values_map.append(f"group:{gid}")
+            if hue and hue._lights:
+                for lid in sorted(hue._lights, key=lambda l: hue._lights[l].get("name", "")):
+                    name = hue._lights[lid].get("name", f"Light {lid}")
+                    items.append(f"\u2022 {name}")
+                    values_map.append(f"light:{lid}")
+
+        self._hue_values_map = values_map
+        if not items:
+            items = ["(no Hue lights found)"]
+            self._hue_values_map = []
+        combo.configure(values=items)
+        # Restore current selection
+        if current_val and current_val in values_map:
+            combo.set(items[values_map.index(current_val)])
+        elif items and self._hue_values_map:
+            combo.set(items[0])
+            if btn_idx is not None:
+                self._act_cmd[btn_idx].set(values_map[0])
+
+    def _on_hue_select(self, val, idx):
+        items = self._hue_combos[idx].cget("values")
+        try:
+            pos = list(items).index(val) if isinstance(items, (list, tuple)) else 0
+            if pos < len(self._hue_values_map):
+                target = self._hue_values_map[pos]
+                if self._act_type[idx].get() == "hue_bri":
+                    # Store target, entry field holds the %
+                    self._hue_bri_target[idx] = target
+                    self._assemble_hue_bri(idx)
+                else:
+                    self._act_cmd[idx].set(target)
+        except (ValueError, IndexError):
+            pass
+        self._apply(idx)
+
+    def _assemble_hue_bri(self, idx):
+        """Combine hue_bri target + entry percentage into full value."""
+        target = self._hue_bri_target.get(idx, "")
+        pct = self._act_cmd[idx].get().strip().replace("%", "")
+        try:
+            pct = max(0, min(100, int(pct)))
+        except ValueError:
+            pct = 50
+        # Temporarily store full value — entry shows only the number
+        self._act_cmd[idx].set(str(pct))
+        # The actual saved value needs target:pct
+        return f"{target}:{pct}" if target else ""
 
     def _browse(self, idx):
         btype = self._act_type[idx].get()
@@ -1110,6 +1244,15 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
     def _apply(self, idx):
         btype  = self._act_type[idx].get()
         action = self._act_cmd[idx].get().strip()
+        # For hue_bri, assemble "target:pct" from combo + entry
+        if btype == "hue_bri":
+            target = self._hue_bri_target.get(idx, "")
+            pct = action.replace("%", "").strip()
+            try:
+                pct = str(max(0, min(100, int(pct))))
+            except ValueError:
+                pct = "50"
+            action = f"{target}:{pct}" if target else ""
         self._panel._save_page_action(self._page, idx, btype, action)
         self._info_lbl.configure(
             text=self._app.T("dp_act_saved", k=idx + 1), text_color=GRN)

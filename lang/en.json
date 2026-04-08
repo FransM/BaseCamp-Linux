@@ -321,5 +321,14 @@
   "pluginmgr_not_loaded": "Not loaded",
   "pluginmgr_enable": "Enable",
   "pluginmgr_disable": "Disable",
-  "pluginmgr_restart": "Restart the app for full effect (panel changes)"
+  "pluginmgr_restart": "Restart the app for full effect (panel changes)",
+  "pluginmgr_install": "Install Plugin",
+  "pluginmgr_install_hint": "Paste a GitHub URL or browse to a plugin folder",
+  "pluginmgr_install_url": "GitHub URL or folder path",
+  "pluginmgr_install_browse": "Browse",
+  "pluginmgr_install_btn": "Install",
+  "pluginmgr_install_ok": "Plugin installed! Restart to activate.",
+  "pluginmgr_install_fail": "Installation failed: {err}",
+  "pluginmgr_install_exists": "Plugin already exists: {pid}",
+  "pluginmgr_more": "More plugins: github.com/Ramisotti/basecamp-plugins"
 }
