@@ -51,6 +51,9 @@ DISPLAYPAD_ROTATION_FILE    = os.path.join(CONFIG_DIR, "displaypad_rotation")
 DISPLAYPAD_BRIGHTNESS_FILE  = os.path.join(CONFIG_DIR, "displaypad_brightness")
 MACROS_FILE                 = os.path.join(CONFIG_DIR, "macros.json")
 MOUSE_RECORDINGS_DIR        = os.path.join(CONFIG_DIR, "mouse_recordings")
+PLUGINS_DIR                 = os.path.join(CONFIG_DIR, "plugins")
+PLUGINS_DISABLED_FILE       = os.path.join(CONFIG_DIR, "plugins_disabled.json")
+os.makedirs(PLUGINS_DIR, exist_ok=True)
 
 # Keep these for backward compatibility in code that imports them by old names
 RGB_PRESETS_FILE = PRESET_FILE

@@ -743,6 +743,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         w, h = self.winfo_width(), self.winfo_height()
         self.geometry(f"+{pw - w//2}+{ph - h//2}")
 
+    def _get_action_types(self, include_page=True):
+        """Return list of internal action type IDs, including plugin types."""
+        base = list(_ACTION_TYPES) if include_page else [t for t in _ACTION_TYPES if t != "page"]
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm:
+            base.extend(pm.get_action_type_ids())
+        return base
+
     def _type_labels(self, include_page=True):
         labels = [self._app.T("action_type_none"), self._app.T("action_type_shell"),
                   self._app.T("action_type_url"),  self._app.T("action_type_folder"),
@@ -751,6 +759,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             labels.append(self._app.T("action_type_page"))
         labels.append("OBS")
         labels.append(self._app.T("action_type_macro"))
+        # Append plugin action labels
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm:
+            for _tid, lbl in pm.get_action_type_labels():
+                labels.append(lbl)
         return labels
 
     def _load_page(self, page):
@@ -760,7 +773,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         is_sub = page != 0
         include_page = not is_sub  # "page" type only on main
         labels = self._type_labels(include_page)
-        types_for_page = _ACTION_TYPES if not is_sub else [t for t in _ACTION_TYPES if t != "page"]
+        types_for_page = self._get_action_types(include_page=not is_sub)
 
         for i in range(12):
             act = actions[i] if i < len(actions) else {"type": "none", "action": ""}
@@ -936,7 +949,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
     def _on_type_change(self, label, idx):
         is_sub = self._page != 0
-        types = [t for t in _ACTION_TYPES if t != "page"] if is_sub else _ACTION_TYPES
+        types = self._get_action_types(include_page=not is_sub)
         labels = self._type_labels(include_page=not is_sub)
         try:
             internal = types[labels.index(label)]
@@ -1281,7 +1294,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                 img = (_make_gif_thumb(path, _PANEL_TILE, self._rotation) if is_gif
                        else _make_thumb(path, _PANEL_TILE, self._rotation))
             else:
-                img = ph
+                img = self._make_action_tile(idx) if hasattr(self, '_make_action_tile') else ph
             self._tile_imgs[idx] = img
 
             lbl = ctk.CTkLabel(overview, image=img, text="",
@@ -1575,6 +1588,14 @@ class DisplayPadPanel(ctk.CTkFrame):
                         target=execute_macro, args=(macro, stop_ev),
                         daemon=True).start()
             return
+        # Plugin action types
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm:
+            handler = pm.get_action_handler(btype)
+            if handler:
+                import threading
+                threading.Thread(target=handler, args=(action,), daemon=True).start()
+                return
         if btype == "none" or not action:
             return
         try:
@@ -1726,9 +1747,50 @@ class DisplayPadPanel(ctk.CTkFrame):
                 img = (_make_gif_thumb(path, _PANEL_TILE, rot) if is_gif
                        else _make_thumb(path, _PANEL_TILE, rot))
             else:
-                img = _make_placeholder(_PANEL_TILE)
+                img = self._make_action_tile(idx)
         self._tile_imgs[idx] = img
         self._tile_lbls[idx].configure(image=img)
+
+    def _make_action_tile(self, idx):
+        """Create a tile preview showing the action type icon if a plugin action
+        is assigned, otherwise show the default placeholder."""
+        from shared.config import _load_displaypad_actions
+        try:
+            actions = _load_displaypad_actions()
+            act = actions[idx] if idx < len(actions) else {}
+        except Exception:
+            act = {}
+        btype = act.get("type", "none")
+
+        # Check if it's a plugin action type
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm and btype in pm.get_action_type_ids():
+            # Get the label for this plugin action
+            label = btype
+            for tid, lbl in pm.get_action_type_labels():
+                if tid == btype:
+                    label = lbl
+                    break
+            return self._render_plugin_tile(label)
+
+        return _make_placeholder(_PANEL_TILE)
+
+    def _render_plugin_tile(self, label):
+        """Render a small tile with a plugin icon and label."""
+        size = _PANEL_TILE
+        img = Image.new("RGB", (size, size), (20, 30, 50))
+        draw = ImageDraw.Draw(img)
+        # Plugin icon (small gear/puzzle symbol)
+        draw.rectangle([2, 2, size - 3, size - 3], outline=(14, 165, 233), width=1)
+        # Wrap label into short lines
+        words = label.split()
+        y = 8
+        for w in words[:3]:
+            if len(w) > 8:
+                w = w[:7] + "."
+            draw.text((6, y), w, fill=(200, 200, 220))
+            y += 12
+        return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
     def _get_locked_indices(self):
         """Return set of button indices that must not be overwritten by fullscreen GIF.
@@ -2032,3 +2094,48 @@ class DisplayPadPanel(ctk.CTkFrame):
         if not self._uploading and not self._animating:
             self._info_label.configure(
                 text=self.T("dp_disconnected"), text_color=FG2)
+
+    # ── Plugin API ────────────────────────────────────────────────────────────
+
+    def push_plugin_image(self, key_index, pil_image):
+        """Upload a 102x102 PIL Image to a DisplayPad button. Thread-safe.
+        Called by plugins to display live widgets on buttons.
+        pil_image: PIL Image (any size, will be resized to 102x102).
+        key_index: 0-11 (K1-K12).
+
+        If a GIF animation is running, the image is queued into the animation
+        loop. Otherwise a standalone upload thread is spawned.
+        """
+        if not (0 <= key_index <= 11):
+            return
+        img = pil_image.convert("RGB").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
+        rot = self._rotation
+        if rot:
+            img = img.rotate(-rot, expand=False)
+        b, g, r = img.split()
+        bgr_bytes = Image.merge("RGB", (b, g, r)).tobytes()
+
+        if self._animating or self._uploading:
+            # Worker thread owns the device -- queue the image
+            self._upload_queue.put((key_index, bgr_bytes, None))
+        elif self._device_present:
+            # Device connected but no worker running -- open briefly
+            threading.Thread(
+                target=self._plugin_upload_worker,
+                args=(key_index, bgr_bytes), daemon=True).start()
+
+    def _plugin_upload_worker(self, key_index, bgr_bytes):
+        """Background thread: open device, upload one button, close.
+        If the device is busy (animation running), queue instead."""
+        try:
+            usb_dev, hid_dev = _open_interfaces()
+            try:
+                _init_device(hid_dev)
+                _upload_button(usb_dev, hid_dev, key_index, bgr_bytes)
+            finally:
+                _close_interfaces(usb_dev, hid_dev)
+        except OSError:
+            # Device busy (animation/upload in progress) -- queue for later
+            self._upload_queue.put((key_index, bgr_bytes, None))
+        except Exception as e:
+            print(f"[Plugin] DisplayPad upload failed: {e}", flush=True)

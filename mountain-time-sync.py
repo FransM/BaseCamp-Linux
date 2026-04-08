@@ -843,6 +843,17 @@ def _execute_obs_action(btn_cfg, obs_cfg, obs_holder):
         print(f"OBS error: {e}", flush=True)
         obs_holder[0] = None  # reconnect next time
 
+def _plugin_action_handler(btype, action):
+    """Try to dispatch a button action via plugin system. Returns True if handled.
+    Note: The controller runs as a subprocess without GUI access, so plugin actions
+    registered at runtime are not available here. This is a stub that reads
+    plugin action configs from disk if any plugins register persistent handlers."""
+    # Plugin actions are dispatched via the GUI (DisplayPad/panel.py) or via
+    # a plugin's own service (e.g. socket server). The controller subprocess
+    # only handles built-in types. Return False to fall through to default.
+    return False
+
+
 def controller_loop(style=STYLE_ANALOG):
     """Main loop: CPU display + time sync + numpad button monitoring."""
     dev = usb.core.find(idVendor=VID, idProduct=PID)
@@ -951,6 +962,8 @@ def controller_loop(style=STYLE_ANALOG):
                                     daemon=True).start()
                         else:
                             print(f"[Macro] UUID '{action}' not found in {list(all_macros.keys())}")
+                    elif btype != "none" and action and _plugin_action_handler(btype, action):
+                        pass  # handled by plugin
                     elif action and btype != "none":
                         sudo_user = os.environ.get("SUDO_USER")
                         if sudo_user:

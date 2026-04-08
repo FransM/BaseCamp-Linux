@@ -159,6 +159,37 @@ OBS connection settings are managed in a dedicated **OBS Studio tab** — separa
 
 ---
 
+## Plugins
+
+BaseCamp Linux has a **plugin system** that lets you extend the app without modifying core files. Plugins are loaded from `~/.config/mountain-time-sync/plugins/` on startup.
+
+### What plugins can do
+
+- **Panel plugins** — Add a new tab to the switcher bar with custom GUI content
+- **Action plugins** — Register new button action types for DisplayPad (K1-K12) and Everest Max (D1-D4)
+- **Service plugins** — Run background tasks that start with the app and stop on shutdown
+- **DisplayPad widgets** — Render live images onto DisplayPad buttons (e.g. live data, status indicators)
+- **Combined** — A single plugin can be all of the above at once
+
+### Plugin Manager
+
+The **Plugins** tab in the app shows all installed plugins with status, type badges and an enable/disable toggle. No restart needed to disable a plugin.
+
+### Included: Now Playing
+
+A bundled **Now Playing** plugin shows what's currently playing in your browser (YouTube, Spotify, etc.) via MPRIS:
+
+- Panel with title, artist, progress bar, play/pause, volume/mute
+- Live widget on any DisplayPad button
+- Play/pause action type for button assignment
+- Requires `playerctl` (`sudo dnf install playerctl` / `sudo apt install playerctl` / `sudo pacman -S playerctl`)
+
+### Writing your own plugins
+
+See **[PLUGINS.md](PLUGINS.md)** for the full plugin development guide with API reference, styling guide, thread safety rules, and complete example plugins.
+
+---
+
 ## Keyboard — Everest Max
 
 The keyboard panel is split into a persistent **dashboard** at the top and collapsible sections below:

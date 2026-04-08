@@ -86,6 +86,9 @@ from devices.makalu67.panel import Makalu67Panel
 from devices.displaypad.panel import DisplayPadPanel
 from devices.obs.panel import OBSPanel
 from devices.macros.panel import MacroPanel
+from devices.plugins.panel import PluginManagerPanel
+from shared.plugins import PluginManager
+from shared.plugin_api import PluginContext
 
 # ── Keep backward-compatible module-level names used by existing code ──────────
 
@@ -210,6 +213,12 @@ class App(ctk.CTk):
         self._kb_panel_id   = "everest_max"   # which keyboard panel is active
         self._dev_present   = {"everest_max": False, "everest60": False,
                                "makalu67": False, "displaypad": False, "obs": False}
+
+        # Plugin system
+        self._plugin_manager = PluginManager()
+        self._plugin_manager.discover()
+        self._plugin_ctx = PluginContext(self, self._plugin_manager)
+        self._plugin_manager.load_all(self._plugin_ctx)
 
         self._build_ui()
 
@@ -431,9 +440,16 @@ class App(ctk.CTk):
         self._sw_macros_btn = ctk.CTkButton(
             row2, text="Macros", font=("Helvetica", 11, "bold"),
             fg_color=BG2, hover_color="#222232", text_color=FG2,
-            height=28, corner_radius=4, width=110,
+            height=28, corner_radius=4, width=90,
             command=lambda: self._switch_device("macros"))
         self._sw_macros_btn.pack(side="left", padx=4)
+
+        self._sw_plugins_btn = ctk.CTkButton(
+            row2, text="Plugins", font=("Helvetica", 11, "bold"),
+            fg_color=BG2, hover_color="#222232", text_color=FG2,
+            height=28, corner_radius=4, width=90,
+            command=lambda: self._switch_device("plugins"))
+        self._sw_plugins_btn.pack(side="left", padx=4)
 
         # ── Panel area ──
         self._panel_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
@@ -446,6 +462,7 @@ class App(ctk.CTk):
         self._everest60_panel   = Everest60Panel(self._panel_area, self)
         self._makalu_panel      = Makalu67Panel(self._panel_area, self)
         self._displaypad_panel  = DisplayPadPanel(self._panel_area, self)
+        self._plugins_panel     = PluginManagerPanel(self._panel_area, self)
 
         self._panels = {
             "everest_max": self._everest_panel,
@@ -454,7 +471,32 @@ class App(ctk.CTk):
             "displaypad":  self._displaypad_panel,
             "obs":         self._obs_panel,
             "macros":      self._macro_panel,
+            "plugins":     self._plugins_panel,
         }
+
+        # ── Plugin panels ──
+        self._plugin_sw_btns = {}
+        plugin_panels = list(self._plugin_manager.get_panel_plugins())
+        if plugin_panels:
+            row3 = ctk.CTkFrame(switcher, fg_color="transparent")
+            row3.pack(pady=(2, 4))
+            for pid, info, inst in plugin_panels:
+                try:
+                    panel = inst.create_panel(self._panel_area)
+                    self._panels[pid] = panel
+                    label = getattr(inst, "panel_label", info.get("name", pid))
+                    btn = ctk.CTkButton(
+                        row3, text=label, font=("Helvetica", 11, "bold"),
+                        fg_color=BG2, hover_color="#222232", text_color=FG2,
+                        height=28, corner_radius=4, width=110,
+                        command=lambda p=pid: self._switch_device(p))
+                    btn.pack(side="left", padx=4)
+                    self._plugin_sw_btns[pid] = btn
+                except Exception as e:
+                    print(f"[Plugin] Failed to create panel for {pid}: {e}")
+
+        # Start plugin services after UI is ready
+        self.after(100, self._plugin_manager.start_services)
 
         # Show keyboard panel by default
         self._switch_device("everest_max")
@@ -473,6 +515,27 @@ class App(ctk.CTk):
 
         # Update switcher button styles
         self._refresh_switcher_colors()
+
+        # Force CTkButtons/widgets to redraw — CTk skips internal canvas
+        # draw for widgets that were built while their panel was hidden
+        self.after(20, self._redraw_panel_widgets, device_id)
+
+    def _redraw_panel_widgets(self, device_id):
+        """Walk the active panel and force _draw() on all CTk widgets."""
+        panel = self._panels.get(device_id)
+        if not panel or not panel.winfo_exists():
+            return
+        self._force_draw_children(panel)
+
+    def _force_draw_children(self, widget):
+        """Recursively call _draw() on CTk widgets that have it."""
+        if hasattr(widget, "_draw") and callable(widget._draw):
+            try:
+                widget._draw()
+            except Exception:
+                pass
+        for child in widget.winfo_children():
+            self._force_draw_children(child)
 
     # ── Controller delegation ─────────────────────────────────────────────────
 
@@ -558,12 +621,18 @@ class App(ctk.CTk):
         else:
             self._sw_keyboard_btn.configure(fg_color=BG2, text_color=FG2)
 
-        for dev_id, btn in [
+        btn_list = [
             ("makalu67",   self._sw_mouse_btn),
             ("displaypad", self._sw_displaypad_btn),
             ("obs",        self._sw_obs_btn),
             ("macros",     self._sw_macros_btn),
-        ]:
+            ("plugins",    self._sw_plugins_btn),
+        ]
+        # Include plugin switcher buttons
+        for pid, btn in getattr(self, "_plugin_sw_btns", {}).items():
+            btn_list.append((pid, btn))
+
+        for dev_id, btn in btn_list:
             active  = self._active_device == dev_id
             present = self._dev_present.get(dev_id, False)
             if active:
@@ -654,6 +723,9 @@ class App(ctk.CTk):
                 self._everest_panel._cpu_proc.terminate()
         if hasattr(self, "_tray_proc") and self._tray_proc.poll() is None:
             self._tray_proc.terminate()
+        # Shutdown plugins
+        if hasattr(self, "_plugin_manager"):
+            self._plugin_manager.shutdown()
         # Give HID threads time to close their devices before tearing down
         import time
         time.sleep(0.4)

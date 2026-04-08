@@ -322,11 +322,23 @@ class EverestMaxPanel(ctk.CTkFrame):
 
         _TYPE_INTERNAL = ["none", "shell", "url", "folder", "app", "obs", "macro"]
 
+        def _type_internal_dynamic():
+            base = list(_TYPE_INTERNAL)
+            pm = getattr(self._app, "_plugin_manager", None)
+            if pm:
+                base.extend(pm.get_action_type_ids())
+            return base
+
         def _type_labels():
-            return [self.T("action_type_none"),   self.T("action_type_shell"),
+            labels = [self.T("action_type_none"),   self.T("action_type_shell"),
                     self.T("action_type_url"),     self.T("action_type_folder"),
                     self.T("action_type_app"),     "OBS",
                     self.T("action_type_macro")]
+            pm = getattr(self._app, "_plugin_manager", None)
+            if pm:
+                for _tid, lbl in pm.get_action_type_labels():
+                    labels.append(lbl)
+            return labels
 
         _HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _FROZEN = getattr(sys, "frozen", False)
@@ -361,7 +373,8 @@ class EverestMaxPanel(ctk.CTkFrame):
             idx = i
             cur_internal = self._btn_type[i].get()
             labels       = _type_labels()
-            cur_label    = labels[_TYPE_INTERNAL.index(cur_internal)] if cur_internal in _TYPE_INTERNAL else labels[1]
+            all_types    = _type_internal_dynamic()
+            cur_label    = labels[all_types.index(cur_internal)] if cur_internal in all_types else labels[1]
 
             type_menu = ctk.CTkOptionMenu(
                 action_row, values=labels,
@@ -429,7 +442,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             entry.bind("<Return>", lambda e, ix=idx: self._apply_btn(ix))
             entry.bind("<FocusOut>", lambda e, ix=idx: self._apply_btn(ix))
 
-        self._numpad_type_internal   = _TYPE_INTERNAL
+        self._numpad_type_internal_fn = _type_internal_dynamic
         self._numpad_type_labels_fn  = _type_labels
 
         reset_row = ctk.CTkFrame(b3, fg_color="transparent")
@@ -848,8 +861,9 @@ class EverestMaxPanel(ctk.CTkFrame):
 
     def _on_btn_type_change(self, label, idx):
         labels = self._numpad_type_labels_fn()
+        type_internal = self._numpad_type_internal_fn()
         try:
-            internal = self._numpad_type_internal[labels.index(label)]
+            internal = type_internal[labels.index(label)]
         except (ValueError, IndexError):
             internal = "shell"
         self._btn_type[idx].set(internal)

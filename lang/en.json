@@ -305,5 +305,20 @@
   "custom_rgb_cancel": "Cancel",
   "custom_rgb_key_color": "Key Color",
   "custom_rgb_open": "Open Custom RGB Editor",
-  "custom_rgb_kb_layout": "Layout:"
+  "custom_rgb_kb_layout": "Layout:",
+
+  "plugin_load_error": "Plugin error: {name}",
+  "plugin_no_plugins": "No plugins installed",
+
+  "pluginmgr_title": "PLUGINS",
+  "pluginmgr_hint": "Plugins folder: ~/.config/mountain-time-sync/plugins/",
+  "pluginmgr_empty": "No plugins installed -- drop a plugin folder into\n~/.config/mountain-time-sync/plugins/ and restart",
+  "pluginmgr_count": "{active} / {total} active",
+  "pluginmgr_active": "Active",
+  "pluginmgr_disabled": "Disabled",
+  "pluginmgr_error": "Error",
+  "pluginmgr_not_loaded": "Not loaded",
+  "pluginmgr_enable": "Enable",
+  "pluginmgr_disable": "Disable",
+  "pluginmgr_restart": "Restart the app for full effect (panel changes)"
 }

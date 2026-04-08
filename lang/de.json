@@ -306,5 +306,20 @@
   "custom_rgb_cancel": "Abbrechen",
   "custom_rgb_key_color": "Tastenfarbe",
   "custom_rgb_open": "Custom RGB Editor öffnen",
-  "custom_rgb_kb_layout": "Layout:"
+  "custom_rgb_kb_layout": "Layout:",
+
+  "plugin_load_error": "Plugin-Fehler: {name}",
+  "plugin_no_plugins": "Keine Plugins installiert",
+
+  "pluginmgr_title": "PLUGINS",
+  "pluginmgr_hint": "Plugin-Ordner: ~/.config/mountain-time-sync/plugins/",
+  "pluginmgr_empty": "Keine Plugins installiert -- Plugin-Ordner in\n~/.config/mountain-time-sync/plugins/ ablegen und neu starten",
+  "pluginmgr_count": "{active} / {total} aktiv",
+  "pluginmgr_active": "Aktiv",
+  "pluginmgr_disabled": "Deaktiviert",
+  "pluginmgr_error": "Fehler",
+  "pluginmgr_not_loaded": "Nicht geladen",
+  "pluginmgr_enable": "Aktivieren",
+  "pluginmgr_disable": "Deaktivieren",
+  "pluginmgr_restart": "App neu starten f\u00fcr volle Wirkung (Panel-\u00c4nderungen)"
 }

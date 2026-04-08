@@ -1,102 +1,130 @@
 # Changelog
 
-## [1.7.4-beta] - 2026-04-08
+## [1.8.0] - 2026-04-08
 
-### Everest 60 — FransM LED fixes (PR #8)
+### Plugin System
 
-- **Custom RGB: byte order fix** — color entries now sent as IRGB (index, R, G, B) instead of RGBI
-- **Custom RGB: header offset fix** — packet payload starts at byte 9, not byte 6
-- **Arrow Up LED index** — corrected from 95 to 99
+- **Plugin architecture** — plugins can now extend the app without modifying core files; drop a folder into `~/.config/mountain-time-sync/plugins/` and restart
+- **3 plugin types** — Panel (new GUI tab), Action (new button action type for DisplayPad/Everest Max), Service (background daemon thread); a single plugin can be multiple types at once
+- **Plugin API (PluginContext)** — stable interface for plugins: i18n, config load/save, GUI scheduling, device access, DisplayPad image push, action registration
+- **Auto-discovery** — `PluginManager` scans the plugins directory on startup, loads `plugin.json` manifests, imports and instantiates `Plugin` classes via `importlib`
+- **Dynamic action types** — DisplayPad K1-K12 and Everest Max D1-D4 action type dropdowns now include plugin-registered types automatically
+- **DisplayPad integration** — plugins can push live 102×102 images to any DisplayPad button via `ctx.push_plugin_image()`, with auto-detection of assigned buttons and GIF animation compatibility
+- **Plugin action preview tiles** — DisplayPad panel grid shows blue-bordered tiles with action label text for plugin-assigned buttons
+- **Plugin switcher buttons** — panel plugins get their own button in a new row of the device switcher bar
+- **Service lifecycle** — service plugins are started after GUI init and stopped cleanly on app shutdown
+- **Error isolation** — a failing plugin does not crash the app; errors are logged to console
+- **`default_disabled` manifest field** — plugins can opt to start disabled on fresh installs
 
-### Custom RGB Editor
+### Plugin Manager
 
-- **QWERTY / QWERTZ layout toggle** — switch keyboard label display between US and German layout
-- **Live brightness** — brightness slider now sends changes to the keyboard in real-time (300ms debounce, Everest 60 only; Everest Max protocol too slow for live updates)
-- **Eyedropper shortcut** — changed from Alt+Click to Shift+Click (Alt conflicted with window managers)
+- **New "Plugins" tab** in the switcher bar — shows all discovered plugins with status (Active / Disabled / Error), version, author, description, and type
+- **Enable/Disable** — toggle plugins on or off; disabled state persists in `plugins_disabled.json`
+- **Live enable** — enabling a plugin loads it immediately; panel plugins need an app restart to appear in the switcher
+- **Active counter** — "2 / 3 active" display with restart hint for panel changes
+- **Colored type badges** — "panel", "service", "action" shown as colored pills (blue, green, amber)
+- **Accent border** — colored card border: green (active), gray (disabled), red (error)
+- **Plugin icons** — optional `icon.png` in the plugin folder is displayed as 28x28 icon in the card
+- **Collapsible cards** — plugin cards are compact by default (one line); click to expand for description, author, and error details
 
-### New features
+### Now Playing Plugin (Example)
 
-- **Autostart minimized** — app starts in tray when launched via autostart (`--minimized` flag)
-- **`--install` updates autostart** — running `--install` with a new AppImage now also updates the autostart .desktop path
-- **`--install` refreshes desktop cache** — runs `update-desktop-database` automatically so the app menu updates immediately
+- **Bundled example plugin** — shows what's playing in your browser (YouTube, Spotify, etc.) via MPRIS/playerctl
+- **Panel**: thumbnail card with title, artist, progress bar, play/pause, mute, volume slider
+- **DisplayPad widget**: live 102×102 image with title, artist, status bar, play/pause icon on the assigned button
+- **Action type**: "Now Playing" action for DisplayPad/Everest Max buttons — press to toggle play/pause
+- **Volume via pactl** — uses PulseAudio/PipeWire sink control (Chrome ignores MPRIS volume)
+- **DejaVu Sans font** — full Unicode/Umlaut support across Linux distributions
 
-### i18n
+### Documentation
 
-- **Full translation coverage** — all CustomRGBWindow strings moved to lang/en.json + lang/de.json (~30 keys)
-- **Everest 60 panel** — "nicht verbunden", "Sending…", "Applied ✓" no longer hardcoded, uses self.T()
-- **Color picker dialog** — title now translated via lang files
-- **de.json** — translated missing "reset_buttons_btn"
-- **Removed 14 duplicate keys** in en.json (makalu_rgb/settings block was defined twice)
-
-### Bug fixes
-
-- **Display sleep recovery** — window restore now forces full geometry cycle, re-packs active panel, and refreshes switcher colors; only triggers after actual withdraw (tray/sleep), not on every focus change
-- **Custom RGB button not updating on language switch** — now registered with `_reg()`
-- **Direction not persisted** — RGB direction setting is now saved and restored on restart
-- **Speed slider visual glitch** — slider position now refreshes correctly when switching between effects
-- **Color picker going behind main window** — dialog now stays on top with focus
-- **SEGFAULT on exit** — HID background threads (DisplayPad key events, monitor) are now stopped before window destruction to prevent libusb crash
-
-### Security & stability
-
-- **Command injection fix** — replaced `shell=True` with `["bash", "-c", action]` in button action execution (3 files) and macro shell runner
-- **Path traversal fix** — mouse recording filenames now sanitized with `os.path.basename()` to prevent `../` directory escape
-- **Tray helper path validation** — lang file argument now validated to be inside the `lang/` directory
-- **Autostart path quoting** — .desktop Exec= paths now quoted, fixing autostart for paths with spaces
-- **Desktop entry path quoting** — `--install` .desktop Exec= path now quoted (same fix as autostart)
-- **File descriptor leaks** — replaced ~20 `json.load(open(...))` calls with `_read_json()` helper using `with` statements; fixed `_read_cfg()` in gui.py and everest_max/panel.py; fixed mouse recording reads in macros.py
-- **stderr fd leak** — CPU monitor log file handle now closed after Popen
-- **Upload pipe deadlock** — replaced `proc.stdout.read()` + `proc.wait()` with `proc.communicate()`
-- **Debounce timer crash** — brightness debounce timer now cancelled on window close (prevents TclError)
-- **Live brightness error handling** — background thread now catches exceptions silently
-- **Everest 60 controller** — `NUM_KEYS` corrected from 191 to 64, `dir()` → `locals()`, tornado direction bounds check
-- **Preset consistency** — added missing `brightness: 100` to 6 default presets
-
-## [1.7.3-beta] - 2026-04-07
+- **PLUGINS.md** — comprehensive plugin development guide: API reference, DisplayPad integration (auto-detect button, GIF compatibility, preview tiles), UI styling, thread safety, debugging, 4 complete examples
 
 ### Everest 60 — Protocol overhaul (thanks to [@FransM](https://github.com/FransM) for reverse-engineering and testing!)
 
 - **SetMode (0x16) fix:** buf[5]=0x01, effect code moved to buf[9] — sent before SendModeDetails now
 - **SendModeDetails (0x17) fix:** Correct byte layout for colors, speed, brightness
-- **Response verification:** Echo check now reads resp[1] (was resp[0])
+- **Response verification:** Echo check now reads resp[1] (was resp[0]); retries up to 3× if device is busy
 - **COLOR_RAINBOW = 0x02** (was 0x01), new **COLOR_DUAL = 0x10** for dual-color effects
-- **Tornado direction fix:** CW=0x0A, CCW=0x09 with inversion formula (10-direction)
-- **Tornado is single-color only** — removed broken dual-color support for Tornado
-- **Breathing, Wave, Reactive, Yeti** now use COLOR_DUAL by default — both colors are sent correctly
-- **Custom RGB: LEDIDX hardware mapping** — byte 4 of each color entry is now the physical LED address instead of 0xFF. LED index table reverse-engineered by FransM
+- **Dual color support:** Breathing, Wave, Reactive, Yeti now use COLOR_DUAL — both colors sent correctly
+- **Tornado direction fix:** CW=0x0A, CCW=0x09 with inversion formula; tornado is single-color only
+- **Custom RGB: LEDIDX hardware mapping** — byte 4 is now the physical LED address (table by FransM)
 - **Custom RGB: packet flag fix** — 0x0E = more packets, 0x0A = last packet (was inverted)
-- **Custom RGB: mode activation** — `_send_mode(EFFECT_CUSTOM)` is now called before uploading per-key colors
+- **Custom RGB: mode activation** — `_send_mode(EFFECT_CUSTOM)` called before uploading per-key colors
+- **Custom RGB: byte order fix** — color entries sent as IRGB (index, R, G, B) instead of RGBI
+- **Custom RGB: header offset fix** — packet payload starts at byte 9, not byte 6
+- **Custom RGB: buffer overflow fix** — `COLORS_PER_PKT` corrected from 56 to 14 (14 × 4 = 56 bytes in 65-byte report)
+- **Arrow Up LED index** — corrected from 95 to 99
+- **Timing fix:** Added 50ms sleep after `get_feature_report` for device stability
 
-### Everest 60 — Layout fix
+### Everest 60 — Layout & presets
 
-- **Removed backtick/tilde key** — does not exist on the Everest 60 (64 keys, was 65)
-- **Equal row widths** — all rows now use proportional spacing (`sbet`), fixing rows 2+3 being shorter than the rest
+- **Removed backtick/tilde key** — does not exist on the Everest 60 (64 keys)
+- **Equal row widths** — all rows use proportional spacing, fixing rows 2+3 being shorter
+- **Arrow key cluster** — row 4 has small right shift + ↑ + Del, row 5 has ← ↓ →
+- **Default presets** — Synthwave, Ocean, Ember, Forest, Arctic, Galaxy (auto-loaded on first use)
+- **"Shoreline" preset for Everest Max** — ocean wave gradient from deep navy to bright foam
+
+### Custom RGB Editor
+
+- **QWERTY / QWERTZ layout toggle** — switch keyboard label display between US and German layout
+- **Live brightness** — brightness slider sends changes in real-time (300ms debounce, Everest 60 only)
+- **Eyedropper shortcut** — changed from Alt+Click to Shift+Click (Alt conflicted with window managers)
 
 ### New features
 
-- **Default presets for Everest 60** — Synthwave, Ocean, Ember, Forest, Arctic, Galaxy (auto-loaded on first use)
-- **"Shoreline" preset for Everest Max** — ocean wave gradient from deep navy to bright foam
+- **Autostart minimized** — app starts in tray when launched via autostart (`--minimized` flag)
+- **`--install` updates autostart** — running `--install` with a new AppImage also updates the autostart .desktop path
+- **`--install` refreshes desktop cache** — runs `update-desktop-database` automatically
 
-## [1.7.2-beta] - 2026-04-02
+### i18n
 
-### Everest 60 — Protocol Fixes (thanks to FransM for reverse-engineering)
+- **Full translation coverage** — all CustomRGBWindow, Everest 60 panel, and color picker strings moved to lang files (~30+ keys)
+- **Plugin UI** — all plugin manager labels translated (en + de)
+- **Removed 14 duplicate keys** in en.json
 
-- **Effect fix:** `0x17` (SendModeDetails) now correctly sends the effect code in buf[5] — was incorrectly set to profile number, which is why only Static worked (Static=0x01 happened to equal profile=1)
-- **Mode switch fix:** `0x16` (SetMode) now sends effect code in buf[5] to activate the mode
-- **Response verification:** After each `set_report`, verifies `get_report` echoes the command byte — retries up to 3× if device is busy
-- **Timing fix:** Added 50ms sleep after `get_feature_report` for device stability
-- **Custom RGB fix:** Fixed buffer overflow in per-key mode — `COLORS_PER_PKT` was 56 (colors) but only 14 fit in a 65-byte HID report (14 × 4 bytes = 56 bytes payload). This caused the "Broken pipe" IOCTL error on Apply
-- **Dual color support:** Breathing, Wave, and Tornado effects now support a second color — both in the protocol layer and the GUI (Color 2 picker)
+### Bug fixes
 
----
+- **Auto-detection fix** — device detection runs immediately on startup; Everest 60 auto-switches without manual change
+- **Crash fix (`_rgb_apply_row`)** — reordered initialization to prevent `AttributeError` on startup
+- **Display sleep recovery** — window restore forces full geometry cycle, re-packs active panel, refreshes switcher colors
+- **Custom RGB button not updating on language switch** — now registered with `_reg()`
+- **Direction not persisted** — RGB direction setting saved and restored on restart
+- **Speed slider visual glitch** — slider position refreshes correctly when switching effects
+- **Color picker going behind main window** — dialog stays on top with focus
+- **SEGFAULT on exit** — HID background threads stopped before window destruction to prevent libusb crash
+- **CTk widget rendering on panel switch** — buttons and other CTk widgets appeared broken until hovered; panel switcher now forces `_draw()` on all child widgets after switching, fixing incomplete rendering across all panels
 
-## [1.7.1-beta] - 2026-03-31
+### Security & stability
 
-### Bug Fixes
+- **Command injection fix** — replaced `shell=True` with `["bash", "-c", action]` in button action execution (3 files) and macro shell runner
+- **Path traversal fix** — mouse recording filenames sanitized with `os.path.basename()`
+- **Tray helper path validation** — lang file argument validated to be inside `lang/`
+- **Autostart/desktop entry path quoting** — Exec= paths now quoted, fixing paths with spaces
+- **File descriptor leaks** — replaced ~20 `json.load(open(...))` with `_read_json()` helper using `with` statements; fixed fd leaks in gui.py, everest_max/panel.py, macros.py, CPU monitor
+- **Upload pipe deadlock** — replaced `proc.stdout.read()` + `proc.wait()` with `proc.communicate()`
+- **Debounce timer crash** — brightness timer cancelled on window close
+- **Everest 60 controller** — `NUM_KEYS` corrected from 191 to 64, tornado direction bounds check
+- **Preset consistency** — added missing `brightness: 100` to 6 default presets
 
-- **Auto-detection fix:** Device detection now runs immediately on startup instead of after 1 second — if only an Everest 60 is connected, the app auto-switches to the Everest 60 panel without requiring a manual change
-- **Crash fix (`_rgb_apply_row`):** Fixed a crash on startup where `_rgb_update_controls()` was called before the apply button row was created — reordered initialization to prevent `AttributeError`
-- **Everest 60 layout corrected:** Added arrow key cluster — row 4 now has small right shift + ↑ + Del, row 5 has ← ↓ → instead of a wide Ctrl. Total visible keys: 65 (was incorrectly 61)
+### New files
+
+- `shared/plugins.py` — PluginManager (discover, load, shutdown, action registry, enable/disable)
+- `shared/plugin_api.py` — PluginContext (i18n, config, GUI, device access, action registration)
+- `devices/plugins/panel.py` — Plugin Manager panel (view, enable, disable plugins)
+- `PLUGINS.md` — Plugin development guide
+
+### Changed files
+
+- `shared/config.py` — added `PLUGINS_DIR` + `PLUGINS_DISABLED_FILE` path constants
+- `gui.py` — PluginManager integration (init, panel registration, switcher buttons, shutdown)
+- `devices/displaypad/panel.py` — dynamic action types, plugin action handler fallback, plugin image push, preview tiles
+- `devices/everest_max/panel.py` — dynamic action types, plugin action labels
+- `devices/everest60/controller.py` — protocol fixes, LEDIDX mapping, NUM_KEYS correction
+- `devices/everest60/panel.py` — layout fix, QWERTZ toggle, live brightness, i18n
+- `mountain-time-sync.py` — plugin action handler stub, autostart minimized
+- `lang/en.json` + `lang/de.json` — plugin UI keys, Custom RGB keys, Everest 60 keys
+- `default_presets.json` — Everest 60 presets, Shoreline preset, brightness field
 
 ---
 
