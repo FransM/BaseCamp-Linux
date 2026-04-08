@@ -239,6 +239,7 @@
   "dp_page_name_hint":    "Seitenname…",
   "action_type_page":     "Seite",
   "action_type_macro":    "Makro",
+  "action_type_keypress": "Tastendruck",
 
   "macro_title":          "Makros",
   "macro_new":            "Neues Makro",

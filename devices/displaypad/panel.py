@@ -66,7 +66,7 @@ _KEY_MAP = (
     [(47, m) for m in (0x01, 0x02, 0x04, 0x08, 0x10)]
 )
 
-_ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro"]
+_ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro", "keypress"]
 
 _DEFAULT_ACTIONS = [{"type": "none", "action": ""} for _ in range(12)]
 
@@ -759,6 +759,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             labels.append(self._app.T("action_type_page"))
         labels.append("OBS")
         labels.append(self._app.T("action_type_macro"))
+        labels.append(self._app.T("action_type_keypress"))
         # Append plugin action labels
         pm = getattr(self._app, "_plugin_manager", None)
         if pm:
@@ -819,6 +820,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 if btype == "page":
                     self._cmd_entries[i].configure(
                         placeholder_text=self._app.T("dp_page_name_hint"))
+                # "keypress" type: show placeholder hint
+                elif btype == "keypress":
+                    self._cmd_entries[i].configure(
+                        placeholder_text="e.g. grave, F12, ctrl+shift+a")
                 # "obs" type: show OBS combo instead of entry
                 elif btype == "obs":
                     self._cmd_entries[i].pack_forget()
@@ -994,6 +999,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             cur = self._act_cmd[idx].get()
             if not cur or cur.startswith("→") or cur.startswith("/") or cur.startswith("scene:"):
                 self._act_cmd[idx].set(f"Page {idx + 1}")
+        elif internal == "keypress":
+            self._cmd_entries[idx].configure(state="normal",
+                placeholder_text="e.g. grave, F12, ctrl+shift+a")
+            cur = self._act_cmd[idx].get()
         elif internal != "obs":
             self._cmd_entries[idx].configure(state="normal", placeholder_text="")
             cur = self._act_cmd[idx].get()
@@ -1587,6 +1596,30 @@ class DisplayPadPanel(ctk.CTkFrame):
                     threading.Thread(
                         target=execute_macro, args=(macro, stop_ev),
                         daemon=True).start()
+            return
+        # Keypress action – simulate key via xdotool
+        if btype == "keypress" and action:
+            try:
+                sudo_user = os.environ.get("SUDO_USER")
+                if sudo_user:
+                    uid     = _pwd.getpwnam(sudo_user).pw_uid
+                    runtime = f"/run/user/{uid}"
+                    env = {
+                        "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+                        "XDG_RUNTIME_DIR": runtime,
+                        "HOME": _pwd.getpwnam(sudo_user).pw_dir,
+                        "USER": sudo_user, "LOGNAME": sudo_user,
+                        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                    }
+                    if os.path.exists(os.path.join(runtime, "wayland-0")):
+                        env["WAYLAND_DISPLAY"] = "wayland-0"
+                        env["XDG_SESSION_TYPE"] = "wayland"
+                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "xdotool", "key", "--clearmodifiers", action], env=env)
+                else:
+                    subprocess.Popen(["xdotool", "key", "--clearmodifiers", action])
+            except Exception:
+                pass
             return
         # Plugin action types
         pm = getattr(self._app, "_plugin_manager", None)

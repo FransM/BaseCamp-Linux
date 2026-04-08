@@ -238,6 +238,7 @@
   "dp_page_name_hint":    "Page name…",
   "action_type_page":     "Page",
   "action_type_macro":    "Macro",
+  "action_type_keypress": "Keypress",
 
   "macro_title":          "Macros",
   "macro_new":            "New Macro",

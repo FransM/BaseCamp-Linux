@@ -73,6 +73,7 @@
 
 ### New features
 
+- **DisplayPad Keypress action** — new "Keypress" action type for DisplayPad buttons; simulates keyboard input via `xdotool` (e.g. `grave`, `F12`, `ctrl+shift+a`) — useful for keys missing on compact keyboards like the Everest 60
 - **Autostart minimized** — app starts in tray when launched via autostart (`--minimized` flag)
 - **`--install` updates autostart** — running `--install` with a new AppImage also updates the autostart .desktop path
 - **`--install` refreshes desktop cache** — runs `update-desktop-database` automatically
