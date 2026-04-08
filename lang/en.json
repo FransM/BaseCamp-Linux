@@ -326,6 +326,7 @@
   "pluginmgr_no_available": "No plugins available",
   "pluginmgr_loading": "Loading...",
   "pluginmgr_installed": "Installed",
+  "pluginmgr_uninstall": "Uninstall",
   "pluginmgr_manual_install": "\u25B6 Manual install (URL / folder)",
   "pluginmgr_install": "Install Plugin",
   "pluginmgr_install_hint": "Paste a GitHub URL or browse to a plugin folder",

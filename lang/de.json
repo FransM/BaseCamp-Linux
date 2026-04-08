@@ -327,6 +327,7 @@
   "pluginmgr_no_available": "Keine Plugins verf\u00fcgbar",
   "pluginmgr_loading": "Laden...",
   "pluginmgr_installed": "Installiert",
+  "pluginmgr_uninstall": "Deinstallieren",
   "pluginmgr_manual_install": "\u25B6 Manuelle Installation (URL / Ordner)",
   "pluginmgr_install": "Plugin installieren",
   "pluginmgr_install_hint": "GitHub-URL eingeben oder Plugin-Ordner wählen",

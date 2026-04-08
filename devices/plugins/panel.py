@@ -261,7 +261,7 @@ class PluginManagerPanel(ctk.CTkFrame):
         if is_open:
             detail = ctk.CTkFrame(card, fg_color="transparent")
             detail.pack(fill="x", padx=(8, 10), pady=(0, 6))
-            self._fill_detail(detail, info, error)
+            self._fill_detail(detail, pid, info, error)
 
         def toggle_expand(_e=None, p=pid):
             if p in self._expanded:
@@ -282,7 +282,7 @@ class PluginManagerPanel(ctk.CTkFrame):
 
         self._rows[pid] = {"card": card, "toggle": toggle_btn}
 
-    def _fill_detail(self, parent, info, error):
+    def _fill_detail(self, parent, pid, info, error):
         desc = info.get("description", "")
         if desc:
             ctk.CTkLabel(
@@ -312,6 +312,17 @@ class PluginManagerPanel(ctk.CTkFrame):
                 parent, text=error, font=("Helvetica", 9),
                 text_color=RED, anchor="w", wraplength=400, justify="left"
             ).pack(fill="x", pady=(4, 0))
+
+        # Uninstall button (only for user-installed plugins, not bundled)
+        plugin_path = info.get("_path", "")
+        if plugin_path and _PLUGINS_DIR in plugin_path:
+            ctk.CTkButton(
+                parent, text=self.T("pluginmgr_uninstall"),
+                font=("Helvetica", 9, "bold"),
+                fg_color="#7f1d1d", hover_color="#991b1b", text_color="#fca5a5",
+                height=22, width=90, corner_radius=4,
+                command=lambda p=pid: self._uninstall(p)
+            ).pack(anchor="w", pady=(6, 0))
 
     def _load_icon(self, pid, info):
         if pid in self._icon_cache:
@@ -355,6 +366,34 @@ class PluginManagerPanel(ctk.CTkFrame):
         pm.disable_plugin(pid)
         self._restart_lbl.configure(text=self.T("pluginmgr_restart"))
         self._populate()
+
+    def _uninstall(self, pid):
+        """Remove a plugin from the plugins directory."""
+        # Disable first (remove from panels/switcher)
+        pm = self._app._plugin_manager
+        if pid in self._app._panels:
+            self._app._panels[pid].pack_forget()
+            del self._app._panels[pid]
+        if pid in self._app._plugin_sw_btns:
+            self._app._plugin_sw_btns[pid].destroy()
+            del self._app._plugin_sw_btns[pid]
+        pm.disable_plugin(pid)
+
+        # Delete plugin folder
+        plugin_path = os.path.join(_PLUGINS_DIR, pid)
+        if os.path.isdir(plugin_path):
+            shutil.rmtree(plugin_path)
+
+        # Remove from manager state
+        pm._manifests.pop(pid, None)
+        pm._instances.pop(pid, None)
+        pm._errors.pop(pid, None)
+        self._expanded.discard(pid)
+
+        self._restart_lbl.configure(text=self.T("pluginmgr_restart"))
+        self._populate()
+        # Refresh available list to show Install button again
+        self._show_available(self._available)
 
     # ── Available Plugins Browser ────────────────────────────────────────────
 
