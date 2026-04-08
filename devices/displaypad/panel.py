@@ -975,7 +975,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self, text=self._app.T("dp_close"),
             fg_color=BG3, hover_color=BG2, text_color=FG,
             font=("Helvetica", 11), height=34, corner_radius=6,
-            command=self.destroy,
+            command=self._apply_all_and_close,
         ).pack(fill="x", padx=12, pady=(0, 12))
 
     def _on_page_change(self, label):
@@ -1261,6 +1261,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._page_list = pages
         page_labels = [self._app.T("dp_page_main") if p == 0 else f"Page {p}" for p in pages]
         self._page_selector.configure(values=page_labels)
+
+    def _apply_all_and_close(self):
+        """Save all 12 button actions (catches unsaved entries) and close."""
+        for i in range(12):
+            self._apply(i)
+        self.destroy()
 
 
 # ── Panel ─────────────────────────────────────────────────────────────────────

@@ -216,7 +216,7 @@
   "dp_slot_cleared":      "K{k} cleared",
   "dp_dialog_title":      "DisplayPad — Assign Images",
   "dp_dialog_hint":       "Left-click: pick image  ·  Right-click: clear slot",
-  "dp_close":             "Apply & Upload",
+  "dp_close":             "Apply",
   "dp_fullscreen":        "Fullscreen",
   "dp_pick_image":        "Pick image or GIF",
   "dp_pick_fullscreen":   "Pick fullscreen (image or GIF — all 12 buttons)",

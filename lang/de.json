@@ -217,7 +217,7 @@
   "dp_slot_cleared":      "K{k} geleert",
   "dp_dialog_title":      "DisplayPad — Bilder zuweisen",
   "dp_dialog_hint":       "Linksklick: Bild wählen  ·  Rechtsklick: Slot leeren",
-  "dp_close":             "Übernehmen & Hochladen",
+  "dp_close":             "\u00dcbernehmen",
   "dp_fullscreen":        "Vollbild",
   "dp_pick_image":        "Bild oder GIF wählen",
   "dp_pick_fullscreen":   "Vollbild wählen (Bild oder GIF — alle 12 Buttons)",
