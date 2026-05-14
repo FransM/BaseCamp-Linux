@@ -374,7 +374,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.1.1"
 
 
 class App(ctk.CTk):

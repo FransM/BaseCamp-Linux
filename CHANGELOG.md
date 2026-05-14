@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.1.1] - 2026-05-14
+
+A small patch release picking up things that came in from issue #2 (thanks @FransM):
+
+- **`ICON_PATH` environment variable** — set it to your own icon library and every first-time file picker starts there. Lookup order is now: last folder you used → `$ICON_PATH` → `/usr/share/icons`.
+- **Reset remembered folders** — new button in the settings dialog wipes the per-context "last folder" memory in one click. The next picker falls straight back to `$ICON_PATH` or `/usr/share/icons` again.
+- **Autostart on Linux** — added a short README section with the XDG `.desktop` recipe under `~/.config/autostart/`, works on GNOME, KDE, XFCE and friends.
+- **Plugin image colors fixed.** `push_plugin_image` was unpacking the channel tuple into variables named `b, g, r` while they actually held R, G, B, so the merge ended up doing nothing instead of swapping red and blue. Every plugin that pushes live images through the API (System Monitor, Now Playing) was rendering with inverted colors. Now it isn't.
+
+No new binary release for this one — pull the source and run, or wait for the next AppImage build.
+
 ## [1.8.1] - 2026-05-14
 
 This release is mainly about quality-of-life: a new settings dialog with backup/restore and profiles, a much better experience for everyone on Wayland, and a long list of bug fixes that came out of community reports and a thorough code review. Big thanks to everyone who opened GitHub issues — most of the fixes here exist because of you.
