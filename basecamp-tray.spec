@@ -5,7 +5,7 @@ a = Analysis(
     ['tray_helper.py'],
     pathex=[],
     binaries=[],
-    datas=[('logo.png', '.'), ('lang', 'lang'), ('resources', 'resources')],
+    datas=[('lang', 'lang'), ('resources', 'resources')],
     hiddenimports=['pystray', 'PIL', 'PIL._tkinter_finder'],
     hookspath=[],
     hooksconfig={},
