@@ -24,6 +24,16 @@ _TYPE_COLORS = {
 }
 
 
+def _version_tuple(s):
+    """Parse a dotted version like '1.2.3' into a sortable tuple.
+    Non-numeric parts become 0 so 'v1.2' parses the same as '1.2'."""
+    parts = []
+    for p in str(s or "").lstrip("v").split("."):
+        num = "".join(c for c in p if c.isdigit())
+        parts.append(int(num) if num else 0)
+    return tuple(parts) or (0,)
+
+
 class PluginManagerPanel(ctk.CTkFrame):
 
     def __init__(self, parent, app):
@@ -37,6 +47,22 @@ class PluginManagerPanel(ctk.CTkFrame):
 
     def T(self, key, **kw):
         return self._app.T(key, **kw)
+
+    def _available_info(self, pid):
+        """Look up a plugin entry in the cached available list by id."""
+        for pinfo in self._available:
+            if pinfo.get("id") == pid:
+                return pinfo
+        return None
+
+    def _has_update(self, pid, installed_info):
+        """Return the available pinfo dict if an update is published, else None."""
+        avail = self._available_info(pid)
+        if not avail:
+            return None
+        installed_ver = _version_tuple(installed_info.get("version", "0"))
+        avail_ver     = _version_tuple(avail.get("version", "0"))
+        return avail if avail_ver > installed_ver else None
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -228,6 +254,19 @@ class PluginManagerPanel(ctk.CTkFrame):
                 text_color=FG2, cursor="hand2")
             ver_lbl.pack(side="left")
 
+        # Show a clickable "↑ Update v<new>" pill if the index has a newer version
+        update_info = self._has_update(pid, info)
+        if update_info:
+            new_ver = update_info.get("version", "")
+            upd_badge = ctk.CTkLabel(
+                hdr, text=self.T("pluginmgr_update_badge", ver=new_ver),
+                font=("Helvetica", 8, "bold"), text_color=BG,
+                fg_color=GRN, corner_radius=6, height=16, padx=4,
+                cursor="hand2")
+            upd_badge.pack(side="left", padx=(6, 0))
+            upd_badge.bind("<Button-1>",
+                           lambda e, p=update_info: self._install_available(p))
+
         ptypes = info.get("type", "")
         if isinstance(ptypes, str):
             ptypes = [ptypes] if ptypes else []
@@ -317,6 +356,19 @@ class PluginManagerPanel(ctk.CTkFrame):
         plugin_path = info.get("_path", "")
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
         btn_row.pack(fill="x", pady=(6, 0))
+
+        # Update button (when index has a newer version)
+        update_info = self._has_update(pid, info)
+        if update_info:
+            ctk.CTkButton(
+                btn_row,
+                text=self.T("pluginmgr_update_to",
+                            ver=update_info.get("version", "")),
+                font=("Helvetica", 9, "bold"),
+                fg_color=GRN, hover_color="#16a34a", text_color=BG,
+                height=22, width=120, corner_radius=4,
+                command=lambda p=update_info: self._install_available(p)
+            ).pack(side="left", padx=(0, 6))
 
         # Reload button (for active plugins)
         pm = self._app._plugin_manager
@@ -438,7 +490,9 @@ class PluginManagerPanel(ctk.CTkFrame):
 
     def _show_available(self, plugins):
         self._refresh_btn.configure(state="normal")
+        # Cache before re-rendering installed cards so update badges show up
         self._available = plugins
+        self._populate()
 
         for w in self._avail_list.winfo_children():
             w.destroy()
@@ -482,8 +536,23 @@ class PluginManagerPanel(ctk.CTkFrame):
                     text_color=FG2
                 ).pack(side="left", pady=4)
 
-            # Install / Installed button
+            # Install / Update / Installed button
+            update_available = False
             if is_installed:
+                installed_info = pm._manifests.get(pid, {})
+                installed_ver  = _version_tuple(installed_info.get("version", "0"))
+                avail_ver      = _version_tuple(ver or "0")
+                update_available = avail_ver > installed_ver
+
+            if is_installed and update_available:
+                btn = ctk.CTkButton(
+                    row, text=self.T("pluginmgr_update_btn"),
+                    font=("Helvetica", 9, "bold"),
+                    fg_color=GRN, hover_color="#16a34a", text_color=BG,
+                    height=22, width=80, corner_radius=4,
+                    command=lambda p=pinfo: self._install_available(p))
+                btn._pinfo = pinfo
+            elif is_installed:
                 btn = ctk.CTkButton(
                     row, text=self.T("pluginmgr_installed"),
                     font=("Helvetica", 9), fg_color=BG2, hover_color=BG2,

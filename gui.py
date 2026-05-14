@@ -159,7 +159,206 @@ def _check_usb_presence(vid, pid):
         return False
 
 
+# ── Settings dialog ────────────────────────────────────────────────────────────
+
+class SettingsDialog(ctk.CTkToplevel):
+    """Modal with Profiles, Backup/Restore + version info."""
+    def __init__(self, app):
+        super().__init__(app)
+        self._app = app
+        self.title(app.T("settings_title"))
+        self.geometry("420x480")
+        self.resizable(False, False)
+        try:
+            self.transient(app)
+        except Exception:
+            pass
+
+        ctk.CTkLabel(self, text=app.T("settings_title"),
+                     font=("Helvetica", 14, "bold")).pack(pady=(14, 4))
+        ctk.CTkLabel(self, text=f"BaseCamp Linux v{APP_VERSION}",
+                     font=("Helvetica", 10), text_color=FG2).pack(pady=(0, 12))
+
+        # ── Profiles section ──
+        from shared.config import list_profiles, get_active_profile
+        ctk.CTkLabel(self, text=app.T("settings_profiles"),
+                     font=("Helvetica", 11, "bold")).pack(pady=(0, 4))
+
+        profile_row = ctk.CTkFrame(self, fg_color="transparent")
+        profile_row.pack(fill="x", padx=20, pady=2)
+        profiles = list_profiles()
+        active   = get_active_profile()
+        self._profile_combo = ctk.CTkComboBox(
+            profile_row, values=profiles or [app.T("settings_profile_none")],
+            width=200, height=30, font=("Helvetica", 11),
+            fg_color=BG2, button_color=BLUE, text_color=FG)
+        if active and active in profiles:
+            self._profile_combo.set(active)
+        elif profiles:
+            self._profile_combo.set(profiles[0])
+        else:
+            self._profile_combo.set(app.T("settings_profile_none"))
+        self._profile_combo.pack(side="left", padx=(0, 4), fill="x", expand=True)
+        ctk.CTkButton(profile_row, text=app.T("settings_profile_load"),
+                      width=70, height=30, command=self._do_load_profile).pack(
+            side="left", padx=2)
+        ctk.CTkButton(profile_row, text=app.T("settings_profile_delete"),
+                      width=70, height=30, fg_color=RED, hover_color="#8a1f1f",
+                      command=self._do_delete_profile).pack(side="left", padx=2)
+
+        save_row = ctk.CTkFrame(self, fg_color="transparent")
+        save_row.pack(fill="x", padx=20, pady=(2, 12))
+        self._new_profile_var = ctk.StringVar()
+        ctk.CTkEntry(save_row, textvariable=self._new_profile_var,
+                     placeholder_text=app.T("settings_profile_name_hint"),
+                     height=30, font=("Helvetica", 11),
+                     fg_color=BG2, text_color=FG).pack(
+            side="left", padx=(0, 4), fill="x", expand=True)
+        ctk.CTkButton(save_row, text=app.T("settings_profile_save"),
+                      width=70, height=30, command=self._do_save_profile).pack(
+            side="left", padx=2)
+
+        # ── Backup / Restore section ──
+        ctk.CTkLabel(self, text=app.T("settings_backup_section"),
+                     font=("Helvetica", 11, "bold")).pack(pady=(8, 4))
+        ctk.CTkButton(self, text=app.T("settings_backup"),
+                      command=self._do_backup, height=34, corner_radius=6).pack(
+            fill="x", padx=20, pady=4)
+        ctk.CTkButton(self, text=app.T("settings_restore"),
+                      command=self._do_restore, height=34, corner_radius=6,
+                      fg_color=BG3, hover_color=BG2).pack(fill="x", padx=20, pady=4)
+
+        self._status = ctk.CTkLabel(self, text="", font=("Helvetica", 10),
+                                     text_color=FG2)
+        self._status.pack(pady=(12, 4))
+
+        # Update-check status (filled in by App.check_for_update if newer found)
+        self._update_lbl = ctk.CTkLabel(self, text=getattr(app, "_update_message", ""),
+                                         font=("Helvetica", 10), text_color=GRN,
+                                         wraplength=380, justify="left")
+        self._update_lbl.pack(pady=(0, 12), padx=12)
+
+    def _refresh_profile_combo(self):
+        from shared.config import list_profiles, get_active_profile
+        profiles = list_profiles()
+        self._profile_combo.configure(
+            values=profiles or [self._app.T("settings_profile_none")])
+        active = get_active_profile()
+        if active and active in profiles:
+            self._profile_combo.set(active)
+        elif profiles:
+            self._profile_combo.set(profiles[0])
+        else:
+            self._profile_combo.set(self._app.T("settings_profile_none"))
+
+    def _do_save_profile(self):
+        name = (self._new_profile_var.get() or "").strip()
+        if not name:
+            self._status.configure(
+                text=self._app.T("settings_profile_no_name"), text_color=RED)
+            return
+        from shared.config import save_profile
+        try:
+            safe, count = save_profile(name)
+            self._new_profile_var.set("")
+            self._refresh_profile_combo()
+            self._status.configure(
+                text=self._app.T("settings_profile_saved", name=safe, n=count),
+                text_color=GRN)
+        except Exception as e:
+            self._status.configure(
+                text=self._app.T("settings_profile_err", err=str(e)[:60]),
+                text_color=RED)
+
+    def _do_load_profile(self):
+        name = self._profile_combo.get()
+        from shared.config import load_profile, list_profiles
+        if name not in list_profiles():
+            return
+        from tkinter import messagebox
+        if not messagebox.askyesno(
+                self._app.T("settings_profiles"),
+                self._app.T("settings_profile_load_confirm", name=name),
+                parent=self):
+            return
+        try:
+            count = load_profile(name)
+            self._status.configure(
+                text=self._app.T("settings_profile_loaded", name=name, n=count),
+                text_color=GRN)
+        except Exception as e:
+            self._status.configure(
+                text=self._app.T("settings_profile_err", err=str(e)[:60]),
+                text_color=RED)
+
+    def _do_delete_profile(self):
+        name = self._profile_combo.get()
+        from shared.config import delete_profile, list_profiles
+        if name not in list_profiles():
+            return
+        from tkinter import messagebox
+        if not messagebox.askyesno(
+                self._app.T("settings_profiles"),
+                self._app.T("settings_profile_delete_confirm", name=name),
+                parent=self):
+            return
+        delete_profile(name)
+        self._refresh_profile_combo()
+        self._status.configure(
+            text=self._app.T("settings_profile_deleted", name=name),
+            text_color=FG2)
+
+    def _do_backup(self):
+        from tkinter import filedialog
+        from shared.config import export_backup, _load_last_dir, _save_last_dir
+        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = filedialog.asksaveasfilename(
+            parent=self, defaultextension=".zip",
+            initialdir=_load_last_dir("backup") or os.path.expanduser("~"),
+            initialfile=f"basecamp-backup-{ts}.zip",
+            filetypes=[("ZIP", "*.zip")],
+            title=self._app.T("settings_backup"))
+        if not path:
+            return
+        _save_last_dir("backup", path)
+        try:
+            count = export_backup(path)
+            self._status.configure(
+                text=self._app.T("settings_backup_ok", n=count), text_color=GRN)
+        except Exception as e:
+            self._status.configure(
+                text=self._app.T("settings_backup_err", err=str(e)[:60]),
+                text_color=RED)
+
+    def _do_restore(self):
+        from tkinter import filedialog, messagebox
+        from shared.config import import_backup, _load_last_dir, _save_last_dir
+        path = filedialog.askopenfilename(
+            parent=self,
+            initialdir=_load_last_dir("backup") or os.path.expanduser("~"),
+            filetypes=[("ZIP", "*.zip"), ("All", "*.*")],
+            title=self._app.T("settings_restore"))
+        if not path:
+            return
+        _save_last_dir("backup", path)
+        if not messagebox.askyesno(
+                self._app.T("settings_restore"),
+                self._app.T("settings_restore_confirm"), parent=self):
+            return
+        try:
+            count = import_backup(path)
+            self._status.configure(
+                text=self._app.T("settings_restore_ok", n=count), text_color=GRN)
+        except Exception as e:
+            self._status.configure(
+                text=self._app.T("settings_restore_err", err=str(e)[:60]),
+                text_color=RED)
+
+
 # ── App ────────────────────────────────────────────────────────────────────────
+
+APP_VERSION = "1.8.1"
+
 
 class App(ctk.CTk):
     # VID/PID constants for supported devices
@@ -179,6 +378,15 @@ class App(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color=BG)
         self.geometry("480x760")
+
+        # Enable drag & drop globally — soft-fails if tkinterdnd2 is missing.
+        self._dnd_available = False
+        try:
+            from tkinterdnd2 import TkinterDnD
+            TkinterDnD._require(self)
+            self._dnd_available = True
+        except Exception:
+            pass
 
         try:
             _icon = ImageTk.PhotoImage(Image.open(
@@ -239,6 +447,9 @@ class App(ctk.CTk):
         self.after(500, self._start_cpu_auto_clean)
         # Run first device check immediately so the correct panel is shown
         self._check_devices()
+        # Background update check — non-blocking, only sets a label if newer found
+        self._update_message = ""
+        self.after(2000, self._check_for_update)
 
     # ── subprocess command builder ────────────────────────────────────────────
 
@@ -398,6 +609,10 @@ class App(ctk.CTk):
                       fg_color="transparent", hover_color=BG3, text_color=FG2,
                       font=("Helvetica", 14), command=self._quit).place(relx=1.0,
                       rely=0.5, anchor="e", x=-8)
+        ctk.CTkButton(hdr, text="⚙", width=32, height=32, corner_radius=6,
+                      fg_color="transparent", hover_color=BG3, text_color=FG2,
+                      font=("Helvetica", 16), command=self._open_settings).place(
+                          relx=1.0, rely=0.5, anchor="e", x=-44)
 
         # ── Device switcher bar (2 rows) ──
         switcher = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
@@ -702,6 +917,76 @@ class App(ctk.CTk):
     def _show_window(self):
         self.deiconify()
         self.lift()
+
+    def _detect_install_type(self):
+        """Return one of 'appimage' | 'arch' | 'debian' | 'source'.
+        Picked at runtime so the same code works across all packaging formats."""
+        if os.environ.get("APPIMAGE"):
+            return "appimage"
+        # AUR builds install a binary at /usr/bin/basecamp-linux — but Arch users
+        # could also be running from source. Check pacman db for our package.
+        if os.path.exists("/etc/arch-release"):
+            try:
+                r = subprocess.run(["pacman", "-Q", "basecamp-linux"],
+                                    capture_output=True, timeout=2)
+                if r.returncode == 0:
+                    return "arch"
+            except Exception:
+                pass
+        if os.path.exists("/etc/debian_version"):
+            try:
+                r = subprocess.run(["dpkg", "-s", "basecamp-linux"],
+                                    capture_output=True, timeout=2)
+                if r.returncode == 0:
+                    return "debian"
+            except Exception:
+                pass
+        return "source"
+
+    def _check_for_update(self):
+        """Async fetch latest release tag from GitHub and compare with APP_VERSION.
+        Fail-quiet on any network/parse error."""
+        import threading
+
+        def _version_tuple(s):
+            parts = []
+            for p in s.lstrip("v").split("."):
+                num = "".join(c for c in p if c.isdigit())
+                parts.append(int(num) if num else 0)
+            return tuple(parts)
+
+        def _run():
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    "https://api.github.com/repos/ramisotti13-eng/BaseCamp-Linux/releases/latest",
+                    headers={"User-Agent": f"BaseCamp-Linux/{APP_VERSION}"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                tag = (data.get("tag_name") or "").strip()
+                if tag and _version_tuple(tag) > _version_tuple(APP_VERSION):
+                    ver = tag.lstrip("v")
+                    install_type = self._detect_install_type()
+                    # Per-distro instruction — the install_type drives which
+                    # follow-up command the user needs to run.
+                    hint = self.T(f"settings_update_hint_{install_type}")
+                    msg = (self.T("settings_update_available", ver=ver)
+                            + "\n" + hint)
+                    self.after(0, lambda: setattr(self, "_update_message", msg))
+            except Exception:
+                pass  # offline / rate-limited / dns — silent
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _open_settings(self):
+        if getattr(self, "_settings_win", None) is not None:
+            try:
+                if self._settings_win.winfo_exists():
+                    self._settings_win.focus()
+                    return
+            except Exception:
+                pass
+        self._settings_win = SettingsDialog(self)
 
     def _quit(self):
         self.destroy()

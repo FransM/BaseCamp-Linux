@@ -12,14 +12,42 @@ def _read_json(path):
 
 # ── Path setup ─────────────────────────────────────────────────────────────────
 
-_real_home = (
-    _pwd.getpwnam(os.environ["SUDO_USER"]).pw_dir
-    if os.environ.get("SUDO_USER")
-    else os.path.expanduser("~")
-)
+def _resolve_real_user():
+    """Return (home_dir, uid, gid) for the invoking user.
+
+    When running under sudo we honour SUDO_USER, but only if it resolves to a
+    real non-root account — protects against a poisoned env var that could
+    redirect root's file writes into an arbitrary user's tree.
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        try:
+            pw = _pwd.getpwnam(sudo_user)
+        except KeyError:
+            pw = None
+        if pw and pw.pw_uid != 0:
+            return pw.pw_dir, pw.pw_uid, pw.pw_gid
+    return os.path.expanduser("~"), None, None
+
+
+_real_home, _real_uid, _real_gid = _resolve_real_user()
+
+
+def _ensure_owned_dir(path):
+    """Create a directory and, when running as root, chown it to the invoking user
+    so the user can manage their own config outside the app."""
+    os.makedirs(path, exist_ok=True)
+    if _real_uid is not None and os.geteuid() == 0:
+        try:
+            st = os.stat(path)
+            if st.st_uid != _real_uid:
+                os.chown(path, _real_uid, _real_gid)
+        except OSError:
+            pass
+
 
 CONFIG_DIR       = os.path.join(_real_home, ".config", "mountain-time-sync")
-os.makedirs(CONFIG_DIR, exist_ok=True)
+_ensure_owned_dir(CONFIG_DIR)
 
 STYLE_FILE       = os.path.join(CONFIG_DIR, "style")
 BUTTON_FILE      = os.path.join(CONFIG_DIR, "buttons.json")
@@ -52,9 +80,47 @@ DISPLAYPAD_BRIGHTNESS_FILE  = os.path.join(CONFIG_DIR, "displaypad_brightness")
 DISPLAYPAD_DEBOUNCE_FILE    = os.path.join(CONFIG_DIR, "displaypad_debounce")
 MACROS_FILE                 = os.path.join(CONFIG_DIR, "macros.json")
 MOUSE_RECORDINGS_DIR        = os.path.join(CONFIG_DIR, "mouse_recordings")
+LAST_DIRS_FILE              = os.path.join(CONFIG_DIR, "last_dirs.json")
 PLUGINS_DIR                 = os.path.join(CONFIG_DIR, "plugins")
 PLUGINS_DISABLED_FILE       = os.path.join(CONFIG_DIR, "plugins_disabled.json")
-os.makedirs(PLUGINS_DIR, exist_ok=True)
+_ensure_owned_dir(PLUGINS_DIR)
+
+
+def _load_last_dir(kind):
+    """Return the last directory used for a given file-picker context, or None.
+    kind: free-form key like 'image', 'folder', 'app', 'gif' — caller decides."""
+    try:
+        with open(LAST_DIRS_FILE) as f:
+            data = json.load(f)
+        path = data.get(kind)
+        if path and os.path.isdir(path):
+            return path
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    # Fall back to /usr/share/icons if it exists — handy default on Linux
+    if os.path.isdir("/usr/share/icons"):
+        return "/usr/share/icons"
+    return None
+
+
+def _save_last_dir(kind, path):
+    """Remember the directory of a chosen file/folder for next time."""
+    if not path:
+        return
+    directory = path if os.path.isdir(path) else os.path.dirname(path)
+    if not directory or not os.path.isdir(directory):
+        return
+    try:
+        with open(LAST_DIRS_FILE) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        data = {}
+    data[kind] = directory
+    try:
+        with open(LAST_DIRS_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
 
 # ── Auto-copy bundled plugins on first run ───────────────────────────────────
 
@@ -79,6 +145,191 @@ def _copy_bundled_plugins():
             print(f"[Plugin] Installed bundled plugin: {name}")
 
 _copy_bundled_plugins()
+
+
+# ── Profiles (named action / display config snapshots) ──────────────────────
+
+PROFILES_DIR        = os.path.join(CONFIG_DIR, "profiles")
+ACTIVE_PROFILE_FILE = os.path.join(CONFIG_DIR, "active_profile")
+_ensure_owned_dir(PROFILES_DIR)
+
+# Files that get snapshotted into a profile — keyboard buttons + DisplayPad
+# layout. Library / cache dirs are kept global on purpose so users don't have
+# to re-upload the same icons per profile.
+_PROFILE_FILES = [
+    "buttons.json",
+    "obs.json",
+    "displaypad_buttons.json",
+    "displaypad_fullscreen.json",
+    "displaypad_actions.json",
+    "displaypad_pages.json",
+    "displaypad_rotation",
+    "macros.json",
+]
+
+
+def _safe_profile_name(name):
+    """Sanitise a profile name: keep alnum, dash, underscore, space."""
+    cleaned = "".join(c for c in name if c.isalnum() or c in " -_").strip()
+    return cleaned[:48]
+
+
+def list_profiles():
+    """Return sorted list of saved profile names."""
+    if not os.path.isdir(PROFILES_DIR):
+        return []
+    return sorted(
+        d for d in os.listdir(PROFILES_DIR)
+        if os.path.isdir(os.path.join(PROFILES_DIR, d))
+    )
+
+
+def get_active_profile():
+    try:
+        with open(ACTIVE_PROFILE_FILE) as f:
+            name = f.read().strip()
+        if name and os.path.isdir(os.path.join(PROFILES_DIR, name)):
+            return name
+    except OSError:
+        pass
+    return ""
+
+
+def set_active_profile(name):
+    try:
+        with open(ACTIVE_PROFILE_FILE, "w") as f:
+            f.write(name or "")
+        if _real_uid is not None and os.geteuid() == 0:
+            try:
+                os.chown(ACTIVE_PROFILE_FILE, _real_uid, _real_gid)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def save_profile(name):
+    """Snapshot the current configuration into profiles/<name>/."""
+    import shutil
+    safe = _safe_profile_name(name)
+    if not safe:
+        raise ValueError("Invalid profile name")
+    target = os.path.join(PROFILES_DIR, safe)
+    _ensure_owned_dir(target)
+    saved = 0
+    for fname in _PROFILE_FILES:
+        src = os.path.join(CONFIG_DIR, fname)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(target, fname))
+            saved += 1
+    set_active_profile(safe)
+    return safe, saved
+
+
+def load_profile(name):
+    """Restore a saved profile back into the live config files."""
+    import shutil
+    safe = _safe_profile_name(name)
+    src_dir = os.path.join(PROFILES_DIR, safe)
+    if not os.path.isdir(src_dir):
+        raise FileNotFoundError(f"Profile not found: {safe}")
+    restored = 0
+    for fname in _PROFILE_FILES:
+        src = os.path.join(src_dir, fname)
+        if os.path.exists(src):
+            dst = os.path.join(CONFIG_DIR, fname)
+            shutil.copy2(src, dst)
+            if _real_uid is not None and os.geteuid() == 0:
+                try:
+                    os.chown(dst, _real_uid, _real_gid)
+                except OSError:
+                    pass
+            restored += 1
+    set_active_profile(safe)
+    return restored
+
+
+def delete_profile(name):
+    import shutil
+    safe = _safe_profile_name(name)
+    target = os.path.join(PROFILES_DIR, safe)
+    if os.path.isdir(target):
+        shutil.rmtree(target)
+        if get_active_profile() == safe:
+            set_active_profile("")
+        return True
+    return False
+
+
+# ── Backup / Restore ─────────────────────────────────────────────────────────
+
+# Folders inside CONFIG_DIR that are user-replaceable caches / generated assets
+# — excluded from backups to keep ZIPs small. Plugins are also excluded so we
+# don't pull in arbitrary third-party code via a backup file.
+_BACKUP_EXCLUDE_DIRS = {
+    "icon_library", "main_library",
+    "displaypad_library", "displaypad_fs_library",
+    "mouse_recordings", "plugins",
+}
+
+
+def export_backup(zip_path):
+    """Write a ZIP archive containing all small JSON/state config files.
+    Large media libraries and plugins are excluded — re-add them manually."""
+    import zipfile
+    written = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(CONFIG_DIR):
+            rel = os.path.relpath(root, CONFIG_DIR)
+            # Skip excluded top-level dirs in-place so os.walk doesn't recurse
+            parts = [] if rel == "." else rel.split(os.sep)
+            if parts and parts[0] in _BACKUP_EXCLUDE_DIRS:
+                dirs[:] = []
+                continue
+            for name in files:
+                src = os.path.join(root, name)
+                arcname = os.path.relpath(src, CONFIG_DIR)
+                try:
+                    zf.write(src, arcname)
+                    written += 1
+                except OSError:
+                    pass
+    return written
+
+
+def import_backup(zip_path):
+    """Extract a backup ZIP into CONFIG_DIR, overwriting any existing files.
+    Refuses paths with .. or absolute components — defends against malicious ZIPs."""
+    import zipfile
+    restored = 0
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for info in zf.infolist():
+            name = info.filename
+            # Reject path traversal
+            if (os.path.isabs(name)
+                    or ".." in name.replace("\\", "/").split("/")):
+                continue
+            target = os.path.join(CONFIG_DIR, name)
+            target_dir = os.path.dirname(target)
+            # Final guard: make sure resolved target lives under CONFIG_DIR
+            if not os.path.realpath(target).startswith(
+                    os.path.realpath(CONFIG_DIR) + os.sep):
+                continue
+            if name.endswith("/"):
+                _ensure_owned_dir(target)
+                continue
+            if target_dir:
+                _ensure_owned_dir(target_dir)
+            with zf.open(info) as src, open(target, "wb") as dst:
+                dst.write(src.read())
+            if _real_uid is not None and os.geteuid() == 0:
+                try:
+                    os.chown(target, _real_uid, _real_gid)
+                except OSError:
+                    pass
+            restored += 1
+    return restored
+
 
 # Keep these for backward compatibility in code that imports them by old names
 RGB_PRESETS_FILE = PRESET_FILE

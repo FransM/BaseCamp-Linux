@@ -56,9 +56,15 @@ Upload a single image or animated GIF that is **automatically split across all 1
 
 ### Button Actions (K1–K12)
 
-- **Action types:** Shell command, URL, Folder, App, Page navigation, OBS (Scene/Record/Stream), Macro
-- Actions save immediately on change — no confirmation button needed
+- **Action types:** Shell command, URL, Folder, App, Page navigation, OBS (Scene/Record/Stream), Macro, Keypress, Text
+- The **Text** action types out any string when you press the button (great for Everest 60 owners who miss F-keys, or for snippets you find yourself typing all the time)
+- Keypress and Text both work on X11 and Wayland (the app picks `xdotool` or `ydotool` automatically)
+- Actions save immediately on change, no confirmation button needed
 - Key events detected via HID with debounce, actions execute even during GIF animation
+
+### Drag & Drop
+
+You can drag a PNG, JPG, GIF or WebP straight from your file manager onto a button tile in the "Assign Images" dialog. The image is imported into the library and uploaded to the device, exactly as if you had clicked the slot and browsed for it.
 
 ### Icon Rotation
 
@@ -175,6 +181,8 @@ BaseCamp Linux has a **plugin system** that lets you extend the app without modi
 
 The **Plugins** tab in the app shows all installed plugins with status, type badges and an enable/disable toggle. No restart needed to disable a plugin.
 
+The Plugin Manager also checks for updates. When a plugin you have installed has a newer version on GitHub, a green pill appears on its card (visible even when collapsed) and an explicit update button shows up when you expand it. One click downloads the new version and replaces the plugin folder. A small restart of the app is needed so the new code is actually loaded.
+
 ### Included: Now Playing
 
 A bundled **Now Playing** plugin shows what's currently playing in your browser (YouTube, Spotify, etc.) via MPRIS:
@@ -190,6 +198,32 @@ See **[PLUGINS.md](PLUGINS.md)** for the full plugin development guide with API 
 
 ---
 
+## Settings
+
+The cog icon in the top-right corner of the app opens a small settings dialog with three useful features.
+
+### Backup and Restore
+
+Export everything (keyboard buttons, DisplayPad pages, OBS config, macros, page names) into a single ZIP file. You can use it to migrate your setup to another machine, or just keep it around before you experiment with something new. Restoring asks for a confirmation first, and refuses any ZIP that tries to write outside the config folder.
+
+Your image libraries and plugins stay separate so the backup file stays small. After restoring, restart the app so the new settings are loaded.
+
+### Profiles
+
+Save your current setup under a name like "Gaming", "Work" or "Streaming" and switch between them later. Each profile snapshots the keyboard actions, the entire DisplayPad layout (images, actions, pages), your OBS connection and your macros. Image libraries stay shared between profiles so you don't waste disk space.
+
+Profiles are stored under `~/.config/mountain-time-sync/profiles/<name>/`. The active profile name is remembered between runs.
+
+### Update check
+
+On startup the app quietly asks GitHub whether there is a newer release. If so, the settings dialog shows a green line telling you the new version number, plus the right command for your install: download the new AppImage, run `yay -Syu basecamp-linux` on Arch, `sudo apt upgrade` on Debian, or `git pull` if you are running from source. The check is silent if you are offline or hit the GitHub rate limit.
+
+### File picker
+
+A small thing that still adds up: every file dialog now remembers the last folder you picked something from, per context (images, profiles, macros, backups). No more starting in your home directory every single time. If you have never picked anything yet, image pickers start in `/usr/share/icons` so you can use system icons straight away.
+
+---
+
 ## Keyboard — Everest Max
 
 The keyboard panel is split into a persistent **dashboard** at the top and collapsible sections below:
@@ -197,7 +231,7 @@ The keyboard panel is split into a persistent **dashboard** at the top and colla
 - **Dashboard** — Live clock display with 24H/12H toggle, language switcher (DE/EN + custom), Analog/Digital display style, splash screen and autostart toggles
 - **Monitor Mode** — Start/stop live keyboard display with CPU%, GPU%, RAM%, HDD% and Network MB/s metrics
 - **Main Display** — Switch between image and clock mode, upload any image to the keyboard's main display — automatically converted to the correct format
-- **Numpad Keys** — Assign actions (Shell, URL, Folder, App, OBS) and custom button images (including GIF frame picker) to D1–D4 — automatically converted to the correct format
+- **Numpad Keys** — Assign actions (Shell, URL, Folder, App, OBS, Macro, Keypress, Text) and custom button images (including GIF frame picker) to D1–D4 — automatically converted to the correct format
 - **RGB Lighting** — Control keyboard RGB effects (Wave, Tornado, Reactive, Yeti, Matrix, and more) with speed, brightness, color and direction — settings saved automatically
 - **Custom RGB Mode** — Per-key color editor: click or drag-select keys, assign colors, use the eyedropper (Alt+click), undo (Ctrl+Z), and save/load named presets — side LEDs fully selectable around both keyboard and numpad bezels (see [Custom RGB Mode — Keyboard](#custom-rgb-mode--keyboard) below)
 
@@ -206,7 +240,7 @@ The keyboard panel is split into a persistent **dashboard** at the top and colla
 - **Display styles** — Switch between Analog and Digital clock on the keyboard display
 - **24H / 12H** — Toggle clock format
 - **Monitor mode** — Live metrics on the keyboard display: CPU%, GPU%, RAM%, HDD%, Network MB/s
-- **Button actions (D1–D4)** — Assign Shell commands, URLs, folders, installed apps, OBS actions or Macros to D1–D4 — with native folder picker, searchable app picker and OBS scene selector. Actions save immediately on change. Use **Reset Buttons Flash** after first setup or when switching from Mountain Base Camp — BaseCamp may have stored its own actions in the keyboard's flash memory, which can cause two actions to fire on a single button press. Reset Buttons Flash overwrites all four slots with your configured actions, clearing any leftover BaseCamp data.
+- **Button actions (D1–D4)** — Assign Shell commands, URLs, folders, installed apps, OBS actions, Macros, Keypresses or arbitrary Text to D1–D4 with a native folder picker, searchable app picker and OBS scene selector. Actions save immediately on change. Use **Reset Buttons Flash** after first setup or when switching from Mountain Base Camp. BaseCamp may have stored its own actions in the keyboard's flash memory, which can cause two actions to fire on a single button press. Reset Buttons Flash overwrites all four slots with your configured actions, clearing any leftover BaseCamp data.
 - **Image upload (D1–D4)** — Upload images to D-buttons via the **Upload Images** dialog or individual per-slot upload buttons — automatically converted and resized (GIF frame picker included). Images are saved to the **Image Library** for quick reuse.
 - **Image Library** — All uploaded images are stored locally as thumbnails. Pick from previously used images with one click instead of browsing the file system every time. Images can be deleted from the library individually.
 - **Main display upload** — Upload any image to the keyboard's main display — with Image Library support for quick reuse

@@ -232,11 +232,6 @@ def _run_tool_output(tool_name, *args):
         return ""
 
 
-def _xdotool(*args):
-    """Run xdotool with the correct user environment."""
-    _run_tool("xdotool", *args)
-
-
 def _run_xdg_open(target):
     """Open a URL or folder via xdg-open."""
     env, sudo_user = _build_env()
@@ -268,6 +263,40 @@ def check_macro_tools():
     session = _detect_session()
     tool, _ = _find_tool()
     return tool, session
+
+
+def simulate_keypress(key_name):
+    """Simulate a single keypress (or combo like 'ctrl+c') via xdotool or ydotool.
+    Picks the available tool automatically — works on X11 and Wayland."""
+    if not key_name:
+        return
+    tool, _ = _find_tool()
+    if not tool:
+        print("[Keypress] No input tool found (install xdotool or ydotool)")
+        return
+    if tool == "xdotool":
+        keys = "+".join(_resolve_key(k) for k in key_name.split("+"))
+        _run_tool("xdotool", "key", "--clearmodifiers", keys)
+    else:
+        parts = [_resolve_key_ydotool(k) for k in key_name.split("+")]
+        for code in parts:
+            _run_tool("ydotool", "key", f"{code}:1")
+        for code in reversed(parts):
+            _run_tool("ydotool", "key", f"{code}:0")
+
+
+def simulate_text(text):
+    """Type out text via xdotool or ydotool. Works on X11 and Wayland."""
+    if not text:
+        return
+    tool, _ = _find_tool()
+    if not tool:
+        print("[Text] No input tool found (install xdotool or ydotool)")
+        return
+    if tool == "xdotool":
+        _run_tool("xdotool", "type", "--clearmodifiers", "--delay", "12", text)
+    else:
+        _run_tool("ydotool", "type", "--key-delay", "12", text)
 
 
 def execute_macro(macro_data, stop_event=None):
@@ -466,10 +495,8 @@ def _exec_mouse_scroll(tool, value):
 def get_mouse_location():
     """Get current mouse position. Returns (x, y) or None.
     Tries xdotool first (fastest), then python-xlib.
-    Note: On pure Wayland these only work over XWayland when cursor
-    is over an X11 window. For reliable Wayland tracking, use
-    get_mouse_location_tk() with a fullscreen overlay instead.
-    """
+    Note: on pure Wayland these only work over XWayland when the cursor
+    is over an X11 window."""
     # Method 1: xdotool
     out = _run_tool_output("xdotool", "getmouselocation")
     if out:
@@ -489,7 +516,6 @@ def get_mouse_location():
     except Exception:
         pass
 
-    return None
     return None
 
 

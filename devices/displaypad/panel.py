@@ -67,7 +67,7 @@ _KEY_MAP = (
     [(47, m) for m in (0x01, 0x02, 0x04, 0x08, 0x10)]
 )
 
-_ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro", "keypress"]
+_ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro", "keypress", "text"]
 
 _DEFAULT_ACTIONS = [{"type": "none", "action": ""} for _ in range(12)]
 
@@ -428,7 +428,7 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
 
         # Page selector
         pages = self._panel._get_available_pages()
-        page_labels = [self._app.T("dp_page_main") if p == 0 else f"Page {p}" for p in pages]
+        page_labels = [self._panel._get_page_name(p) for p in pages]
         self._page_list = pages
         self._page_selector = ctk.CTkOptionMenu(
             header, values=page_labels,
@@ -436,8 +436,7 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             text_color=FG, font=("Helvetica", 11), width=100, height=28,
             command=self._on_page_change)
         cur = self._panel._current_page
-        self._page_selector.set(
-            self._app.T("dp_page_main") if cur == 0 else f"Page {cur}")
+        self._page_selector.set(self._panel._get_page_name(cur))
         self._page_selector.pack(side="right")
 
         # 6 × 2 grid of tiles
@@ -479,6 +478,16 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             for w in (tile, preview):
                 w.bind("<Button-1>", lambda e, i=idx: self._pick_slot(i))
             preview.bind("<Button-3>", lambda e, i=idx: self._clear_slot(i))
+            # Drag-and-drop target — registered only if tkinterdnd2 is loaded
+            if getattr(self._app, "_dnd_available", False):
+                try:
+                    from tkinterdnd2 import DND_FILES
+                    preview.drop_target_register(DND_FILES)
+                    preview.dnd_bind(
+                        "<<Drop>>",
+                        lambda e, i=idx: self._on_drop(i, e.data))
+                except Exception:
+                    pass
 
         # Hint
         ctk.CTkLabel(self, text=self._app.T("dp_dialog_hint"),
@@ -534,6 +543,31 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
 
     # ── Slot management ───────────────────────────────────────────────────────
 
+    def _on_drop(self, idx, raw_data):
+        """Handle a file drop on a tile. raw_data is a Tcl list string.
+        We accept the first item and use it like a normal pick."""
+        if self._panel._uploading or self._is_locked(idx):
+            return
+        # tkinterdnd2 returns a space-separated string, with paths wrapped in
+        # braces if they contain spaces — use the Tcl splitter for correctness.
+        try:
+            paths = list(self.tk.splitlist(raw_data))
+        except Exception:
+            paths = [raw_data]
+        path = next((p for p in paths if p and os.path.exists(p)), None)
+        if not path:
+            return
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"):
+            return
+        from shared.config import _save_to_dp_library, DISPLAYPAD_LIBRARY_DIR
+        thumb = _save_to_dp_library(path)
+        final = os.path.join(DISPLAYPAD_LIBRARY_DIR, thumb) if thumb else path
+        self._panel._set_button_image(idx, final)
+        self._refresh_tile(idx)
+        self._status_lbl.configure(
+            text=f"K{idx + 1}: {os.path.basename(final)}", text_color=FG2)
+
     def _pick_slot(self, idx):
         if self._panel._uploading or self._is_locked(idx):
             return
@@ -561,14 +595,21 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
     def _clear_slot(self, idx):
         if self._panel._uploading or self._is_locked(idx):
             return
-        self._panel._images.pop(str(idx), None)
+        # Replace with blank placeholder so the device gets the new image on next upload
+        self._panel._images[str(idx)] = self._panel._blank_icon
         self._panel._gif_frames.pop(idx, None)
+        self._panel._gui_frames_sm.pop(idx, None)
+        self._panel._fullscreen_group.discard(idx)
         _save_displaypad_buttons(self._panel._images)
+        self._dlg_frames.pop(idx, None)
         ph = _make_placeholder(_DIALOG_TILE)
         self._tile_imgs[idx] = ph
         self._tile_lbls[idx].configure(image=ph, text="")
         self._panel._refresh_panel_tile(idx)
         self._status_lbl.configure(text=self._app.T("dp_slot_cleared", k=idx+1), text_color=FG2)
+        # Push the blank to the device
+        if not self._panel._uploading and not self._panel._animating:
+            self._panel.after(100, self._panel._start_upload)
 
     def _clear_all(self):
         if self._panel._uploading:
@@ -676,7 +717,7 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
     def _on_page_change(self, label):
         """Switch the image dialog to show a different page's images."""
         for p, lbl in zip(self._page_list,
-                          [self._app.T("dp_page_main") if x == 0 else f"Page {x}"
+                          [self._panel._get_page_name(x)
                            for x in self._page_list]):
             if lbl == label:
                 if p != self._panel._current_page:
@@ -694,11 +735,17 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
                 break
 
     def destroy(self):
-        # Auto-upload when dialog closes
-        if not self._panel._uploading and not self._panel._animating:
-            if self._panel._images or self._panel._gif_frames:
+        # Auto-upload when dialog closes. Guard against the panel being
+        # destroyed first during an app shutdown, which would raise TclError.
+        try:
+            if (self._panel.winfo_exists()
+                    and not self._panel._uploading
+                    and not self._panel._animating
+                    and (self._panel._images or self._panel._gif_frames)):
                 self._panel._uploading = True  # block key listener immediately
                 self._panel.after(300, self._panel._start_upload)
+        except tk.TclError:
+            pass
         super().destroy()
 
 
@@ -767,6 +814,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         labels.append("OBS")
         labels.append(self._app.T("action_type_macro"))
         labels.append(self._app.T("action_type_keypress"))
+        labels.append(self._app.T("action_type_text"))
         # Append plugin action labels with separator
         pm = getattr(self._app, "_plugin_manager", None)
         if pm:
@@ -835,6 +883,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 elif btype == "keypress":
                     self._cmd_entries[i].configure(
                         placeholder_text="e.g. grave, F12, ctrl+shift+a")
+                # "text" type: text to be typed out
+                elif btype == "text":
+                    self._cmd_entries[i].configure(
+                        placeholder_text=self._app.T("action_type_text_hint"))
                 # "obs" type: show OBS combo instead of entry
                 elif btype == "obs":
                     self._cmd_entries[i].pack_forget()
@@ -877,8 +929,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     self._act_cmd[i].set(pct)
 
         # Update page selector
-        self._page_selector.set(
-            self._app.T("dp_page_main") if page == 0 else f"Page {page}")
+        self._page_selector.set(self._panel._get_page_name(page))
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -890,7 +941,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
         # Page selector
         pages = self._panel._get_available_pages()
-        page_labels = [self._app.T("dp_page_main") if p == 0 else f"Page {p}" for p in pages]
+        page_labels = [self._panel._get_page_name(p) for p in pages]
         self._page_selector = ctk.CTkOptionMenu(
             header, values=page_labels,
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
@@ -986,7 +1037,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
     def _on_page_change(self, label):
         for p, lbl in zip(self._page_list,
-                          [self._app.T("dp_page_main") if x == 0 else f"Page {x}"
+                          [self._panel._get_page_name(x)
                            for x in self._page_list]):
             if lbl == label:
                 self._load_page(p)
@@ -1270,14 +1321,22 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._panel._save_page_action(self._page, idx, btype, action)
         self._info_lbl.configure(
             text=self._app.T("dp_act_saved", k=idx + 1), text_color=GRN)
-        # Refresh page selector (new pages may have been created)
+        # Refresh page selector (new pages may have been created / renamed)
         pages = self._panel._get_available_pages()
         self._page_list = pages
-        page_labels = [self._app.T("dp_page_main") if p == 0 else f"Page {p}" for p in pages]
+        page_labels = [self._panel._get_page_name(p) for p in pages]
         self._page_selector.configure(values=page_labels)
+        self._page_selector.set(self._panel._get_page_name(self._page))
 
     def _apply_all_and_close(self):
         """Save all 12 button actions (catches unsaved entries) and close."""
+        # Force any active entry to commit by moving focus away first —
+        # otherwise typed text that hasn't triggered FocusOut yet would be lost.
+        try:
+            self.focus_set()
+            self.update_idletasks()
+        except Exception:
+            pass
         for i in range(12):
             self._apply(i)
         self.destroy()
@@ -1398,16 +1457,8 @@ class DisplayPadPanel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, pady=(4, 0))
         self._scroll = scroll
 
-        # Cap scroll speed
-        _c = scroll._parent_canvas
-        _orig_yview = _c.yview
-        def _capped_yview(*args):
-            if args and args[0] == "scroll":
-                n    = max(-2, min(2, int(args[1])))
-                what = args[2] if len(args) > 2 else "units"
-                return _orig_yview("scroll", n, what)
-            return _orig_yview(*args)
-        _c.yview = _capped_yview
+        from shared.ui_helpers import cap_scroll_speed
+        cap_scroll_speed(scroll)
 
         content = scroll
 
@@ -1717,7 +1768,7 @@ class DisplayPadPanel(ctk.CTkFrame):
 
         # Update page indicator
         if hasattr(self, "_page_lbl"):
-            name = self.T("dp_page_main") if page_num == 0 else f"Page {page_num}"
+            name = self._get_page_name(page_num)
             self._page_lbl.configure(text=f"{self.T('dp_page_label')} {name}")
             self._page_back_btn.pack(
                 side="right", padx=(4, 0)) if page_num != 0 else self._page_back_btn.pack_forget()
@@ -1737,6 +1788,20 @@ class DisplayPadPanel(ctk.CTkFrame):
             if act.get("type") == "page":
                 pages.append(i + 1)
         return sorted(set(pages))
+
+    def _get_page_name(self, p):
+        """Return the user-defined name for a page, falling back to 'Page N'."""
+        if p == 0:
+            return self.T("dp_page_main")
+        idx = p - 1
+        actions = self._page_actions.get(0, _DEFAULT_ACTIONS)
+        if 0 <= idx < len(actions):
+            act = actions[idx]
+            if act.get("type") == "page":
+                name = (act.get("action") or "").strip()
+                if name:
+                    return name
+        return f"Page {p}"
 
     def _execute_action_k(self, idx):
         btype, action = self._get_action(idx)
@@ -1759,7 +1824,6 @@ class DisplayPadPanel(ctk.CTkFrame):
             return
         # Macro action
         if btype == "macro" and action:
-            import threading
             from shared.macros import execute_macro
             from shared.config import load_macros
             if not hasattr(self, "_macro_toggle_events"):
@@ -1778,68 +1842,32 @@ class DisplayPadPanel(ctk.CTkFrame):
                         target=execute_macro, args=(macro, stop_ev),
                         daemon=True).start()
             return
-        # Keypress action – simulate key via xdotool
+        # Keypress / Text action – uses xdotool (X11) or ydotool (Wayland) automatically
         if btype == "keypress" and action:
-            try:
-                sudo_user = os.environ.get("SUDO_USER")
-                if sudo_user:
-                    uid     = _pwd.getpwnam(sudo_user).pw_uid
-                    runtime = f"/run/user/{uid}"
-                    env = {
-                        "DISPLAY": os.environ.get("DISPLAY", ":0"),
-                        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
-                        "XDG_RUNTIME_DIR": runtime,
-                        "HOME": _pwd.getpwnam(sudo_user).pw_dir,
-                        "USER": sudo_user, "LOGNAME": sudo_user,
-                        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                    }
-                    if os.path.exists(os.path.join(runtime, "wayland-0")):
-                        env["WAYLAND_DISPLAY"] = "wayland-0"
-                        env["XDG_SESSION_TYPE"] = "wayland"
-                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "xdotool", "key", "--clearmodifiers", action], env=env)
-                else:
-                    subprocess.Popen(["xdotool", "key", "--clearmodifiers", action])
-            except Exception:
-                pass
+            from shared.macros import simulate_keypress
+            threading.Thread(target=simulate_keypress, args=(action,), daemon=True).start()
+            return
+        if btype == "text" and action:
+            from shared.macros import simulate_text
+            threading.Thread(target=simulate_text, args=(action,), daemon=True).start()
             return
         # Plugin action types
         pm = getattr(self._app, "_plugin_manager", None)
         if pm:
             handler = pm.get_action_handler(btype)
             if handler:
-                import threading
                 threading.Thread(target=handler, args=(action,), daemon=True).start()
                 return
         if btype == "none" or not action:
             return
+        # Built-in shell/url/folder/app — dispatch via shared helpers that
+        # handle the SUDO_USER / Wayland / X11 environment juggling.
+        from shared.macros import _run_shell, _run_xdg_open
         try:
-            sudo_user = os.environ.get("SUDO_USER")
-            if sudo_user:
-                uid     = _pwd.getpwnam(sudo_user).pw_uid
-                runtime = f"/run/user/{uid}"
-                env = {
-                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
-                    "XDG_RUNTIME_DIR": runtime,
-                    "HOME": _pwd.getpwnam(sudo_user).pw_dir,
-                    "USER": sudo_user, "LOGNAME": sudo_user,
-                    "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                }
-                if os.path.exists(os.path.join(runtime, "wayland-0")):
-                    env["WAYLAND_DISPLAY"] = "wayland-0"
-                    env["XDG_SESSION_TYPE"] = "wayland"
-                else:
-                    env["DISPLAY"] = os.environ.get("DISPLAY", ":0")
-                    env["XAUTHORITY"] = os.path.join(
-                        _pwd.getpwnam(sudo_user).pw_dir, ".Xauthority")
-                if btype in ("url", "folder"):
-                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "xdg-open", action], env=env)
-                else:
-                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "bash", "-c", action], env=env)
+            if btype in ("url", "folder"):
+                _run_xdg_open(action)
             else:
-                if btype in ("url", "folder"):
-                    subprocess.Popen(["xdg-open", action])
-                else:
-                    subprocess.Popen(["bash", "-c", action])
+                _run_shell(action)
         except Exception:
             pass
 
@@ -1910,7 +1938,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._actions_btn.configure(text=self.T("dp_configure_actions"))
         self._page_back_btn.configure(text=self.T("dp_page_back"))
         p = self._current_page
-        name = self.T("dp_page_main") if p == 0 else f"Page {p}"
+        name = self._get_page_name(p)
         self._page_lbl.configure(text=f"{self.T('dp_page_label')} {name}")
 
     # ── Dialog ────────────────────────────────────────────────────────────────
@@ -2005,38 +2033,21 @@ class DisplayPadPanel(ctk.CTkFrame):
             y += 12
         return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
-    def _get_locked_indices(self):
-        """Return set of button indices that must not be overwritten by fullscreen GIF.
-        Empty — fullscreen covers everything, actions still work independently."""
-        return set()
-
     def _load_fullscreen_gif(self, path, save=True):
-        """Split fullscreen GIF into 12 tile frame lists, populate state."""
+        """Split fullscreen GIF into 12 tile frame lists, populate state.
+        Fullscreen covers every button — page/back actions still fire on
+        key press but visually the whole panel is occupied by the GIF."""
         tiles     = _split_gif_to_tiles(path)
         gui_tiles = _split_gif_display_tiles(path, _PANEL_TILE)
         if not tiles:
             return False
-        # Exclude locked buttons (back / page) from fullscreen group
-        locked = self._get_locked_indices()
-        self._fullscreen_group = set(range(NUM_KEYS)) - locked
+        self._fullscreen_group = set(range(NUM_KEYS))
         for idx in range(NUM_KEYS):
-            if idx in locked:
-                continue
             self._gif_frames[idx] = tiles[idx]
             if gui_tiles:
                 self._gui_frames_sm[idx] = gui_tiles[idx]
                 self._gui_fidx[idx]  = 0
                 self._gui_next[idx]  = time.monotonic()
-            if self._tile_lbls:
-                self._refresh_panel_tile(idx)
-        # Re-inject special icons for locked buttons
-        for idx in locked:
-            if self._current_page != 0 and idx == 0:
-                self._images[str(idx)] = self._back_icon
-            else:
-                self._images[str(idx)] = self._folder_icon
-            self._gif_frames.pop(idx, None)
-            self._gui_frames_sm.pop(idx, None)
             if self._tile_lbls:
                 self._refresh_panel_tile(idx)
         if gui_tiles and self._gui_tick_id is None and self._tile_lbls:
@@ -2056,13 +2067,17 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._stop_animation()
             self.after(500, self._clear_all)
             return
-        # Set all buttons to blank, but keep page buttons
+        # Set all buttons to blank, but keep page buttons + their actions so
+        # navigation between pages still works after a clear.
         page_btns = {}
+        kept_page_actions = {}  # idx -> action dict for "page" buttons on main
+        cur_actions = self._page_actions.get(self._current_page, _DEFAULT_ACTIONS)
         if self._current_page == 0:
-            for i, act in enumerate(self._page_actions.get(0, _DEFAULT_ACTIONS)):
+            for i, act in enumerate(cur_actions):
                 if act.get("type") == "page":
                     labeled = os.path.join(CONFIG_DIR, f"dp_folder_{i}.png")
                     page_btns[str(i)] = labeled if os.path.exists(labeled) else self._folder_icon
+                    kept_page_actions[i] = dict(act)
         self._images = {str(i): self._blank_icon for i in range(NUM_KEYS)}
         self._images.update(page_btns)
         self._gif_frames = {}
@@ -2071,17 +2086,29 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._gui_next = {}
         self._fullscreen_group = set()
         self._page_fullscreen[self._current_page] = None
+
+        # Reset button actions to defaults, but preserve "page" buttons on main
+        # and the "back" action on K1 of sub-pages.
+        new_actions = [dict(a) for a in _DEFAULT_ACTIONS]
+        for idx, act in kept_page_actions.items():
+            if 0 <= idx < len(new_actions):
+                new_actions[idx] = act
+        self._page_actions[self._current_page] = new_actions
+
         if self._current_page == 0:
             save_imgs = dict(page_btns)  # only keep page buttons in config
             _save_displaypad_buttons(save_imgs)
             _clear_displaypad_fullscreen()
+            _save_displaypad_actions(new_actions)
         else:
             self._page_images[self._current_page] = {}
             self._save_sub_pages()
         for idx in range(NUM_KEYS):
             self._refresh_panel_tile(idx)
         self._info_label.configure(text=self.T("dp_all_cleared"), text_color=FG2)
-        # Upload blank images to device
+        # Upload blank images to device — set flag immediately to block key listener
+        # before the scheduled callback fires.
+        self._uploading = True
         self.after(200, self._start_upload)
 
     # ── GUI preview animation ─────────────────────────────────────────────────
@@ -2144,9 +2171,14 @@ class DisplayPadPanel(ctk.CTkFrame):
             usb_dev, hid_dev = _open_interfaces()
         except Exception as e:
             if _retry < 5:
-                # Device busy at boot — retry after a short delay
+                # Device busy at boot — retry after a short delay.
+                # Release flags so the key listener can resume while we wait,
+                # and re-run _start_upload to pick up the latest page state
+                # (user may have switched pages during the retry window).
                 delay = (2 + _retry * 2) * 1000  # 2s, 4s, 6s, 8s, 10s
-                self.after(delay, lambda: self._worker(assigned, _retry + 1))
+                self._uploading = False
+                self._animating = False
+                self.after(delay, self._start_upload)
                 return
             self.after(0, lambda e=e: self._finish(False, str(e)))
             return
@@ -2199,6 +2231,20 @@ class DisplayPadPanel(ctk.CTkFrame):
             group  = sorted(k for k in self._fullscreen_group if k in animated)
 
             _key_events = []
+            # Track previous packet state for rising-edge detection so a held
+            # button doesn't fire its action every GIF frame.
+            _prev_evt = bytearray(64)
+
+            def _dispatch_key_events(evts):
+                nonlocal _prev_evt
+                for evt in evts:
+                    for ki, (bi, mask) in enumerate(_KEY_MAP):
+                        if bi >= len(evt):
+                            continue
+                        if (evt[bi] & mask) and not (_prev_evt[bi] & mask):
+                            self.after(0, lambda ki=ki: self._execute_action_k(ki))
+                    if len(evt) >= len(_prev_evt):
+                        _prev_evt = bytearray(evt[:len(_prev_evt)])
 
             if group:
                 # ── Synchronized fullscreen GIF loop ──────────────────────────
@@ -2214,11 +2260,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                             bgr = fr.rotate(-rot, expand=False).tobytes()
                         _upload_button(usb_dev, hid_dev, k, bgr, _key_events)
                     fidx = (fidx + 1) % n_frames
-                    # Process key events collected during uploads
-                    for evt in _key_events:
-                        for ki, (bi, mask) in enumerate(_KEY_MAP):
-                            if bi < len(evt) and (evt[bi] & mask):
-                                self.after(0, lambda ki=ki: self._execute_action_k(ki))
+                    _dispatch_key_events(_key_events)
                     _key_events.clear()
                     wait = max(0, max(dur, min_ms) / 1000.0 - (time.monotonic() - t0))
                     if wait > 0:
@@ -2263,10 +2305,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                     _upload_button(usb_dev, hid_dev, key, bgr, _key_events)
                     frame_idx[key] = (idx + 1) % len(animated[key])
                     next_time[key] = time.monotonic() + max(duration_ms, min_ms) / 1000.0
-                    for evt in _key_events:
-                        for ki, (bi, mask) in enumerate(_KEY_MAP):
-                            if bi < len(evt) and (evt[bi] & mask):
-                                self.after(0, lambda ki=ki: self._execute_action_k(ki))
+                    _dispatch_key_events(_key_events)
                     _key_events.clear()
 
         except Exception as e:

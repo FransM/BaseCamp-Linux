@@ -210,8 +210,9 @@ def _upload_icon_image(dev, button_idx, img_bytes):
       aa55 1080 2800 [chk_lo chk_hi] 0000 0201 [btn_idx] descriptor
       Stream 64-byte chunks at 30ms intervals until all 10368 bytes committed
     """
-    assert len(img_bytes) == ICON_IMG_SIZE
-    chk = sum(img_bytes) & 0xFFFF
+    if len(img_bytes) != ICON_IMG_SIZE:
+        raise ValueError(
+            f"Icon payload must be {ICON_IMG_SIZE} bytes, got {len(img_bytes)}")
 
     # Init interrupt endpoint
     dev.write(EP_OUT, make_packet(0x11, 0x12))
@@ -304,7 +305,9 @@ def _upload_main_display_image(dev, img_bytes, activate=False):
     activate=True: after chunks, send 13 41 00 00 00 to explicitly activate
     the custom image slot (needed after 13 41 00 00 01 dial-reset).
     """
-    assert len(img_bytes) == MAIN_IMG_SIZE, f"Expected {MAIN_IMG_SIZE} bytes, got {len(img_bytes)}"
+    if len(img_bytes) != MAIN_IMG_SIZE:
+        raise ValueError(
+            f"Main display payload must be {MAIN_IMG_SIZE} bytes, got {len(img_bytes)}")
     print("PROGRESS:5", flush=True)
 
     # Session open → slot prepare
@@ -418,11 +421,6 @@ def read_buttons():
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     return default
-
-def save_buttons(buttons):
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(BUTTON_FILE, "w") as f:
-        json.dump(buttons, f, indent=2)
 
 # ── High-level entry points ─────────────────────────────────────────────────
 
@@ -878,7 +876,6 @@ def controller_loop(style=STYLE_ANALOG):
 
         # Icons setzen und Aktionen in Keyboard-Flash schreiben
         buttons = read_buttons()
-        obs_cfg_init = _load_obs_config()
         for i, btn in enumerate(buttons):
             _set_icon(dev, i, btn["icon"])
             btype = btn.get("type", "shell")
@@ -962,6 +959,14 @@ def controller_loop(style=STYLE_ANALOG):
                                     daemon=True).start()
                         else:
                             print(f"[Macro] UUID '{action}' not found in {list(all_macros.keys())}")
+                    elif btype == "keypress" and action:
+                        from shared.macros import simulate_keypress
+                        threading.Thread(target=simulate_keypress,
+                                         args=(action,), daemon=True).start()
+                    elif btype == "text" and action:
+                        from shared.macros import simulate_text
+                        threading.Thread(target=simulate_text,
+                                         args=(action,), daemon=True).start()
                     elif btype != "none" and action and _plugin_action_handler(btype, action):
                         pass  # handled by plugin
                     elif action and btype != "none":
@@ -1181,7 +1186,12 @@ if __name__ == "__main__":
         action = btn.get("action", "").strip()
         dev = _get_claimed_device()
         try:
-            cmd = ":" if (btype == "none" or not action) else action
+            # Host-dispatched action types (obs/macro/keypress/text) only need
+            # byte42 detection from flash; the actual action runs on the host.
+            if btype in ("none", "obs", "macro", "keypress", "text") or not action:
+                cmd = ":"
+            else:
+                cmd = action
             _write_action(dev, btn_idx, cmd, action_type=_action_type_byte(btype))
         finally:
             _release(dev)
@@ -1192,7 +1202,10 @@ if __name__ == "__main__":
             for i, btn in enumerate(btns):
                 btype = btn.get("type", "shell")
                 action = btn.get("action", "").strip()
-                cmd = ":" if (btype == "none" or not action) else action
+                if btype in ("none", "obs", "macro", "keypress", "text") or not action:
+                    cmd = ":"
+                else:
+                    cmd = action
                 _write_action(dev, i, cmd, action_type=_action_type_byte(btype))
         finally:
             _release(dev)

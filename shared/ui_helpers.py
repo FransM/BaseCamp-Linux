@@ -62,55 +62,73 @@ def _run_as_sudouser(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def native_open_image(title="Bild wählen"):
+def native_open_image(title="Bild wählen", kind="image"):
+    """Pick an image file. Remembers the last directory between runs per `kind`."""
     import shutil
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    from shared.config import _load_last_dir, _save_last_dir
+    desktop  = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
     filter_img = "*.png *.jpg *.jpeg *.bmp *.webp *.gif"
+    start_dir = _load_last_dir(kind) or os.path.expanduser("~")
+
+    def _remember(path):
+        if path:
+            _save_last_dir(kind, path)
+        return path or ""
 
     if shutil.which("kdialog") and ("KDE" in desktop or "PLASMA" in desktop):
         try:
             r = _run_as_sudouser(["kdialog", "--getopenfilename",
-                                   os.path.expanduser("~"),
+                                   start_dir,
                                    f"{filter_img} | Bilder", "--title", title])
-            return r.stdout.strip() if r.returncode == 0 else ""
+            return _remember(r.stdout.strip() if r.returncode == 0 else "")
         except Exception:
             pass
 
     if shutil.which("zenity"):
         try:
             patterns = [f"--file-filter=Bilder | {filter_img}", "--file-filter=Alle | *"]
-            r = _run_as_sudouser(["zenity", "--file-selection", f"--title={title}"] + patterns)
-            return r.stdout.strip() if r.returncode == 0 else ""
+            r = _run_as_sudouser(["zenity", "--file-selection", f"--title={title}",
+                                   f"--filename={start_dir}/"] + patterns)
+            return _remember(r.stdout.strip() if r.returncode == 0 else "")
         except Exception:
             pass
 
-    return filedialog.askopenfilename(
-        title=title,
+    return _remember(filedialog.askopenfilename(
+        title=title, initialdir=start_dir,
         filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg *.jpeg"),
-                   ("BMP", "*.bmp"), ("WebP", "*.webp"), ("GIF", "*.gif"), ("Alle", "*.*")])
+                   ("BMP", "*.bmp"), ("WebP", "*.webp"), ("GIF", "*.gif"), ("Alle", "*.*")]))
 
 
-def native_open_folder(title="Ordner wählen"):
+def native_open_folder(title="Ordner wählen", kind="folder"):
+    """Pick a directory. Remembers the last directory between runs per `kind`."""
     import shutil
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    from shared.config import _load_last_dir, _save_last_dir
+    desktop  = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    start_dir = _load_last_dir(kind) or os.path.expanduser("~")
+
+    def _remember(path):
+        if path:
+            _save_last_dir(kind, path)
+        return path or ""
 
     if shutil.which("kdialog") and ("KDE" in desktop or "PLASMA" in desktop):
         try:
             r = _run_as_sudouser(["kdialog", "--getexistingdirectory",
-                                   os.path.expanduser("~"), "--title", title])
-            return r.stdout.strip() if r.returncode == 0 else ""
+                                   start_dir, "--title", title])
+            return _remember(r.stdout.strip() if r.returncode == 0 else "")
         except Exception:
             pass
 
     if shutil.which("zenity"):
         try:
             r = _run_as_sudouser(["zenity", "--file-selection", "--directory",
-                                   f"--title={title}"])
-            return r.stdout.strip() if r.returncode == 0 else ""
+                                   f"--title={title}",
+                                   f"--filename={start_dir}/"])
+            return _remember(r.stdout.strip() if r.returncode == 0 else "")
         except Exception:
             pass
 
-    return filedialog.askdirectory(title=title)
+    return _remember(filedialog.askdirectory(title=title, initialdir=start_dir))
 
 
 def parse_desktop_apps():
@@ -175,6 +193,27 @@ def parse_desktop_apps():
 
 def _rgb_hex(rgb):
     return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def cap_scroll_speed(scrollable_frame, max_units=2):
+    """Cap a CTkScrollableFrame's wheel scroll step to ±max_units.
+
+    CustomTkinter's default scroll step is 5 units per wheel event, which
+    feels far too fast in dense panels. Wrapping canvas.yview is the only
+    reliable approach — CTk re-binds child widgets internally, so binding
+    on Canvas alone is not enough.
+    """
+    canvas = scrollable_frame._parent_canvas
+    original = canvas.yview
+
+    def capped(*args):
+        if args and args[0] == "scroll":
+            n    = max(-max_units, min(max_units, int(args[1])))
+            what = args[2] if len(args) > 2 else "units"
+            return original("scroll", n, what)
+        return original(*args)
+
+    canvas.yview = capped
 
 
 # ── Color Picker Dialog ────────────────────────────────────────────────────────
@@ -1168,12 +1207,15 @@ class CustomRGBWindow(ctk.CTkToplevel):
     def _save_profile(self):
         import tkinter.filedialog as _fd
         import json as _j
+        from shared.config import _load_last_dir, _save_last_dir
         path = _fd.asksaveasfilename(
             parent=self, defaultextension=".json",
+            initialdir=_load_last_dir("rgb_profile") or os.path.expanduser("~"),
             filetypes=[("JSON Profile", "*.json"), ("All", "*.*")],
             title=self._T("custom_rgb_save_profile"))
         if not path:
             return
+        _save_last_dir("rgb_profile", path)
         profile = {"leds": [list(c) for c in self._leds],
                    "brightness": self._current_bri()}
         if self._has_side:
@@ -1185,12 +1227,15 @@ class CustomRGBWindow(ctk.CTkToplevel):
     def _load_profile(self):
         import tkinter.filedialog as _fd
         import json as _j
+        from shared.config import _load_last_dir, _save_last_dir
         path = _fd.askopenfilename(
             parent=self,
+            initialdir=_load_last_dir("rgb_profile") or os.path.expanduser("~"),
             filetypes=[("JSON Profile", "*.json"), ("All", "*.*")],
             title=self._T("custom_rgb_load_profile"))
         if not path:
             return
+        _save_last_dir("rgb_profile", path)
         try:
             d = _j.loads(open(path).read())
             leds = [tuple(c) for c in d.get("leds", [])]
@@ -1265,16 +1310,7 @@ class LibraryPickerDialog(ctk.CTkToplevel):
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG2, corner_radius=6, height=300)
         scroll.pack(fill="both", expand=True, padx=12, pady=(4, 12))
 
-        # Cap scroll speed (same as panels)
-        _c = scroll._parent_canvas
-        _orig_yview = _c.yview
-        def _capped_yview(*args):
-            if args and args[0] == "scroll":
-                n    = max(-2, min(2, int(args[1])))
-                what = args[2] if len(args) > 2 else "units"
-                return _orig_yview("scroll", n, what)
-            return _orig_yview(*args)
-        _c.yview = _capped_yview
+        cap_scroll_speed(scroll)
 
         self._load_grid(scroll)
 
@@ -1582,8 +1618,10 @@ class MultiUploadDialog(ctk.CTkToplevel):
                 cmd = self._app._cmd("upload", str(idx), src, "--frame", str(gif_frame))
 
             bar  = self._status_bars[idx]
+            # Merge stderr into stdout to avoid full-buffer deadlock during wait().
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True)
+                                    stderr=subprocess.STDOUT, text=True)
+            last_non_progress = ""
             for line in proc.stdout:
                 if line.startswith("PROGRESS:"):
                     try:
@@ -1591,9 +1629,13 @@ class MultiUploadDialog(ctk.CTkToplevel):
                         self.after(0, lambda v=pct, b=bar: b.set(v / 100.0))
                     except ValueError:
                         pass
+                else:
+                    stripped = line.rstrip()
+                    if stripped:
+                        last_non_progress = stripped
             proc.wait()
             ok       = proc.returncode == 0
-            err_hint = (proc.stderr.read().strip().splitlines() or [""])[-1]
+            err_hint = last_non_progress
 
             if ok:
                 new_fname = thumb_fname or _save_to_library(src, gif_frame)

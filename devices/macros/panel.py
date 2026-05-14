@@ -733,20 +733,26 @@ class MacroPanel(ctk.CTkFrame):
         if not self._selected_id or self._selected_id not in self._macros:
             return
         m = self._macros[self._selected_id]
+        from shared.config import _load_last_dir, _save_last_dir
         path = filedialog.asksaveasfilename(
             defaultextension=".json",
+            initialdir=_load_last_dir("macro") or os.path.expanduser("~"),
             filetypes=[("JSON", "*.json")],
             initialfile=f"{m.get('name', 'macro')}.json")
         if not path:
             return
+        _save_last_dir("macro", path)
         with open(path, "w") as f:
             json.dump(m, f, indent=2)
 
     def _import_macro(self):
+        from shared.config import _load_last_dir, _save_last_dir
         path = filedialog.askopenfilename(
+            initialdir=_load_last_dir("macro") or os.path.expanduser("~"),
             filetypes=[("JSON", "*.json")])
         if not path:
             return
+        _save_last_dir("macro", path)
         try:
             with open(path) as f:
                 m = json.load(f)

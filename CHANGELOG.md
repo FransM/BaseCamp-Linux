@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.8.1] - 2026-05-14
+
+This release is mainly about quality-of-life: a new settings dialog with backup/restore and profiles, a much better experience for everyone on Wayland, and a long list of bug fixes that came out of community reports and a thorough code review. Big thanks to everyone who opened GitHub issues — most of the fixes here exist because of you.
+
+### New: Settings dialog (⚙ button in the header)
+
+There is now a settings cog in the top-right corner that opens a small dialog with three useful things:
+
+- **Backup & Restore.** Export everything (keyboard buttons, DisplayPad pages, OBS config, macros, page names, …) into a single ZIP file. Restore it on the same machine or move it to another one. Your image libraries and plugins stay separate so the backup stays small. Restoring asks for confirmation first, and refuses any ZIP that tries to write outside the config folder.
+- **Profiles.** Save your current setup under a name like "Gaming", "Work" or "Streaming" and switch between them later. Each profile snapshots the keyboard actions, the entire DisplayPad layout (images, actions, pages), your OBS connection and your macros. Image libraries stay shared so you don't waste disk space.
+- **Update check.** When you open the app it quietly asks GitHub whether there is a newer release, and if so shows a green "↑ v1.8.2 available" line. It also detects how you installed BaseCamp Linux and tells you exactly what to do: download the new AppImage, run `yay -Syu basecamp-linux`, `sudo apt upgrade`, or `git pull` — whichever is right for your install.
+
+### Better file picker
+
+- The app remembers the last folder you picked an image from — every dialog now opens where you were last time instead of dumping you in your home directory every single time.
+- If you've never picked anything yet, it starts in `/usr/share/icons` so you can use system icons straight away.
+
+### DisplayPad: Drag & Drop
+
+You can now drag a PNG, JPG, GIF or WebP directly from your file manager onto a button tile in the "Assign Images" dialog. The image gets imported into the library and uploaded to the device — same as if you had clicked the slot and browsed for it.
+
+### DisplayPad: Clear All clears more
+
+"Clear All" used to leave button actions in place — so a button could still trigger a shell command even though its image was gone. Now Clear All also resets the actions to "None". Pages and the "Back" button on sub-pages are preserved so you can still navigate.
+
+### Plugin Manager: spots updates on GitHub
+
+The plugin manager now checks the version of every installed plugin against the central plugin index on GitHub. When a newer version is published you get a green **↑ v1.1** pill on the plugin card (visible even when the card is collapsed) plus an explicit **↑ Update to v1.1** button when you expand it. One click downloads and replaces the plugin. The "Available Plugins" list also shows a green **Update** button instead of the greyed-out "Installed" tag for plugins that have a newer version waiting.
+
+### Fixes from GitHub issues
+
+- **#3 — Deleting a DisplayPad image now actually clears the device.** Before, right-clicking a slot removed it from the GUI but the old image stayed visible on the pad until you restarted the app.
+- **#5 — Page names finally show up everywhere.** If you renamed page 6 to "Stream", it used to keep showing "Page 6" in the dropdowns and on the folder icon. Now your custom name is used consistently: in both dialogs, in the page indicator, and on the folder icon on the device.
+- **#6 — Apply no longer eats your typed text.** If you typed an action and clicked Apply without first clicking out of the field, your text was lost. Now Apply forces the field to commit before saving.
+- **#7 — New "Text" action type.** Map a DisplayPad or D1-D4 button to a string of text — it gets typed out when you press the key. Great for Everest 60 owners who miss F-keys, or for anything you find yourself typing all the time.
+- **#10 — DisplayPad keypress actions work on Wayland now.** The old code only used `xdotool`, which doesn't work on Wayland. Now the app auto-detects your session and uses `ydotool` instead when needed.
+
+### Bug fixes
+
+- **Switching language no longer crashes the keyboard panel.** Internal naming bug that took out the whole keyboard tab whenever you changed language. Fixed.
+- **Hold a button during a GIF? No more spam.** When a fullscreen GIF was animating on the DisplayPad and you held down a key, the action used to fire on every frame. Now it fires once per press, like you'd expect.
+- **Switching pages while a re-upload is retrying now works.** If the device was busy and the app was retrying the upload, switching to a different page would re-upload the old page's images. Fixed: the retry now picks up your current page.
+- **Clear All on the DisplayPad no longer races with key events.** A race condition could cause a button press to be misinterpreted while Clear All was running. Fixed.
+- **Big image uploads can't deadlock anymore.** Long uploads of the keyboard's main display could theoretically lock up if the controller printed enough error text. Replaced with a safer streaming approach.
+- **The image dialog closes cleanly when you quit the app.** No more harmless-but-ugly `TclError` traceback on shutdown.
+- A handful of smaller fixes around file handles and image-size validation that came out of a thorough code review.
+
+### Security & robustness
+
+- **SUDO_USER is now treated as untrusted input.** The app runs as root for USB access, and previously a poisoned environment variable could redirect root's file writes into another user's home directory. Now the value is validated against the password database and refused if it points at root or a non-existent account.
+- **Your config directory belongs to you again.** When the app runs as root via sudo, the config folder is automatically chown'd back to your user so you can still edit files in `~/.config/mountain-time-sync/` without needing sudo.
+
 ## [1.8.0] - 2026-04-08
 
 ### Plugin System

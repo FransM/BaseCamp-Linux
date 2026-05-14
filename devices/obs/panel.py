@@ -71,16 +71,8 @@ class OBSPanel(ctk.CTkFrame):
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
         scroll.pack(fill="both", expand=True, pady=(4, 0))
 
-        # Cap scroll speed
-        _c = scroll._parent_canvas
-        _orig = _c.yview
-        def _capped(*args):
-            if args and args[0] == "scroll":
-                n = max(-2, min(2, int(args[1])))
-                w = args[2] if len(args) > 2 else "units"
-                return _orig("scroll", n, w)
-            return _orig(*args)
-        _c.yview = _capped
+        from shared.ui_helpers import cap_scroll_speed
+        cap_scroll_speed(scroll)
 
         # Title
         ctk.CTkLabel(scroll, text=self.T("obs_title"),

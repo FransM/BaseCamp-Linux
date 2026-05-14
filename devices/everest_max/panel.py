@@ -211,18 +211,8 @@ class EverestMaxPanel(ctk.CTkFrame):
             s.measure()
         self._sections[0].open()
 
-        # Cap scroll speed
-        _c = scroll._parent_canvas
-        _orig_yview = _c.yview
-
-        def _capped_yview(*args):
-            if args and args[0] == "scroll":
-                n    = max(-2, min(2, int(args[1])))
-                what = args[2] if len(args) > 2 else "units"
-                return _orig_yview("scroll", n, what)
-            return _orig_yview(*args)
-
-        _c.yview = _capped_yview
+        from shared.ui_helpers import cap_scroll_speed
+        cap_scroll_speed(scroll)
 
         # Start clock tick
         self._tick()
@@ -320,7 +310,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._obs_combos     = []
         self._macro_combos   = []
 
-        _TYPE_INTERNAL = ["none", "shell", "url", "folder", "app", "obs", "macro"]
+        _TYPE_INTERNAL = ["none", "shell", "url", "folder", "app", "obs", "macro", "keypress", "text"]
 
         def _type_internal_dynamic():
             base = list(_TYPE_INTERNAL)
@@ -330,10 +320,11 @@ class EverestMaxPanel(ctk.CTkFrame):
             return base
 
         def _type_labels():
-            labels = [self.T("action_type_none"),   self.T("action_type_shell"),
-                    self.T("action_type_url"),     self.T("action_type_folder"),
-                    self.T("action_type_app"),     "OBS",
-                    self.T("action_type_macro")]
+            labels = [self.T("action_type_none"),     self.T("action_type_shell"),
+                    self.T("action_type_url"),       self.T("action_type_folder"),
+                    self.T("action_type_app"),       "OBS",
+                    self.T("action_type_macro"),
+                    self.T("action_type_keypress"),  self.T("action_type_text")]
             pm = getattr(self._app, "_plugin_manager", None)
             if pm:
                 for _tid, lbl in pm.get_action_type_labels():
@@ -702,20 +693,21 @@ class EverestMaxPanel(ctk.CTkFrame):
             self._cpu_status.configure(text=self.T("monitor_stopped"), text_color=RED)
         else:
             style_arg = STYLES[self._current_style.get()]
+            _stderr_log = None
             try:
                 _stderr_log = open(os.path.join(CONFIG_DIR, "controller_error.log"), "w")
-                try:
-                    self._cpu_proc = subprocess.Popen(
-                        self._cmd("cpu", style_arg),
-                        stdout=subprocess.DEVNULL, stderr=_stderr_log)
-                finally:
-                    _stderr_log.close()
+                self._cpu_proc = subprocess.Popen(
+                    self._cmd("cpu", style_arg),
+                    stdout=subprocess.DEVNULL, stderr=_stderr_log)
                 self._btn_cpu.configure(text=self.T("monitor_stop"),
                                         fg_color=RED, text_color=BG,
                                         font=("Helvetica", 11, "bold"))
                 self._cpu_status.configure(text=self.T("monitor_running"), text_color=GRN)
             except Exception as e:
                 self._cpu_status.configure(text=f"{self.T('error')}: {e}", text_color=RED)
+            finally:
+                if _stderr_log is not None:
+                    _stderr_log.close()
 
     def _reset_dial_image(self):
         def run():
@@ -1159,8 +1151,12 @@ class EverestMaxPanel(ctk.CTkFrame):
                         text=f"Retry {a}/2…", text_color=YLW))
                     time.sleep(2.0)
                     self._app.after(0, lambda: self._main_bar.set(0))
+                # Merge stderr into stdout so we drain a single pipe — avoids
+                # the classic deadlock where a full stderr buffer blocks the
+                # subprocess while we're stuck in proc.wait().
                 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, text=True)
+                                        stderr=subprocess.STDOUT, text=True)
+                last_non_progress = ""
                 for line in proc.stdout:
                     if line.startswith("PROGRESS:"):
                         try:
@@ -1169,10 +1165,13 @@ class EverestMaxPanel(ctk.CTkFrame):
                         except ValueError:
                             pass
                     else:
+                        stripped = line.rstrip()
+                        if stripped:
+                            last_non_progress = stripped
                         print(line, end="", flush=True)
                 proc.wait()
                 ok       = proc.returncode == 0
-                err_hint = (proc.stderr.read().strip().splitlines() or [""])[-1]
+                err_hint = last_non_progress
                 if ok:
                     break
 
@@ -1202,11 +1201,12 @@ class EverestMaxPanel(ctk.CTkFrame):
         """Called by App when language changes to refresh button type menus."""
         if hasattr(self, "_btn_type_menus"):
             new_labels = self._numpad_type_labels_fn()
+            type_internal = self._numpad_type_internal_fn()
             for i, menu in enumerate(self._btn_type_menus):
                 menu.configure(values=new_labels)
                 cur = self._btn_type[i].get()
                 try:
-                    menu.set(new_labels[self._numpad_type_internal.index(cur)])
+                    menu.set(new_labels[type_internal.index(cur)])
                 except (ValueError, IndexError):
                     menu.set(new_labels[1])
 
