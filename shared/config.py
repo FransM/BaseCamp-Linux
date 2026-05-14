@@ -88,7 +88,13 @@ _ensure_owned_dir(PLUGINS_DIR)
 
 def _load_last_dir(kind):
     """Return the last directory used for a given file-picker context, or None.
-    kind: free-form key like 'image', 'folder', 'app', 'gif' — caller decides."""
+    kind: free-form key like 'image', 'folder', 'app', 'gif' — caller decides.
+
+    Lookup order:
+      1. Saved last directory for this kind (last_dirs.json)
+      2. $ICON_PATH environment variable, if set and valid
+      3. /usr/share/icons as a sensible Linux default
+    """
     try:
         with open(LAST_DIRS_FILE) as f:
             data = json.load(f)
@@ -97,10 +103,27 @@ def _load_last_dir(kind):
             return path
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
-    # Fall back to /usr/share/icons if it exists — handy default on Linux
+    env_path = os.environ.get("ICON_PATH")
+    if env_path and os.path.isdir(env_path):
+        return env_path
     if os.path.isdir("/usr/share/icons"):
         return "/usr/share/icons"
     return None
+
+
+def reset_last_dirs():
+    """Wipe the remembered last-used directory for every file-picker kind.
+    Next pickers will fall back to ICON_PATH / /usr/share/icons."""
+    try:
+        os.remove(LAST_DIRS_FILE)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        try:
+            with open(LAST_DIRS_FILE, "w") as f:
+                json.dump({}, f)
+        except OSError:
+            pass
 
 
 def _save_last_dir(kind, path):

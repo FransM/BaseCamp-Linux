@@ -167,7 +167,7 @@ class SettingsDialog(ctk.CTkToplevel):
         super().__init__(app)
         self._app = app
         self.title(app.T("settings_title"))
-        self.geometry("420x480")
+        self.geometry("420x580")
         self.resizable(False, False)
         try:
             self.transient(app)
@@ -227,6 +227,17 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkButton(self, text=app.T("settings_restore"),
                       command=self._do_restore, height=34, corner_radius=6,
                       fg_color=BG3, hover_color=BG2).pack(fill="x", padx=20, pady=4)
+
+        # ── File pickers section ──
+        ctk.CTkLabel(self, text=app.T("settings_picker_section"),
+                     font=("Helvetica", 11, "bold")).pack(pady=(10, 2))
+        ctk.CTkLabel(self, text=app.T("settings_picker_reset_hint"),
+                     font=("Helvetica", 9), text_color=FG2,
+                     wraplength=380, justify="left").pack(padx=20, pady=(0, 4))
+        ctk.CTkButton(self, text=app.T("settings_picker_reset"),
+                      command=self._do_reset_pickers, height=30,
+                      corner_radius=6, fg_color=BG3, hover_color=BG2).pack(
+            fill="x", padx=20, pady=2)
 
         self._status = ctk.CTkLabel(self, text="", font=("Helvetica", 10),
                                      text_color=FG2)
@@ -307,6 +318,12 @@ class SettingsDialog(ctk.CTkToplevel):
         self._status.configure(
             text=self._app.T("settings_profile_deleted", name=name),
             text_color=FG2)
+
+    def _do_reset_pickers(self):
+        from shared.config import reset_last_dirs
+        reset_last_dirs()
+        self._status.configure(
+            text=self._app.T("settings_picker_reset_ok"), text_color=GRN)
 
     def _do_backup(self):
         from tkinter import filedialog

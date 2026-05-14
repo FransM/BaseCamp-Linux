@@ -2371,7 +2371,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         rot = self._rotation
         if rot:
             img = img.rotate(-rot, expand=False)
-        b, g, r = img.split()
+        r, g, b = img.split()
         bgr_bytes = Image.merge("RGB", (b, g, r)).tobytes()
 
         if self._animating or self._uploading:

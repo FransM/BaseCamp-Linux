@@ -220,7 +220,24 @@ On startup the app quietly asks GitHub whether there is a newer release. If so, 
 
 ### File picker
 
-A small thing that still adds up: every file dialog now remembers the last folder you picked something from, per context (images, profiles, macros, backups). No more starting in your home directory every single time. If you have never picked anything yet, image pickers start in `/usr/share/icons` so you can use system icons straight away.
+A small thing that still adds up: every file dialog now remembers the last folder you picked something from, per context (images, profiles, macros, backups). No more starting in your home directory every single time. If you have never picked anything yet, image pickers start at `$ICON_PATH` (set this environment variable to point at your own icon folder) and otherwise fall back to `/usr/share/icons` so you can use system icons straight away.
+
+If you've wandered deep into some unrelated folder and want to go back to the default, open the settings dialog and hit **Reset remembered folders**. The next picker will start from `$ICON_PATH` or `/usr/share/icons` again.
+
+### Autostart on Linux
+
+To launch BaseCamp automatically when you log in, drop a `.desktop` file into `~/.config/autostart/`. Works on GNOME, KDE, XFCE, Cinnamon and most other DEs:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=BaseCamp Linux
+Exec=basecamp-linux
+Icon=basecamp-linux
+X-GNOME-Autostart-enabled=true
+```
+
+Save that as `~/.config/autostart/basecamp-linux.desktop`. If you installed from the AppImage, replace `basecamp-linux` in the `Exec=` line with the full path to your AppImage (for example `/home/you/Applications/BaseCamp-Linux.AppImage`).
 
 ---
 
