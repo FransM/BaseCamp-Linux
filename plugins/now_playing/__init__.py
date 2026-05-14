@@ -298,6 +298,15 @@ class Plugin:
             self._stop.wait(2)
 
     def _update_ui(self, info):
+        # Panel might not be built yet (plugin enabled but tab not opened),
+        # or was torn down (disable/re-enable cycle).
+        if self._stop.is_set() or not hasattr(self, "_hint_lbl"):
+            return
+        try:
+            if not self._hint_lbl.winfo_exists():
+                return
+        except Exception:
+            return
         if info is None or not info.get("title"):
             self._hint_lbl.configure(text=self.ctx.T("np_hint"))
             self._player_lbl.configure(text="")
