@@ -247,7 +247,18 @@ class SettingsDialog(ctk.CTkToplevel):
         self._update_lbl = ctk.CTkLabel(self, text=getattr(app, "_update_message", ""),
                                          font=("Helvetica", 10), text_color=GRN,
                                          wraplength=380, justify="left")
-        self._update_lbl.pack(pady=(0, 12), padx=12)
+        self._update_lbl.pack(pady=(0, 4), padx=12)
+
+        # In-app self-update — AppImage only. The button is only created when
+        # an AppImage install was detected AND a download URL was resolved.
+        self._update_btn = None
+        if (getattr(app, "_update_install_type", "") == "appimage"
+                and getattr(app, "_update_url", "")):
+            self._update_btn = ctk.CTkButton(
+                self, text=app.T("settings_update_button"),
+                command=self._do_update, height=32, corner_radius=6,
+                fg_color=GRN, hover_color="#1f7a3a")
+            self._update_btn.pack(pady=(2, 12), padx=20, fill="x")
 
     def _refresh_profile_combo(self):
         from shared.config import list_profiles, get_active_profile
@@ -371,10 +382,121 @@ class SettingsDialog(ctk.CTkToplevel):
                 text=self._app.T("settings_restore_err", err=str(e)[:60]),
                 text_color=RED)
 
+    def _do_update(self):
+        """Trigger the shared App-level download. UI updates land in our
+        local status label / button via the callbacks."""
+        app = self._app
+        if not getattr(app, "_update_url", "") or not os.environ.get("APPIMAGE"):
+            self._status.configure(
+                text=app.T("settings_update_no_asset"), text_color=RED)
+            return
+        if self._update_btn is not None:
+            self._update_btn.configure(state="disabled")
+        app.run_update_download(
+            on_progress=lambda pct: self._status.configure(
+                text=app.T("settings_update_downloading", pct=pct), text_color=GRN),
+            on_installing=lambda: self._status.configure(
+                text=app.T("settings_update_installing"), text_color=GRN),
+            on_done=self._on_update_done,
+            on_error=self._on_update_error,
+        )
+
+    def _on_update_done(self):
+        app = self._app
+        self._status.configure(text=app.T("settings_update_done"), text_color=GRN)
+        if self._update_btn is not None:
+            self._update_btn.configure(
+                text=app.T("settings_update_restart"),
+                state="normal", command=app.restart_after_update,
+                fg_color=BLUE, hover_color="#1d4f86")
+
+    def _on_update_error(self, err):
+        app = self._app
+        self._status.configure(
+            text=app.T("settings_update_error", err=err), text_color=RED)
+        if self._update_btn is not None:
+            self._update_btn.configure(state="normal")
+
+
+# ── Update-available popup ─────────────────────────────────────────────────────
+
+class UpdateAvailableDialog(ctk.CTkToplevel):
+    """Shown once per session when a newer AppImage release is detected.
+    Lets the user kick off the download right from the popup so they don't
+    have to dig through the settings dialog to find it."""
+    def __init__(self, app):
+        super().__init__(app)
+        self._app = app
+        self.title(app.T("update_dialog_title"))
+        self.geometry("420x210")
+        self.resizable(False, False)
+        try:
+            self.transient(app)
+        except Exception:
+            pass
+
+        ctk.CTkLabel(self, text=app.T("update_dialog_title"),
+                     font=("Helvetica", 14, "bold")).pack(pady=(16, 4))
+        ctk.CTkLabel(self,
+                     text=app.T("update_dialog_body",
+                                ver=getattr(app, "_update_version", "")),
+                     font=("Helvetica", 11), wraplength=380,
+                     justify="center").pack(pady=(0, 6), padx=12)
+
+        self._status = ctk.CTkLabel(self, text="", font=("Helvetica", 10),
+                                     text_color=FG2, wraplength=380, justify="center")
+        self._status.pack(pady=(0, 6))
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(pady=(4, 12))
+        self._cancel_btn = ctk.CTkButton(
+            btns, text=app.T("update_dialog_cancel"), width=130, height=32,
+            corner_radius=6, fg_color=BG3, hover_color=BG2,
+            command=self.destroy)
+        self._cancel_btn.pack(side="left", padx=8)
+        self._update_btn = ctk.CTkButton(
+            btns, text=app.T("settings_update_button"), width=160, height=32,
+            corner_radius=6, fg_color=GRN, hover_color="#1f7a3a",
+            command=self._do_update)
+        self._update_btn.pack(side="left", padx=8)
+
+    def _do_update(self):
+        app = self._app
+        if not getattr(app, "_update_url", "") or not os.environ.get("APPIMAGE"):
+            self._status.configure(
+                text=app.T("settings_update_no_asset"), text_color=RED)
+            return
+        self._update_btn.configure(state="disabled")
+        self._cancel_btn.configure(state="disabled")
+        app.run_update_download(
+            on_progress=lambda pct: self._status.configure(
+                text=app.T("settings_update_downloading", pct=pct), text_color=GRN),
+            on_installing=lambda: self._status.configure(
+                text=app.T("settings_update_installing"), text_color=GRN),
+            on_done=self._on_done,
+            on_error=self._on_error,
+        )
+
+    def _on_done(self):
+        app = self._app
+        self._status.configure(text=app.T("settings_update_done"), text_color=GRN)
+        self._update_btn.configure(
+            text=app.T("settings_update_restart"), state="normal",
+            command=app.restart_after_update, fg_color=BLUE,
+            hover_color="#1d4f86")
+        self._cancel_btn.configure(state="normal")
+
+    def _on_error(self, err):
+        app = self._app
+        self._status.configure(
+            text=app.T("settings_update_error", err=err), text_color=RED)
+        self._update_btn.configure(state="normal")
+        self._cancel_btn.configure(state="normal")
+
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.8.1.2"
+APP_VERSION = "2.0"
 
 
 class App(ctk.CTk):
@@ -466,6 +588,15 @@ class App(ctk.CTk):
         self._check_devices()
         # Background update check — non-blocking, only sets a label if newer found
         self._update_message = ""
+        self._update_url = ""
+        self._update_sha_url = ""
+        self._update_version = ""
+        self._update_install_type = ""
+        # _update_kind = "source" prefers the small overlay tarball (~200 KB
+        # for typical patches); "appimage" downloads the full ~250 MB image.
+        # Source updates are only chosen when a source-*.tar.gz asset exists
+        # on the release, otherwise we fall back to AppImage.
+        self._update_kind = ""
         self.after(2000, self._check_for_update)
         # Plugin update count is filled in by PluginManagerPanel after its
         # background fetch (which runs unconditionally on app start) — it
@@ -630,10 +761,11 @@ class App(ctk.CTk):
                       fg_color="transparent", hover_color=BG3, text_color=FG2,
                       font=("Helvetica", 14), command=self._quit).place(relx=1.0,
                       rely=0.5, anchor="e", x=-8)
-        ctk.CTkButton(hdr, text="⚙", width=32, height=32, corner_radius=6,
-                      fg_color="transparent", hover_color=BG3, text_color=FG2,
-                      font=("Helvetica", 16), command=self._open_settings).place(
-                          relx=1.0, rely=0.5, anchor="e", x=-44)
+        self._settings_btn = ctk.CTkButton(
+            hdr, text="⚙", width=32, height=32, corner_radius=6,
+            fg_color="transparent", hover_color=BG3, text_color=FG2,
+            font=("Helvetica", 16), command=self._open_settings)
+        self._settings_btn.place(relx=1.0, rely=0.5, anchor="e", x=-44)
 
         # ── Device switcher bar (2 rows) ──
         switcher = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
@@ -993,11 +1125,273 @@ class App(ctk.CTk):
                     hint = self.T(f"settings_update_hint_{install_type}")
                     msg = (self.T("settings_update_available", ver=ver)
                             + "\n" + hint)
-                    self.after(0, lambda: setattr(self, "_update_message", msg))
+                    # Prefer source-overlay tarball when the release ships one
+                    # — it's ~1500× smaller than the AppImage and works across
+                    # both Debian and Fedora builds. Only when native deps
+                    # changed (no source tarball published) do we fall back to
+                    # the full AppImage download.
+                    # A matching .sha256 sidecar is REQUIRED; without it we
+                    # silently fall back to the AppImage path, because an
+                    # unsigned tarball is the easiest tamper point on the
+                    # update flow (compromised release → arbitrary code).
+                    source_url = ""
+                    source_sha_url = ""
+                    if install_type == "appimage":
+                        for asset in data.get("assets") or []:
+                            name = (asset.get("name") or "").lower()
+                            if name.startswith("source-") and name.endswith(".tar.gz"):
+                                source_url = asset.get("browser_download_url") or ""
+                            elif name.startswith("source-") and name.endswith(".tar.gz.sha256"):
+                                source_sha_url = asset.get("browser_download_url") or ""
+                        if not source_sha_url:
+                            source_url = ""
+                    # AppImage installs: pick the asset that matches the
+                    # distro family. Filename of the running AppImage wins if
+                    # it explicitly says -debian/-fedora (user picked it on
+                    # download); otherwise read /etc/os-release to decide.
+                    # Debian-family glibc is older than Fedora's, so the wrong
+                    # variant will fail to start with cryptic ld errors.
+                    url = ""
+                    if install_type == "appimage":
+                        appimg = os.environ.get("APPIMAGE", "") or ""
+                        base = os.path.basename(appimg).lower()
+                        if "debian" in base:
+                            variant = "debian"
+                        elif "fedora" in base:
+                            variant = "fedora"
+                        else:
+                            variant = "fedora"
+                            try:
+                                with open("/etc/os-release") as f:
+                                    osr = f.read().lower()
+                                if ("id=debian" in osr or "id=ubuntu" in osr
+                                        or "id=linuxmint" in osr
+                                        or "id_like=debian" in osr
+                                        or "id_like=ubuntu" in osr):
+                                    variant = "debian"
+                            except OSError:
+                                pass
+                        for asset in data.get("assets") or []:
+                            name = (asset.get("name") or "").lower()
+                            if name.endswith(".appimage") and variant in name:
+                                url = asset.get("browser_download_url") or ""
+                                break
+                        if not url:
+                            for asset in data.get("assets") or []:
+                                name = (asset.get("name") or "").lower()
+                                if name.endswith(".appimage"):
+                                    url = asset.get("browser_download_url") or ""
+                                    break
+                    def _apply():
+                        self._update_message = msg
+                        # Pick the actionable URL: source if available, else
+                        # the full AppImage. The popup/button trigger logic
+                        # only checks _update_url, so this stays transparent.
+                        self._update_url = source_url or url
+                        self._update_sha_url = source_sha_url
+                        self._update_kind = "source" if source_url else "appimage"
+                        self._update_version = ver
+                        self._update_install_type = install_type
+                        # Decorate the settings cog so the update is visible
+                        # without opening the dialog. Works for any install
+                        # type — source/AUR users still see "open me" too.
+                        if hasattr(self, "_settings_btn"):
+                            self._settings_btn.configure(
+                                text="⚙ ↑", text_color=GRN)
+                        # Proactive popup — only for AppImage installs where
+                        # we can actually do something about it from the GUI.
+                        if install_type == "appimage" and url:
+                            self._show_update_popup()
+                    self.after(0, _apply)
             except Exception:
                 pass  # offline / rate-limited / dns — silent
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _show_update_popup(self):
+        """Open the proactive update popup. Guarded against double-spawn so
+        repeated _check_for_update calls don't stack windows."""
+        existing = getattr(self, "_update_popup", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.focus()
+                    return
+            except Exception:
+                pass
+        self._update_popup = UpdateAvailableDialog(self)
+
+    def run_update_download(self, on_progress, on_installing, on_done, on_error):
+        """Threaded download + install of an update. Dispatches on
+        self._update_kind:
+          - "source": download source-X.Y.Z.tar.gz, verify SHA256 against the
+            .sha256 sidecar from the release (mandatory), extract to
+            ~/.local/share/basecamp-linux/source-overlay/. AppImage binary
+            stays untouched. Tiny (~200 KB), works on both Debian + Fedora.
+          - "appimage": full AppImage swap via atomic rename (~250 MB).
+        UI-agnostic — callbacks fire on the Tk thread."""
+        import threading, urllib.request, hashlib
+        url     = getattr(self, "_update_url", "")
+        sha_url = getattr(self, "_update_sha_url", "")
+        kind    = getattr(self, "_update_kind", "appimage")
+        appimg  = os.environ.get("APPIMAGE", "")
+        if not url or not appimg or not os.path.isfile(appimg):
+            on_error(self.T("settings_update_no_asset"))
+            return
+        if kind == "source" and not sha_url:
+            # Belt-and-suspenders — _check_for_update already drops source_url
+            # in this case, but guard here too.
+            on_error(self.T("settings_update_no_checksum"))
+            return
+
+        def _install_source(tarball_path):
+            """Extract source tarball to overlay dir. Stages into a sibling
+            directory then renames so a half-extracted tree never replaces
+            the running one (which the bootstrap hook would happily load)."""
+            import tarfile, shutil
+            overlay_root = os.path.join(_real_home, ".local", "share",
+                                        "basecamp-linux")
+            os.makedirs(overlay_root, exist_ok=True)
+            staging  = os.path.join(overlay_root, "source-overlay.new")
+            final    = os.path.join(overlay_root, "source-overlay")
+            if os.path.exists(staging):
+                shutil.rmtree(staging)
+            os.makedirs(staging)
+            with tarfile.open(tarball_path, "r:gz") as tf:
+                # Strip the top-level 'source-overlay/' dir so members land
+                # directly in our staging path.
+                def _members():
+                    for m in tf.getmembers():
+                        parts = m.name.split("/", 1)
+                        if len(parts) < 2 or parts[0] != "source-overlay":
+                            continue
+                        m.name = parts[1]
+                        if not m.name:
+                            continue
+                        yield m
+                # filter="data" (Python 3.12+) rejects path traversal, absolute
+                # paths, symlinks pointing outside dest, device nodes, and
+                # strips setuid/setgid bits. Fall back to manual checks on
+                # older Python; the source tarball is produced by us so the
+                # added value of data_filter is defense-in-depth against a
+                # compromised release pipeline.
+                try:
+                    tf.extractall(staging, members=_members(), filter="data")
+                except TypeError:
+                    for m in _members():
+                        if (m.name.startswith("/")
+                                or ".." in m.name.split("/")
+                                or m.issym() or m.islnk()
+                                or m.isdev() or m.ischr() or m.isfifo()):
+                            continue
+                        tf.extract(m, staging)
+            if not os.path.isfile(os.path.join(staging, "gui.py")):
+                raise RuntimeError("source tarball missing gui.py")
+            if os.path.exists(final):
+                shutil.rmtree(final)
+            os.replace(staging, final)
+
+        def _fetch_text(u, max_bytes=256):
+            """Fetch a tiny file (sha256 sidecar). Bounded to avoid surprises
+            if the URL serves something unexpectedly large."""
+            req = urllib.request.Request(
+                u, headers={"User-Agent": f"BaseCamp-Linux/{APP_VERSION}"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.read(max_bytes).decode("utf-8", "replace")
+
+        def _run():
+            tmp_path = (appimg + ".new") if kind == "appimage" \
+                       else os.path.join(_real_home, ".cache",
+                                         "basecamp-source-update.tar.gz")
+            try:
+                expected_sha = ""
+                if kind == "source":
+                    os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+                    # Fetch checksum sidecar FIRST. If this fails we abort
+                    # before even touching the tarball.
+                    raw = _fetch_text(sha_url).strip().split()
+                    if raw:
+                        expected_sha = raw[0].lower()
+                    if len(expected_sha) != 64 or not all(
+                            c in "0123456789abcdef" for c in expected_sha):
+                        self.after(0, on_error,
+                                   self.T("settings_update_bad_checksum"))
+                        return
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": f"BaseCamp-Linux/{APP_VERSION}"})
+                hasher = hashlib.sha256()
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    done, last = 0, -1
+                    with open(tmp_path, "wb") as out:
+                        while True:
+                            chunk = resp.read(65536)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                            hasher.update(chunk)
+                            done += len(chunk)
+                            if total > 0:
+                                pct = int(done * 100 / total)
+                                if pct != last:
+                                    last = pct
+                                    self.after(0, on_progress, pct)
+                if kind == "source":
+                    actual_sha = hasher.hexdigest().lower()
+                    if actual_sha != expected_sha:
+                        try:
+                            os.remove(tmp_path)
+                        except OSError:
+                            pass
+                        self.after(0, on_error,
+                                   self.T("settings_update_bad_checksum"))
+                        return
+                self.after(0, on_installing)
+                if kind == "source":
+                    _install_source(tmp_path)
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+                else:
+                    os.chmod(tmp_path, 0o755)
+                    os.replace(tmp_path, appimg)
+                self.after(0, on_done)
+            except Exception as e:
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
+                self.after(0, on_error, str(e)[:80])
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def restart_after_update(self):
+        """Re-exec the (now updated) AppImage. Kills the tray helper first —
+        execv preserves the PID, so the helper would otherwise sit on the new
+        process and a second tray would spawn on next startup."""
+        tray = getattr(self, "_tray_proc", None)
+        if tray is not None and tray.poll() is None:
+            try:
+                tray.terminate()
+                tray.wait(timeout=2)
+            except Exception:
+                try:
+                    tray.kill()
+                except Exception:
+                    pass
+        appimg = os.environ.get("APPIMAGE", "")
+        try:
+            if appimg and os.path.isfile(appimg):
+                os.execv(appimg, [appimg])
+        except Exception:
+            pass
+        try:
+            subprocess.Popen([appimg] if appimg else [sys.executable])
+        except Exception:
+            pass
+        self.destroy()
 
     def _on_plugins_fetched(self, plugins):
         """Called by PluginManagerPanel after a successful plugins.json fetch.
@@ -1142,16 +1536,23 @@ Categories=Utility;
     print("Done. BaseCamp Linux should now appear in your app menu.")
 
 
-if __name__ == "__main__":
+def run():
+    """Real entry point — kept as a function so the AppImage's tiny
+    appentry.py shim can call it after wiring up the source-overlay path.
+    Running `python gui.py` directly still works because of __main__ below."""
     if "--install" in sys.argv:
         _install_desktop_entry()
         sys.exit(0)
     psutil.cpu_percent()
-    _start_minimized = "--minimized" in sys.argv
-    if not _start_minimized and load_splash_enabled():
+    start_minimized = "--minimized" in sys.argv
+    if not start_minimized and load_splash_enabled():
         show_splash()
     app = App()
-    if _start_minimized:
+    if start_minimized:
         app._was_withdrawn = True
         app.withdraw()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    run()

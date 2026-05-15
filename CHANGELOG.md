@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.0] - 2026-05-15
+
+This release brings a proper in-app updater so you finally do not have to download a 250 MB AppImage every time something small needs to change. Underneath sits a source-overlay system that lets pure Python patches ship as tiny tarballs, typically around 200 KB instead of 250 MB, so updates between major releases happen in seconds instead of minutes. The popup that asks you whether to update is new too, and the settings cog in the header turns green with a small up-arrow the moment a new version is detected, so you actually notice that there is something to do.
+
+### In-app updater
+
+When the app starts it quietly asks GitHub if there is a newer release. If there is, a popup appears with two buttons (Jetzt aktualisieren or Später) so you can decide right away. The settings cog in the top-right corner also turns green with a "⚙ ↑" indicator that stays visible until you update or restart, so the hint is always there if you closed the popup.
+
+Clicking the update button downloads the new version in the background with live progress, swaps it into place, and offers a Restart button. The restart re-launches the app via execv and stops the tray helper first so you do not end up with two tray icons.
+
+### Two update paths, chosen automatically
+
+The updater picks between two flavours behind the scenes:
+
+- **Source overlay** is the small path used for most updates. When a release ships a `source-X.Y.Z.tar.gz` asset, the app downloads it (around 200 KB), unpacks it into `~/.local/share/basecamp-linux/source-overlay/`, and on the next start PyInstaller's runtime hook spots the overlay and prepends it to `sys.path`. All Python code then resolves to the overlay files instead of the bundled copies inside the AppImage. The AppImage itself is never touched, which means Debian and Fedora users get the exact same patch from the exact same tarball.
+- **Full AppImage swap** is the bigger path, used when native dependencies change. The updater downloads the right AppImage variant for your distribution and atomically replaces the running file. Variant picking now reads `/etc/os-release`: Debian, Ubuntu and Mint get the debian build, everything else (Fedora, Nobara, Arch, Manjaro, openSUSE and friends) gets the fedora build, since rolling-release distributions handle the newer glibc without issues.
+
+### Tamper protection for source updates
+
+Source tarballs must come with a matching `source-X.Y.Z.tar.gz.sha256` sidecar on the GitHub release. The updater fetches the checksum before it even starts the download, computes SHA-256 of the bytes as they come in, and aborts with a clear error if the result does not match. A tarball published without a checksum is treated as suspect and the app silently falls back to the full AppImage path.
+
+Extraction uses Python's `tarfile.data_filter`, which refuses path-traversal entries, absolute paths, symlinks pointing outside the destination, device nodes, named pipes and setuid bits. Even a compromised release pipeline cannot drop files outside the overlay directory or smuggle in a setuid binary.
+
+### What this means for you as a user
+
+For most patches the new flow is simply: see the popup, click "Jetzt aktualisieren", wait a couple of seconds, click "Jetzt neu starten". No browser, no manual download, no chmod +x.
+
+If you installed via AUR (`basecamp-linux` via yay) or from source, the popup does not appear since those workflows have their own update mechanism. You still get the green cog and the version line in settings, which points you to the right command for your install.
+
+### Plugin compatibility
+
+Nothing in the plugin API changed. Plugins continue to live in `~/.config/mountain-time-sync/plugins/` and are loaded exactly as before. The source overlay only contains bundled plugins from this repo, never user-installed ones, so third-party plugins are completely untouched by the update mechanism.
+
 ## [1.8.1.2] - 2026-05-15
 
 Source-only patch on top of 1.8.1.1 — picks up another round of issue triage with @FransM (#3, #4, #5, #6, #12, #13, #14). Highlights:

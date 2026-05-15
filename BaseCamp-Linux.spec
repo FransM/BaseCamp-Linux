@@ -2,18 +2,23 @@
 
 
 a = Analysis(
-    ['gui.py'],
+    ['appentry.py'],
     pathex=[],
     binaries=[],
     datas=[('lang', 'lang'), ('resources', 'resources'), ('default_presets.json', '.'), ('default_makalu_presets.json', '.'), ('default_presets_60.json', '.'), ('plugins', 'plugins')],
     hiddenimports=['PIL', 'PIL._tkinter_finder', 'PIL._imagingtk', 'psutil', 'pystray', 'obsws_python',
                    'devices.macros', 'devices.macros.panel', 'shared.macros',
-                   'devices.plugins', 'devices.plugins.panel', 'shared.plugins', 'shared.plugin_api'],
+                   'devices.plugins', 'devices.plugins.panel', 'shared.plugins', 'shared.plugin_api',
+                   'gui'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['_overlay_bootstrap.py'],
     excludes=[],
-    noarchive=False,
+    # noarchive=True keeps user-side .py files on disk as .pyc inside
+    # _internal/, which lets the runtime hook prepend an overlay dir to
+    # sys.path and have user modules resolved from there. Bundled 3rd-party
+    # deps still come from PYZ for size — only user code is overlay-able.
+    noarchive=True,
     optimize=0,
 )
 
