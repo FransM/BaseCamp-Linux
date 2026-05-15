@@ -174,13 +174,16 @@ def _copy_bundled_plugins():
     overwritten.
     """
     import shutil
-    # Find the bundled plugins/ directory next to the app
-    if getattr(sys, "frozen", False):
-        # AppImage / PyInstaller: plugins/ is in _internal/
+    # Resolve the source dir from our own __file__ so it naturally tracks
+    # the source-overlay: if this config.py came from the overlay, the
+    # plugins/ it ships sit right next to it and we pick those up. When no
+    # overlay is active __file__ points into _internal/, which is exactly
+    # where PyInstaller bundles plugins via the datas=[('plugins',...)]
+    # entry, so the fallback to _MEIPASS is just defense-in-depth.
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if not os.path.isdir(os.path.join(base, "plugins")) \
+            and getattr(sys, "frozen", False):
         base = sys._MEIPASS
-    else:
-        # Running from source
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bundled = os.path.join(base, "plugins")
     if not os.path.isdir(bundled):
         return

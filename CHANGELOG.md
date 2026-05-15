@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1] - 2026-05-15
+
+First real source-overlay patch on top of 2.0, ships as a 200 KB tarball that the in-app updater installs in a couple of seconds. Touches one thing only:
+
+- **Bundled plugins now refresh correctly when shipped through a source overlay.** The function that copies bundled plugins (now_playing, ...) into `~/.config/mountain-time-sync/plugins/` was resolving its source directory from PyInstaller's `_MEIPASS`, which always points at the AppImage's bundled location and silently skipped any updated plugin a source-overlay tarball was carrying. It now resolves from its own module path instead, so an overlay that ships a newer `plugins/now_playing/` is picked up like every other Python file in the overlay. User-installed third-party plugins are unaffected; they have always loaded from the user config directory and have nothing to do with this code path.
+
+This is also the first end-to-end test of the source-update pipeline introduced in 2.0. If you are on 2.0 already, you should see the update popup on next startup and the whole thing should take about as long as it takes to read this paragraph.
+
 ## [2.0] - 2026-05-15
 
 This release brings a proper in-app updater so you finally do not have to download a 250 MB AppImage every time something small needs to change. Underneath sits a source-overlay system that lets pure Python patches ship as tiny tarballs, typically around 200 KB instead of 250 MB, so updates between major releases happen in seconds instead of minutes. The popup that asks you whether to update is new too, and the settings cog in the header turns green with a small up-arrow the moment a new version is detected, so you actually notice that there is something to do.

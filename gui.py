@@ -496,7 +496,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.0"
+APP_VERSION = "2.0.1"
 
 
 class App(ctk.CTk):
