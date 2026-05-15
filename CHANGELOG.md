@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2] - 2026-05-15
+
+Tiny follow-up on 2.0.1. The update popup was only firing when a release shipped an AppImage asset, because the trigger check was looking at the AppImage URL variable instead of the resolved update URL. Source-only releases (which is what 2.0.1 itself was) set the resolved URL via the source tarball, so the green up-arrow on the settings cog appeared, but the proactive popup did not. Fixed by gating the popup on the resolved URL.
+
+If you noticed the green cog after 2.0.1 dropped but no popup ever appeared, this is exactly the bug. Open the settings dialog manually and click "Jetzt aktualisieren" to grab this patch; from 2.0.2 onwards every future source-only release will pop up like the original AppImage-driven one did.
+
 ## [2.0.1] - 2026-05-15
 
 First real source-overlay patch on top of 2.0, ships as a 200 KB tarball that the in-app updater installs in a couple of seconds. Touches one thing only:

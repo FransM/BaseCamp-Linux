@@ -496,7 +496,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 
 
 class App(ctk.CTk):
@@ -1200,7 +1200,10 @@ class App(ctk.CTk):
                                 text="⚙ ↑", text_color=GRN)
                         # Proactive popup — only for AppImage installs where
                         # we can actually do something about it from the GUI.
-                        if install_type == "appimage" and url:
+                        # Trigger on _update_url so source-only releases (no
+                        # AppImage asset) still pop up; without this check the
+                        # popup never fired for tiny patches.
+                        if install_type == "appimage" and self._update_url:
                             self._show_update_popup()
                     self.after(0, _apply)
             except Exception:
