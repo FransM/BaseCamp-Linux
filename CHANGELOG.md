@@ -6,9 +6,11 @@ This release brings a proper in-app updater so you finally do not have to downlo
 
 ### In-app updater
 
-When the app starts it quietly asks GitHub if there is a newer release. If there is, a popup appears with two buttons (Jetzt aktualisieren or Später) so you can decide right away. The settings cog in the top-right corner also turns green with a "⚙ ↑" indicator that stays visible until you update or restart, so the hint is always there if you closed the popup.
+When the app starts it quietly asks GitHub if there is a newer release. If there is, a popup appears with two buttons (Update now or Later) so you can decide right away. The settings cog in the top-right corner also turns green with a "⚙ ↑" indicator that stays visible until you update or restart, so the hint is always there if you closed the popup.
 
 Clicking the update button downloads the new version in the background with live progress, swaps it into place, and offers a Restart button. The restart re-launches the app via execv and stops the tray helper first so you do not end up with two tray icons.
+
+All popup labels are translated, so users running the app in German will see "Update verfügbar / Jetzt aktualisieren / Später" instead.
 
 ### Two update paths, chosen automatically
 
@@ -25,7 +27,7 @@ Extraction uses Python's `tarfile.data_filter`, which refuses path-traversal ent
 
 ### What this means for you as a user
 
-For most patches the new flow is simply: see the popup, click "Jetzt aktualisieren", wait a couple of seconds, click "Jetzt neu starten". No browser, no manual download, no chmod +x.
+For most patches the new flow is simply: see the popup, click "Update now", wait a couple of seconds, click "Restart now". No browser, no manual download, no chmod +x.
 
 If you installed via AUR (`basecamp-linux` via yay) or from source, the popup does not appear since those workflows have their own update mechanism. You still get the green cog and the version line in settings, which points you to the right command for your install.
 

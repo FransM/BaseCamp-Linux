@@ -218,11 +218,11 @@ Profiles are stored under `~/.config/mountain-time-sync/profiles/<name>/`. The a
 
 On startup the app quietly asks GitHub if there is a newer release. If there is, three things happen at once:
 
-1. A popup appears with two buttons (Jetzt aktualisieren or Später) so you can decide on the spot.
+1. A popup appears with two buttons (Update now or Later) so you can decide on the spot.
 2. The settings cog in the top-right corner turns green and gains a small up-arrow (⚙ ↑), so the hint stays visible even if you dismissed the popup.
 3. The settings dialog itself shows a green line with the new version number.
 
-Click "Jetzt aktualisieren" and the app downloads the new version in the background with live progress, installs it, and offers a Restart button that re-launches into the new build. Most updates between major releases are tiny source patches that ship as a 200 KB tarball, so the whole flow takes a couple of seconds. When native dependencies change the updater falls back to a full AppImage swap, with the right variant picked automatically based on your distribution.
+Click "Update now" and the app downloads the new version in the background with live progress, installs it, and offers a Restart button that re-launches into the new build. The labels in the popup follow your language setting — German users see "Update verfügbar / Jetzt aktualisieren / Später" instead. Most updates between major releases are tiny source patches that ship as a 200 KB tarball, so the whole flow takes a couple of seconds. When native dependencies change the updater falls back to a full AppImage swap, with the right variant picked automatically based on your distribution.
 
 Source updates are verified against a SHA-256 checksum that ships alongside the tarball on the GitHub release. A tarball without a published checksum is treated as suspect, and a checksum mismatch aborts the install before anything is extracted. The extraction itself uses Python's `tarfile.data_filter`, which refuses path-traversal entries, symlinks pointing outside the destination, and setuid bits.
 
