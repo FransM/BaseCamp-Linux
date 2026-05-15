@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.1.2] - 2026-05-15
+
+Source-only patch on top of 1.8.1.1 — picks up another round of issue triage with @FransM (#3, #4, #5, #6, #12, #13, #14). Highlights:
+
+- **Bundled plugins now auto-refresh on app upgrade.** The first-run copy step previously only fired if the destination didn't exist, so a fixed plugin in the host repo never reached `~/.config/mountain-time-sync/plugins/`. The app now compares versions and refreshes plugin source files in place (config.json / user state files are left alone). Fixes Frans' point in #13.
+- **Plugin update count in the sidebar.** When the manager's background fetch finds newer versions in `basecamp-plugins`, the "Plugins" sidebar button picks up a green "↑N" counter — you no longer have to open the panel to see there's something to update.
+- **Copy/paste in button-action fields.** Right-click menu (Cut / Copy / Paste / Select All) plus reliable Ctrl+C/X/V/A bindings on every DisplayPad action entry. Closes #14.
+- **DisplayPad paging fixes.** Switching pages in the editor now also flips the live device to that page so the buttons you see in front of you always match the dialog. Setting a sub-page slot to "none" actually blanks the tile on the next upload. Addresses #5.
+- **Disk Monitor: pick a mount-point from a dropdown.** New plugin-API hook (`value_options=` on `register_action_type`) lets plugins prefill the button-action editor with a list of suggestions. System Monitor uses it to show all mounted filesystems with size + fstype, so the user no longer has to remember the exact path. Closes #3.
+- **System Monitor: CPU temperature caption.** Always shows "CPU" instead of falling back to whatever raw label the sensor exposed ("Package id 0", "Tctl", …). Closes #4 in the plugins repo.
+- **Everest 60: unused effect controls now hide instead of grey out.** Rainbow modes no longer show empty Color 1 / Color 2 boxes; Static no longer shows a disabled speed slider. Closes #12.
+- **Everest 60: side LEDs (44-LED perimeter ring) — initial support.** Reverse-engineered from @FransM's USB capture in #4. New "Side LEDs" panel section lights the whole ring in one colour; new `everest60-controller rgb side-static R G B [bri]` CLI; per-key controller path now accepts a `side` array in its JSON payload. Custom RGB editor integration still to come.
+
 ## [1.8.1.1] - 2026-05-14
 
 A small patch release picking up things that came in from issue #2 (thanks @FransM):

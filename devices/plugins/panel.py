@@ -493,6 +493,12 @@ class PluginManagerPanel(ctk.CTkFrame):
         # Cache before re-rendering installed cards so update badges show up
         self._available = plugins
         self._populate()
+        # Decorate the Plugins switcher button with an update count
+        if hasattr(self._app, "_on_plugins_fetched"):
+            try:
+                self._app._on_plugins_fetched(plugins)
+            except Exception:
+                pass
 
         for w in self._avail_list.winfo_children():
             w.destroy()

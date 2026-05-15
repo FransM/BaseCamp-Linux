@@ -212,6 +212,33 @@ class PluginManager:
         entry = self._action_types.get(type_id)
         return entry["handler"] if entry else None
 
+    def get_action_value_options(self, type_id):
+        """Return (display_label, value) tuples for a plugin action type, or None.
+
+        Plugin callbacks may raise — we swallow exceptions and treat them as
+        "no suggestions" so the editor falls back to a plain text entry.
+        Returned tuples have both fields as strings so the UI can show them
+        directly; bare-string entries from plugins are normalised here.
+        """
+        entry = self._action_types.get(type_id)
+        if not entry:
+            return None
+        cb = entry.get("value_options")
+        if not callable(cb):
+            return None
+        try:
+            opts = cb() or []
+        except Exception:
+            return None
+        result = []
+        for o in opts:
+            if isinstance(o, (list, tuple)) and len(o) >= 2:
+                result.append((str(o[0]), str(o[1])))
+            else:
+                s = str(o)
+                result.append((s, s))
+        return result
+
     # ── Service lifecycle ─────────────────────────────────────────────────────
 
     def start_services(self):

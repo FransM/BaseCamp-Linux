@@ -95,13 +95,20 @@ class PluginContext:
 
     # ── Action registration ───────────────────────────────────────────────────
 
-    def register_action_type(self, type_id, label, handler):
+    def register_action_type(self, type_id, label, handler, value_options=None):
         """Register a new button action type.
         type_id: internal name (e.g. "led_notify")
         label:   display name (e.g. "LED Notification")
         handler: callable(action_value) — called in a daemon thread on button press
+        value_options: optional callable() returning a list of suggested values
+                       (strings, or (display_label, value) tuples). When provided,
+                       the button-action editor renders an editable dropdown
+                       prefilled with those values instead of a plain text entry.
+                       Called each time the editor opens so it can reflect
+                       live system state (e.g. mounted filesystems).
         """
         self._pm._action_types[type_id] = {
             "label": label,
             "handler": handler,
+            "value_options": value_options,
         }

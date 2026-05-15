@@ -374,7 +374,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.8.1.1"
+APP_VERSION = "1.8.1.2"
 
 
 class App(ctk.CTk):
@@ -467,6 +467,10 @@ class App(ctk.CTk):
         # Background update check — non-blocking, only sets a label if newer found
         self._update_message = ""
         self.after(2000, self._check_for_update)
+        # Plugin update count is filled in by PluginManagerPanel after its
+        # background fetch (which runs unconditionally on app start) — it
+        # calls back into _on_plugins_fetched to decorate the sidebar button.
+        self._plugin_update_count = 0
 
     # ── subprocess command builder ────────────────────────────────────────────
 
@@ -994,6 +998,34 @@ class App(ctk.CTk):
                 pass  # offline / rate-limited / dns — silent
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _on_plugins_fetched(self, plugins):
+        """Called by PluginManagerPanel after a successful plugins.json fetch.
+        Counts published versions newer than installed and decorates the
+        Plugins switcher button so users see updates without opening the panel."""
+        def _version_tuple(s):
+            parts = []
+            for p in str(s or "").lstrip("v").split("."):
+                num = "".join(c for c in p if c.isdigit())
+                parts.append(int(num) if num else 0)
+            return tuple(parts) or (0,)
+
+        count = 0
+        pm = self._plugin_manager
+        for pinfo in plugins or []:
+            pid = pinfo.get("id")
+            if not pid or pid not in pm._manifests:
+                continue
+            if _version_tuple(pinfo.get("version", "0")) > \
+               _version_tuple(pm._manifests[pid].get("version", "0")):
+                count += 1
+        self._plugin_update_count = count
+        if hasattr(self, "_sw_plugins_btn"):
+            if count > 0:
+                self._sw_plugins_btn.configure(
+                    text=f"Plugins  ↑{count}", text_color=GRN)
+            else:
+                self._sw_plugins_btn.configure(text="Plugins")
 
     def _open_settings(self):
         if getattr(self, "_settings_win", None) is not None:

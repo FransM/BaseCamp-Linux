@@ -216,6 +216,82 @@ def cap_scroll_speed(scrollable_frame, max_units=2):
     canvas.yview = capped
 
 
+def attach_clipboard_menu(widget, T=None):
+    """Add right-click cut/copy/paste menu + reliable Ctrl-key bindings to an Entry/Text.
+
+    Tk on Linux does not always wire Ctrl+C/V/X to CLIPBOARD reliably (it has
+    historically used PRIMARY selection only), and CTkEntry never gets a
+    context menu by default. This helper fixes both for one widget.
+
+    `widget` can be a CTkEntry/CTkTextbox or a raw tk.Entry/tk.Text.
+    `T` is an optional translator callable; if None we fall back to English labels.
+    """
+    inner = getattr(widget, "_entry", None) or getattr(widget, "_textbox", None) or widget
+
+    def _tr(en, de_key):
+        if T:
+            try:
+                v = T(de_key)
+                if v and v != de_key:
+                    return v
+            except Exception:
+                pass
+        return en
+
+    def _is_text():
+        return inner.winfo_class() in ("Text",)
+
+    def _cut(_=None):
+        try: inner.event_generate("<<Cut>>")
+        except Exception: pass
+        return "break"
+
+    def _copy(_=None):
+        try: inner.event_generate("<<Copy>>")
+        except Exception: pass
+        return "break"
+
+    def _paste(_=None):
+        try: inner.event_generate("<<Paste>>")
+        except Exception: pass
+        return "break"
+
+    def _select_all(_=None):
+        try:
+            if _is_text():
+                inner.tag_add("sel", "1.0", "end-1c")
+            else:
+                inner.select_range(0, "end")
+                inner.icursor("end")
+        except Exception:
+            pass
+        return "break"
+
+    menu = tk.Menu(inner, tearoff=0,
+                   bg=BG2, fg=FG, activebackground=BLUE, activeforeground=FG,
+                   borderwidth=0)
+    menu.add_command(label=_tr("Cut",        "clipboard_cut"),    command=_cut)
+    menu.add_command(label=_tr("Copy",       "clipboard_copy"),   command=_copy)
+    menu.add_command(label=_tr("Paste",      "clipboard_paste"),  command=_paste)
+    menu.add_separator()
+    menu.add_command(label=_tr("Select All", "clipboard_select_all"), command=_select_all)
+
+    def _popup(event):
+        try:
+            inner.focus_set()
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    inner.bind("<Button-3>", _popup, add="+")
+    # Reliable Ctrl-key bindings (override Tk defaults so they always hit CLIPBOARD)
+    for seq, fn in (("<Control-c>", _copy), ("<Control-C>", _copy),
+                    ("<Control-x>", _cut), ("<Control-X>", _cut),
+                    ("<Control-v>", _paste), ("<Control-V>", _paste),
+                    ("<Control-a>", _select_all), ("<Control-A>", _select_all)):
+        inner.bind(seq, fn, add="+")
+
+
 # ── Color Picker Dialog ────────────────────────────────────────────────────────
 
 _WHL    = 220

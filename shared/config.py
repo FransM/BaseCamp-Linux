@@ -147,8 +147,32 @@ def _save_last_dir(kind, path):
 
 # ── Auto-copy bundled plugins on first run ───────────────────────────────────
 
+def _bundled_plugin_version(path):
+    """Read version string from plugin.json in `path`, or '' on any error."""
+    try:
+        with open(os.path.join(path, "plugin.json")) as f:
+            return str(json.load(f).get("version", ""))
+    except Exception:
+        return ""
+
+
+def _plugin_version_tuple(s):
+    parts = []
+    for p in str(s or "").lstrip("v").split("."):
+        num = "".join(c for c in p if c.isdigit())
+        parts.append(int(num) if num else 0)
+    return tuple(parts) or (0,)
+
+
 def _copy_bundled_plugins():
-    """Copy bundled example plugins to user plugins dir if not already present."""
+    """Copy bundled example plugins to user plugins dir.
+
+    On first run, all bundled plugins are installed. On subsequent app
+    upgrades, any bundled plugin whose version is newer than the installed
+    copy is refreshed in place — config.json and other user-state files in
+    the plugin dir are preserved, only the plugin's own source files are
+    overwritten.
+    """
     import shutil
     # Find the bundled plugins/ directory next to the app
     if getattr(sys, "frozen", False):
@@ -163,9 +187,31 @@ def _copy_bundled_plugins():
     for name in os.listdir(bundled):
         src = os.path.join(bundled, name)
         dst = os.path.join(PLUGINS_DIR, name)
-        if os.path.isdir(src) and not os.path.exists(dst):
+        if not os.path.isdir(src):
+            continue
+        if not os.path.exists(dst):
             shutil.copytree(src, dst)
             print(f"[Plugin] Installed bundled plugin: {name}")
+            continue
+        src_ver = _bundled_plugin_version(src)
+        dst_ver = _bundled_plugin_version(dst)
+        if not src_ver or _plugin_version_tuple(src_ver) <= _plugin_version_tuple(dst_ver):
+            continue
+        # Newer bundled version — overwrite source files but keep user state
+        # (config.json, *.json that aren't plugin.json, any *.cache files etc.)
+        for src_name in os.listdir(src):
+            src_item = os.path.join(src, src_name)
+            dst_item = os.path.join(dst, src_name)
+            try:
+                if os.path.isdir(src_item):
+                    if os.path.isdir(dst_item):
+                        shutil.rmtree(dst_item)
+                    shutil.copytree(src_item, dst_item)
+                else:
+                    shutil.copy2(src_item, dst_item)
+            except Exception as e:
+                print(f"[Plugin] Failed to refresh {name}/{src_name}: {e}")
+        print(f"[Plugin] Refreshed bundled plugin: {name} {dst_ver} → {src_ver}")
 
 _copy_bundled_plugins()
 

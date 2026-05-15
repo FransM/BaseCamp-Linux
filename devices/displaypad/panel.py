@@ -23,6 +23,7 @@ from shared.ui_helpers import (
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
     native_open_image, native_open_folder, parse_desktop_apps,
     pick_dp_library_image, pick_dp_fullscreen_image,
+    attach_clipboard_menu,
 )
 from shared.config import (
     CONFIG_DIR,
@@ -781,6 +782,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._obs_combos   = []
         self._macro_combos = []
         self._hue_combos   = []
+        self._plugin_combos = []  # plugin types with value_options
+        self._plugin_combo_maps = {}  # idx -> {display_label: value}
         self._hue_values_map = []
         self._hue_bri_target = {}  # idx -> "group:1" or "light:3"
         self._cards       = []
@@ -852,6 +855,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._obs_combos[i].pack_forget()
             self._macro_combos[i].pack_forget()
             self._hue_combos[i].pack_forget()
+            self._plugin_combos[i].pack_forget()
             self._cmd_entries[i].pack_forget()
             self._browse_btns[i].pack_forget()
             self._cmd_entries[i].pack(side="left", padx=4, expand=True, fill="x")
@@ -927,6 +931,24 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
                     self._cmd_entries[i].configure(state="normal", placeholder_text="%")
                     self._act_cmd[i].set(pct)
+                # Plugin action with value_options: editable combo prefilled by plugin
+                else:
+                    pm = getattr(self._app, "_plugin_manager", None)
+                    opts = pm.get_action_value_options(btype) if pm else None
+                    if opts is not None:
+                        self._cmd_entries[i].pack_forget()
+                        self._browse_btns[i].pack_forget()
+                        labels = [lbl for lbl, _v in opts]
+                        self._plugin_combo_maps[i] = {lbl: val for lbl, val in opts}
+                        self._plugin_combos[i].configure(values=labels)
+                        # If current cmd matches one of the values, show that label
+                        shown = cmd
+                        for lbl, val in opts:
+                            if val == cmd:
+                                shown = lbl
+                                break
+                        self._plugin_combos[i].set(shown)
+                        self._plugin_combos[i].pack(side="left", padx=4, expand=True, fill="x")
 
         # Update page selector
         self._page_selector.set(self._panel._get_page_name(page))
@@ -984,6 +1006,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             entry.pack(side="left", padx=4, expand=True, fill="x")
             entry.bind("<Return>", lambda e, ix=i: self._apply(ix))
             entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
+            attach_clipboard_menu(entry, self._app.T)
             self._cmd_entries.append(entry)
 
             # OBS action combo (hidden by default, shown when type=obs)
@@ -1015,6 +1038,24 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 command=lambda val, ix=i: self._on_hue_select(val, ix))
             self._hue_combos.append(hue_combo)
 
+            plugin_combo = ctk.CTkComboBox(
+                row, values=[], width=160, height=30,
+                font=("Helvetica", 11),
+                fg_color=BG2, button_color=BLUE, border_color=BORDER,
+                text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
+                dropdown_hover_color=BG3,
+                command=lambda val, ix=i: self._on_plugin_value_select(val, ix))
+            # Also capture free-text edits (user types a custom value) — CTkComboBox
+            # only fires `command` on dropdown select, so bind on the inner entry too.
+            plugin_combo._entry.bind(
+                "<FocusOut>",
+                lambda e, ix=i, c=plugin_combo: self._on_plugin_value_select(c.get(), ix))
+            plugin_combo._entry.bind(
+                "<Return>",
+                lambda e, ix=i, c=plugin_combo: self._on_plugin_value_select(c.get(), ix))
+            self._plugin_combos.append(plugin_combo)
+            attach_clipboard_menu(plugin_combo, self._app.T)
+
             folder_btn = ctk.CTkButton(
                 row, text="", image=self._folder_img_dim,
                 width=30, height=30,
@@ -1041,6 +1082,13 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                            for x in self._page_list]):
             if lbl == label:
                 self._load_page(p)
+                # Also display this page on the device so the editor view
+                # mirrors what the user sees on the DisplayPad — eliminates
+                # the "buttons don't match the editor" surprise.
+                try:
+                    self._panel._switch_to_page(p)
+                except Exception:
+                    pass
                 break
 
     def _on_type_change(self, label, idx):
@@ -1161,6 +1209,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._act_cmd[idx].set(uuids[pos])
         except (ValueError, IndexError):
             pass
+        self._apply(idx)
+
+    def _on_plugin_value_select(self, val, idx):
+        # Map display label back to internal value (free text falls through verbatim)
+        mapped = self._plugin_combo_maps.get(idx, {}).get(val, val)
+        self._act_cmd[idx].set(mapped)
         self._apply(idx)
 
     def _populate_hue_combo(self, combo, hue_type, current_val="", btn_idx=None):
@@ -1657,6 +1711,20 @@ class DisplayPadPanel(ctk.CTkFrame):
         actions = self._page_actions.setdefault(
             page, [dict(a) for a in _DEFAULT_ACTIONS])
         actions[idx] = {"type": btype, "action": action}
+        # Ensure sub-pages have an image dict so _switch_to_page produces a
+        # clean blank canvas instead of inheriting whatever was last in memory
+        if page != 0:
+            self._page_images.setdefault(page, {})
+            # Setting a slot to "none" on a sub-page also clears its image so
+            # the button goes blank (matches what the editor implies).
+            if btype == "none":
+                self._page_images[page].pop(str(idx), None)
+                if page == self._current_page:
+                    self._images[str(idx)] = self._blank_icon
+                    if self._tile_lbls:
+                        self._refresh_panel_tile(idx)
+                    if not self._uploading and not self._animating:
+                        self.after(200, self._start_upload)
         if page == 0:
             _save_displaypad_actions(actions)
         else:

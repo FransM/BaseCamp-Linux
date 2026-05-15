@@ -72,6 +72,12 @@ DIR_TORNADO = {"CW": 0x0A, "CCW": 0x09}
 
 NUM_KEYS = 64
 
+# Side LED ring — 44 RGB LEDs around the keyboard perimeter (indices 126..169).
+# Reverse-engineered from a USBPcap of the Windows software lighting the
+# LEDs one at a time, starting top-left (above ESC) and going clockwise.
+SIDE_LED_INDICES = list(range(126, 170))
+NUM_SIDE_LEDS = len(SIDE_LED_INDICES)
+
 # LED hardware index mapping — maps logical key position to firmware LED address.
 LEDIDX = [
     # Row 0: ESC  1    2    3    4    5    6    7    8    9    0    -    =   BSPC
@@ -272,12 +278,30 @@ def set_lighting_yeti(r=255, g=0, b=0, r2=0, g2=0, b2=255, brightness=100, speed
         dev.close()
 
 
-def set_lighting_custom(colors, brightness=100):
-    """Set per-key RGB. colors: list of 64 (r,g,b) tuples mapped via LEDIDX."""
+def set_lighting_custom(colors, brightness=100, side_colors=None):
+    """Set per-key RGB. colors: list of 64 (r,g,b) tuples mapped via LEDIDX.
+
+    side_colors: optional list of NUM_SIDE_LEDS (r,g,b) for the perimeter ring,
+                 clockwise starting top-left (above ESC). When None, side ring
+                 LEDs are left untouched in this call but the device's custom
+                 mode keeps them dark unless they were set previously.
+    """
     num_keys = len(LEDIDX)
     colors = list(colors)[:num_keys]
     while len(colors) < num_keys:
         colors.append((0, 0, 0))
+
+    # Build a combined (hw_index, r, g, b) stream so the chunking loop below
+    # doesn't have to special-case main vs side LEDs.
+    stream = [(LEDIDX[i], colors[i][0], colors[i][1], colors[i][2])
+              for i in range(num_keys)]
+    if side_colors is not None:
+        side = list(side_colors)[:NUM_SIDE_LEDS]
+        while len(side) < NUM_SIDE_LEDS:
+            side.append((0, 0, 0))
+        for i, hw in enumerate(SIDE_LED_INDICES):
+            r, g, b = side[i]
+            stream.append((hw, r & 0xFF, g & 0xFF, b & 0xFF))
 
     dev = open_device()
     try:
@@ -291,27 +315,40 @@ def set_lighting_custom(colors, brightness=100):
 
         # Map — 14 IRGB entries per packet (65 - 9 header bytes = 56, 56//4 = 14)
         COLORS_PER_PKT = 14
+        total = len(stream)
         idx = 0
-        while idx < num_keys:
+        while idx < total:
             buf = _make_buf(0x35)
             pos = 9
             count = 0
-            while idx < num_keys and count < COLORS_PER_PKT:
-                r, g, b = colors[idx]
-                buf[pos]     = LEDIDX[idx]
-                buf[pos + 1] = r & 0xFF
-                buf[pos + 2] = g & 0xFF
-                buf[pos + 3] = b & 0xFF
+            while idx < total and count < COLORS_PER_PKT:
+                hw, r, g, b = stream[idx]
+                buf[pos]     = hw
+                buf[pos + 1] = r
+                buf[pos + 2] = g
+                buf[pos + 3] = b
                 pos += 4
                 idx += 1
                 count += 1
-            buf[5] = 0x0A if idx == num_keys else 0x0E
+            buf[5] = 0x0A if idx == total else 0x0E
             _send(dev, buf)
 
         # End
         _send(dev, _make_buf(0x36))
     finally:
         dev.close()
+
+
+def set_lighting_side_static(r, g, b, brightness=100, key_colors=None):
+    """Light all 44 side-ring LEDs in a single colour.
+
+    Convenience wrapper around set_lighting_custom — because the device only
+    addresses the side ring through custom mode, we have to also push a main
+    key colour map. If `key_colors` is None the main keys are blanked out.
+    """
+    side = [(r & 0xFF, g & 0xFF, b & 0xFF)] * NUM_SIDE_LEDS
+    keys = key_colors if key_colors is not None else [(0, 0, 0)] * NUM_KEYS
+    set_lighting_custom(keys, brightness=brightness, side_colors=side)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -416,6 +453,12 @@ def main():
                 bri = int(sub_args[7]) if len(sub_args) > 7 else 100
                 spd = int(sub_args[8]) if len(sub_args) > 8 else 50
                 set_lighting_yeti(r, g, b, r2, g2, b2, brightness=bri, speed=spd)
+            elif sub == "side-static":
+                if len(sub_args) < 4:
+                    _die("rgb side-static R G B [brightness]")
+                r, g, b = int(sub_args[1]), int(sub_args[2]), int(sub_args[3])
+                bri = int(sub_args[4]) if len(sub_args) > 4 else 100
+                set_lighting_side_static(r, g, b, brightness=bri)
             else:
                 _die(f"unknown rgb subcommand '{sub}'")
             print("ok")
@@ -430,10 +473,12 @@ def main():
         except Exception as e:
             _die(f"per-key-rgb: invalid JSON: {e}")
         leds_raw   = d.get("leds", [])
+        side_raw   = d.get("side", [])
         brightness = int(d.get("brightness", 100))
         colors = [tuple(c) for c in leds_raw]
+        side = [tuple(c) for c in side_raw] if side_raw else None
         try:
-            set_lighting_custom(colors, brightness=brightness)
+            set_lighting_custom(colors, brightness=brightness, side_colors=side)
             print("ok")
         except RuntimeError as e:
             _die(str(e))

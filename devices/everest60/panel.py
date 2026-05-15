@@ -87,6 +87,7 @@ class Everest60Panel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, pady=(4, 0))
 
         self._build_rgb_section(scroll)
+        self._build_side_leds_section(scroll)
         self._build_custom_rgb_section(scroll)
 
         self._app.update_idletasks()
@@ -155,22 +156,25 @@ class Everest60Panel(ctk.CTkFrame):
         self._rgb_bri_sl,   self._rgb_bri_row   = _slider(parent, "rgb_brightness_label", 100)
 
         # Color pickers
-        color_row = ctk.CTkFrame(parent, fg_color="transparent")
-        color_row.pack(fill="x", padx=10, pady=2)
+        self._rgb_color_row = ctk.CTkFrame(parent, fg_color="transparent")
+        self._rgb_color_row.pack(fill="x", padx=10, pady=2)
         self._rgb_color1 = (255, 0, 0)
         self._rgb_color2 = (0, 0, 255)
-        self._reg(ctk.CTkLabel(color_row, text="", text_color=FG2,
-                               font=("Helvetica", 11)), "rgb_color1_label").pack(side="left", padx=(0, 4))
+        self._rgb_c1_lbl = self._reg(ctk.CTkLabel(
+            self._rgb_color_row, text="", text_color=FG2,
+            font=("Helvetica", 11)), "rgb_color1_label")
+        self._rgb_c1_lbl.pack(side="left", padx=(0, 4))
         self._rgb_c1_btn = ctk.CTkButton(
-            color_row, text="", width=40, height=28,
+            self._rgb_color_row, text="", width=40, height=28,
             fg_color=_hex(*self._rgb_color1), hover_color=_hex(*self._rgb_color1),
             corner_radius=4, command=lambda: self._pick_color(1))
         self._rgb_c1_btn.pack(side="left", padx=(0, 12))
-        self._rgb_c2_lbl = self._reg(ctk.CTkLabel(color_row, text="", text_color=FG2,
-                                                   font=("Helvetica", 11)), "rgb_color2_label")
+        self._rgb_c2_lbl = self._reg(ctk.CTkLabel(
+            self._rgb_color_row, text="", text_color=FG2,
+            font=("Helvetica", 11)), "rgb_color2_label")
         self._rgb_c2_lbl.pack(side="left", padx=(0, 4))
         self._rgb_c2_btn = ctk.CTkButton(
-            color_row, text="", width=40, height=28,
+            self._rgb_color_row, text="", width=40, height=28,
             fg_color=_hex(*self._rgb_color2), hover_color=_hex(*self._rgb_color2),
             corner_radius=4, command=lambda: self._pick_color(2))
         self._rgb_c2_btn.pack(side="left")
@@ -223,6 +227,90 @@ class Everest60Panel(ctk.CTkFrame):
 
         self._rgb_update_controls()
 
+    def _build_side_leds_section(self, scroll):
+        """Side perimeter ring (44 LEDs) — single colour for now.
+
+        Uses the custom-RGB protocol path under the hood, so the main keys
+        are blanked when only side colour is applied. A future enhancement
+        can fold this into the full custom-RGB editor.
+        """
+        s = _Section(scroll, self._app, "✨",
+                     f"{self.T('side_leds_title')} — {self._model_name}")
+        self._sections.append(s)
+        self._side_leds_section = s
+
+        row = ctk.CTkFrame(s.content, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(10, 2))
+        self._reg(ctk.CTkLabel(
+            row, text="", text_color=FG2,
+            font=("Helvetica", 11)), "side_leds_color_label").pack(side="left", padx=(0, 4))
+        self._side_led_color = (255, 0, 67)  # Mountain brand magenta default
+        self._side_led_btn = ctk.CTkButton(
+            row, text="", width=40, height=28,
+            fg_color=_hex(*self._side_led_color),
+            hover_color=_hex(*self._side_led_color),
+            corner_radius=4, command=self._pick_side_color)
+        self._side_led_btn.pack(side="left", padx=(0, 12))
+
+        bri_row = ctk.CTkFrame(s.content, fg_color="transparent")
+        bri_row.pack(fill="x", padx=10, pady=2)
+        self._reg(ctk.CTkLabel(bri_row, text="", text_color=FG2,
+                               font=("Helvetica", 11), width=120, anchor="w"),
+                  "rgb_brightness_label").pack(side="left")
+        val_lbl = ctk.CTkLabel(bri_row, text="100", text_color=FG,
+                               font=("Helvetica", 11), width=30)
+        val_lbl.pack(side="right")
+        self._side_bri_sl = ctk.CTkSlider(
+            bri_row, from_=0, to=100, number_of_steps=100,
+            fg_color=BG3, progress_color=BLUE,
+            button_color=BLUE, button_hover_color=BLUE,
+            width=180, height=16)
+        self._side_bri_sl.set(100)
+        self._side_bri_sl.pack(side="left", padx=(0, 4))
+        self._side_bri_sl.configure(
+            command=lambda v, l=val_lbl: l.configure(text=str(int(v))))
+
+        self._side_leds_status = ctk.CTkLabel(
+            s.content, text="", font=("Helvetica", 11),
+            text_color=FG2, fg_color="transparent")
+        self._side_leds_status.pack(pady=(4, 0))
+
+        self._reg(ctk.CTkButton(
+            s.content, text="", height=32, corner_radius=4,
+            fg_color=BLUE, hover_color="#0884be",
+            text_color=FG, font=("Helvetica", 11),
+            command=self._apply_side_leds), "side_leds_apply"
+        ).pack(fill="x", padx=10, pady=(4, 10))
+
+        self._reg(ctk.CTkLabel(
+            s.content, text="",
+            font=("Helvetica", 9), text_color=FG2,
+            wraplength=380, justify="left"), "side_leds_hint"
+        ).pack(fill="x", padx=10, pady=(0, 8))
+
+    def _pick_side_color(self):
+        from shared.ui_helpers import pick_color
+        rgb = pick_color(self._app, initial_rgb=self._side_led_color,
+                         title=self.T("color_picker_title"), show_brightness=False)
+        if rgb is None:
+            return
+        self._side_led_color = rgb
+        h = _hex(*rgb)
+        self._side_led_btn.configure(fg_color=h, hover_color=h)
+
+    def _apply_side_leds(self):
+        r, g, b = self._side_led_color
+        bri = int(self._side_bri_sl.get())
+        cmd = self._cmd("rgb", "side-static", str(r), str(g), str(b), str(bri))
+        try:
+            subprocess.run(cmd, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            self._side_leds_status.configure(
+                text=self.T("side_leds_applied"), text_color=GRN)
+        except subprocess.CalledProcessError as e:
+            self._side_leds_status.configure(
+                text=str(e.stderr.decode() if e.stderr else e), text_color=RED)
+
     def _build_custom_rgb_section(self, scroll):
         s = _Section(scroll, self._app, "🎨", f"{self.T('zone_title')} — {self._model_name}")
         self._sections.append(s)
@@ -259,22 +347,48 @@ class Everest60Panel(ctk.CTkFrame):
         w.focus_force()
 
     def _rgb_update_controls(self):
+        """Show/hide RGB controls based on the selected effect.
+
+        Whole rows (speed, direction) collapse when not used; colour pickers
+        within the shared colour row are individually hidden so we don't leave
+        an empty stub. The previous behaviour just greyed controls out which
+        led to confusing UI for rainbow / static modes.
+        """
         name = self._rgb_mode_var.get()
-        _, hs, hb, hc1, hc2, hd = self._rgb_effect_map.get(name, ("", False, False, False, False, False))
-        self._rgb_speed_sl.configure(state="normal" if hs else "disabled")
-        self._rgb_bri_sl.configure(state="normal" if hb else "disabled")
-        # Re-set slider values to fix visual position after enable/disable cycle
-        if hs:
-            self._rgb_speed_sl.set(self._rgb_speed_sl.get())
-        if hb:
-            self._rgb_bri_sl.set(self._rgb_bri_sl.get())
-        self._rgb_c1_btn.configure(state="normal" if hc1 else "disabled")
-        self._rgb_c2_btn.configure(state="normal" if hc2 else "disabled")
-        self._rgb_c2_lbl.configure(state="normal" if hc2 else "disabled")
+        _, hs, hb, hc1, hc2, hd = self._rgb_effect_map.get(
+            name, ("", False, False, False, False, False))
+
+        def _toggle_row(row, show):
+            if show:
+                if not row.winfo_ismapped():
+                    row.pack(fill="x", padx=10, pady=2)
+            else:
+                row.pack_forget()
+
+        _toggle_row(self._rgb_speed_row, hs)
+        _toggle_row(self._rgb_bri_row,   hb)
+        _toggle_row(self._rgb_dir_row,   hd)
+
+        # Colour 1 / colour 2 share a row — pack/unpack individually so we
+        # don't show a label without its button. They're packed left-to-right
+        # in this order: c1 label, c1 btn, c2 label, c2 btn — recreate the
+        # left-side order with the visible ones only.
+        for w in (self._rgb_c1_lbl, self._rgb_c1_btn,
+                  self._rgb_c2_lbl, self._rgb_c2_btn):
+            w.pack_forget()
+        if hc1:
+            self._rgb_c1_lbl.pack(side="left", padx=(0, 4))
+            self._rgb_c1_btn.pack(side="left", padx=(0, 12))
+        if hc2:
+            self._rgb_c2_lbl.pack(side="left", padx=(0, 4))
+            self._rgb_c2_btn.pack(side="left")
+        # Hide the whole colour row if neither slot is used (e.g. *_rainbow)
+        _toggle_row(self._rgb_color_row, hc1 or hc2)
+
         # Direction values
         is_tornado = "tornado" in name.lower()
         dirs = self._dir_tornado if is_tornado else self._dir_wave
-        self._rgb_dir_menu.configure(values=dirs, state="normal" if hd else "disabled")
+        self._rgb_dir_menu.configure(values=dirs)
         if self._rgb_dir_var.get() not in dirs:
             self._rgb_dir_var.set(dirs[0])
 
