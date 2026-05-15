@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.3] - 2026-05-15
+
+Decouples the in-app update check from GitHub's "Latest" pin. The previous code queried `/releases/latest`, which meant whichever release was flagged as Latest on GitHub had to be the newest one to keep auto-updates working. The new code scans the recent release feed instead and picks the highest version number, skipping prereleases and drafts. This lets the project keep v2.0 (which carries the AppImage assets that new users download) pinned as Latest indefinitely, while small source-only patches (2.0.x) still surface in the app for everyone running it. From this version onwards, the Latest pin on GitHub is purely a landing-page hint for new users and has no effect on the updater.
+
 ## [2.0.2] - 2026-05-15
 
 Tiny follow-up on 2.0.1. The update popup was only firing when a release shipped an AppImage asset, because the trigger check was looking at the AppImage URL variable instead of the resolved update URL. Source-only releases (which is what 2.0.1 itself was) set the resolved URL via the source tarball, so the green up-arrow on the settings cog appeared, but the proactive popup did not. Fixed by gating the popup on the resolved URL.

@@ -496,7 +496,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 
 
 class App(ctk.CTk):
@@ -1111,11 +1111,29 @@ class App(ctk.CTk):
         def _run():
             try:
                 import urllib.request
+                # Scan the recent release feed, not /latest, so that v2.0 can
+                # stay pinned as Latest for new downloaders while small source
+                # patches (2.0.x) still surface here. Picks the release with
+                # the highest version number, skipping drafts + prereleases.
                 req = urllib.request.Request(
-                    "https://api.github.com/repos/ramisotti13-eng/BaseCamp-Linux/releases/latest",
+                    "https://api.github.com/repos/ramisotti13-eng/BaseCamp-Linux/releases?per_page=20",
                     headers={"User-Agent": f"BaseCamp-Linux/{APP_VERSION}"})
                 with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+                    releases = json.loads(resp.read().decode("utf-8"))
+                data = None
+                best_ver = (0,)
+                for r in releases or []:
+                    if r.get("prerelease") or r.get("draft"):
+                        continue
+                    candidate_tag = (r.get("tag_name") or "").strip()
+                    if not candidate_tag:
+                        continue
+                    v = _version_tuple(candidate_tag)
+                    if v > best_ver:
+                        best_ver = v
+                        data = r
+                if data is None:
+                    return
                 tag = (data.get("tag_name") or "").strip()
                 if tag and _version_tuple(tag) > _version_tuple(APP_VERSION):
                     ver = tag.lstrip("v")
