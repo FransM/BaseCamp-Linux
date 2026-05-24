@@ -31,3 +31,6 @@ mo.png
 protocol_notes.md
 aur-repo
 protocol/
+
+# Local secrets
+.env
