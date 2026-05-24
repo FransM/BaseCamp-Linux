@@ -2,14 +2,14 @@
 """PyInstaller spec for the everest60-controller standalone binary."""
 
 a = Analysis(
-    ['devices/everest60/controller.py'],
+    ['everest60_entry.py'],
     pathex=['.'],
     binaries=[],
     datas=[],
-    hiddenimports=['hid'],
+    hiddenimports=['hid', 'devices.everest60.controller'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['_overlay_bootstrap.py'],
     excludes=[],
     noarchive=False,
 )

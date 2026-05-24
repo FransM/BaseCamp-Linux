@@ -1,0 +1,36 @@
+# Debian build environment for the BaseCamp Linux AppImage.
+#
+# Debian 12 (bookworm) gives glibc 2.36 — older than Fedora's — so the resulting
+# AppImage runs on Debian/Ubuntu/Mint and older systems. python:3.14-bookworm
+# matches the bundled interpreter version and ships a working tkinter.
+#
+# Build:  docker build -f Dockerfile.debian -t basecamp-debian-builder .
+# Use:    see build_appimage_debian.sh
+FROM python:3.14-bookworm
+
+# System libraries the bundled app needs at runtime (Tk, USB, HID, X11) plus the
+# AppImage tooling (squashfs-tools, file). FUSE is not required because we run
+# appimagetool extracted.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libusb-1.0-0 libhidapi-hidraw0 libhidapi-libusb0 \
+        tk libtk8.6 libtcl8.6 \
+        libx11-6 libxext6 libxrender1 libxft2 libxss1 \
+        squashfs-tools file desktop-file-utils ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps pinned to the same versions used for the Fedora build.
+RUN pip install --no-cache-dir \
+        pyinstaller==6.19.0 \
+        customtkinter==5.2.2 pillow==11.3.0 numpy==2.3.5 psutil==7.0.0 \
+        PyYAML==6.0.2 pystray==0.19.5 tkinterdnd2==0.4.3 pyusb==1.3.1 \
+        hid==1.0.6 obsws-python==1.8.0 packaging==25.0 python-xlib==0.33 six==1.17.0
+
+# appimagetool, extracted so it runs without FUSE inside the container.
+RUN wget -qO /opt/appimagetool.AppImage \
+        https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+    && cd /opt && chmod +x appimagetool.AppImage \
+    && ./appimagetool.AppImage --appimage-extract >/dev/null \
+    && printf '#!/bin/sh\nexec /opt/squashfs-root/AppRun "$@"\n' > /usr/local/bin/appimagetool \
+    && chmod +x /usr/local/bin/appimagetool
+
+WORKDIR /work

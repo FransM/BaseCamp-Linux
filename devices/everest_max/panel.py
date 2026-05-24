@@ -310,7 +310,8 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._obs_combos     = []
         self._macro_combos   = []
 
-        _TYPE_INTERNAL = ["none", "shell", "url", "folder", "app", "obs", "macro", "keypress", "text"]
+        _TYPE_INTERNAL = ["none", "shell", "url", "folder", "app", "obs", "macro",
+                          "keypress", "text", "page", "set_key"]
 
         def _type_internal_dynamic():
             base = list(_TYPE_INTERNAL)
@@ -324,7 +325,8 @@ class EverestMaxPanel(ctk.CTkFrame):
                     self.T("action_type_url"),       self.T("action_type_folder"),
                     self.T("action_type_app"),       "OBS",
                     self.T("action_type_macro"),
-                    self.T("action_type_keypress"),  self.T("action_type_text")]
+                    self.T("action_type_keypress"),  self.T("action_type_text"),
+                    self.T("action_type_page"),      self.T("action_type_set_key")]
             pm = getattr(self._app, "_plugin_manager", None)
             if pm:
                 for _tid, lbl in pm.get_action_type_labels():
@@ -445,6 +447,14 @@ class EverestMaxPanel(ctk.CTkFrame):
                           command=self._reset_buttons_flash),
             "reset_buttons_btn"
         ).pack(fill="x")
+
+        # Clarify scope: this only clears app-set actions, not firmware-level key
+        # remaps configured in Windows BaseCamp (issue #11).
+        self._reg(
+            ctk.CTkLabel(b3, text="", font=("Helvetica", 10), text_color=FG2,
+                         wraplength=360, justify="left"),
+            "reset_buttons_note"
+        ).pack(fill="x", padx=8, pady=(4, 0))
 
         self._numpad_info = ctk.CTkLabel(b3, text="", font=("Helvetica", 11),
                                           text_color=GRN)
@@ -678,7 +688,7 @@ class EverestMaxPanel(ctk.CTkFrame):
     def _start_cpu_auto_clean(self):
         _FROZEN = getattr(sys, "frozen", False)
         def run():
-            pkill = "basecamp-controller.*cpu" if _FROZEN else r"mountain-time-sync\.py.*cpu"
+            pkill = "basecamp-controller.*cpu" if _FROZEN else r"emax_controller\.py.*cpu"
             subprocess.run(["pkill", "-f", pkill], capture_output=True)
             time.sleep(0.4)
             self._app.after(0, self._start_cpu_auto)
@@ -1093,7 +1103,7 @@ class EverestMaxPanel(ctk.CTkFrame):
                 self._app.after(0, lambda: self._main_status.configure(
                     text=self.T("waiting_for_keyboard"), text_color=YLW))
             time.sleep(delay)
-            pkill = "basecamp-controller.*cpu" if _FROZEN else r"mountain-time-sync\.py.*cpu"
+            pkill = "basecamp-controller.*cpu" if _FROZEN else r"emax_controller\.py.*cpu"
             subprocess.run(["pkill", "-f", pkill], capture_output=True)
             time.sleep(0.3)
             r = subprocess.run(self._cmd("main-mode", mode), capture_output=True)

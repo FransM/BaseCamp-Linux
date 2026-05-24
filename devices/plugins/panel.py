@@ -486,7 +486,9 @@ class PluginManagerPanel(ctk.CTkFrame):
             plugins = data.get("plugins", [])
             self.after(0, lambda: self._show_available(plugins))
         except Exception as e:
-            self.after(0, lambda: self._show_available_error(str(e)))
+            # Bind e as a default — Python clears the `except` variable at block
+            # end, so a deferred lambda referencing it bare raises NameError (3.12+).
+            self.after(0, lambda e=e: self._show_available_error(str(e)))
 
     def _show_available(self, plugins):
         self._refresh_btn.configure(state="normal")
@@ -737,7 +739,8 @@ class PluginManagerPanel(ctk.CTkFrame):
             self.after(5000, _cleanup)
 
         except Exception as e:
-            self.after(0, lambda: self._on_github_fail(str(e), pinfo))
+            # Bind e as a default (see note above) so the deferred lambda keeps it.
+            self.after(0, lambda e=e: self._on_github_fail(str(e), pinfo))
 
     def _on_github_fail(self, err, pinfo=None):
         if pinfo is None:

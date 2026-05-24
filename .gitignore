@@ -10,8 +10,18 @@ build/
 build-fedora/
 dist/
 dist-fedora/
+build_debian/
+dist_debian/
+AppDir_debian/
 *.AppImage
 Archiv.zip
+
+# Release artifacts (uploaded to GitHub releases, not tracked in git)
+source-*.tar.gz
+source-*.tar.gz.sha256
+
+# Reverse-engineering reference binaries (Windows)
+MausMAx/
 
 # Capture / debug files
 *.pcap

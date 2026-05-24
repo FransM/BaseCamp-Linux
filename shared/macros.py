@@ -5,8 +5,59 @@ executed via xdotool (X11) or ydotool (Wayland).
 """
 import os
 import subprocess
+import sys
 import time
 import uuid
+
+# Env vars that PyInstaller / AppImage inject so the bundled interpreter finds
+# its own libraries. If they leak into an external program we launch (a browser,
+# zenity, a GUI app, …) that program loads our bundled libs and crashes or
+# silently fails to start — which is exactly why "App"/"Shell" actions and the
+# native file dialog don't work from the AppImage while "URL" (handed off to the
+# desktop portal over D-Bus) does. See GitHub issue #11.
+_FROZEN_ENV_VARS = (
+    "LD_LIBRARY_PATH", "LD_PRELOAD",
+    "PYTHONPATH", "PYTHONHOME",
+    "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH",
+    "GTK_PATH", "GTK_EXE_PREFIX", "GTK_DATA_PREFIX",
+    "GDK_PIXBUF_MODULE_FILE", "GDK_PIXBUF_MODULEDIR",
+    "GST_PLUGIN_PATH", "GST_PLUGIN_SYSTEM_PATH", "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GI_TYPELIB_PATH", "GSETTINGS_SCHEMA_DIR",
+    "FONTCONFIG_FILE", "FONTCONFIG_PATH",
+    "TCL_LIBRARY", "TK_LIBRARY", "TKPATH",
+    "SSL_CERT_FILE", "SSL_CERT_DIR",
+)
+
+
+def clean_child_env(env=None):
+    """Return a copy of `env` (default os.environ) safe to hand to an external
+    program, with the PyInstaller / AppImage library-path injection undone.
+
+    PyInstaller and AppRun save the pre-launch value of each injected var as
+    ``<VAR>_ORIG``; we restore that when present, otherwise drop the var so the
+    program falls back to the system libraries. AppImage mount paths are also
+    stripped from PATH / XDG_*_DIRS. A no-op when not running frozen.
+    """
+    env = dict(os.environ if env is None else env)
+    if not (getattr(sys, "frozen", False) or env.get("APPDIR") or env.get("APPIMAGE")):
+        return env
+    for var in _FROZEN_ENV_VARS:
+        orig = env.get(var + "_ORIG")
+        if orig is not None:
+            env[var] = orig
+        else:
+            env.pop(var, None)
+    appdir = env.get("APPDIR")
+    if appdir:
+        for var in ("PATH", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS"):
+            val = env.get(var)
+            if not val:
+                continue
+            parts = [p for p in val.split(os.pathsep)
+                     if p and not p.startswith(appdir)]
+            if parts:
+                env[var] = os.pathsep.join(parts)
+    return env
 
 # Friendly key name -> xdotool keysym
 KEY_MAP = {
@@ -191,7 +242,7 @@ def _find_tool():
 
 def _build_env():
     """Build environment for input tools, running as real user if under sudo."""
-    env = os.environ.copy()
+    env = clean_child_env()
     sudo_user = env.get("SUDO_USER")
     if sudo_user:
         import pwd

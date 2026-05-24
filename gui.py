@@ -32,7 +32,7 @@ else:
     _BIN = _HERE
     _RES = _HERE
     PYTHON = sys.executable
-    SCRIPT = os.path.join(_HERE, "mountain-time-sync.py")
+    SCRIPT = os.path.join(_HERE, "emax_controller.py")
     TRAY_HELPER = os.path.join(_HERE, "tray_helper.py")
 
 LANG_DIR = os.path.join(_RES, "lang")
@@ -496,7 +496,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.1.0"
 
 
 class App(ctk.CTk):
@@ -586,6 +586,9 @@ class App(ctk.CTk):
         self.after(500, self._start_cpu_auto_clean)
         # Run first device check immediately so the correct panel is shown
         self._check_devices()
+        # Control IPC: lets external software (and the button-action daemon)
+        # drive lighting, switch pages and redefine keys (issue #20).
+        self._start_control_server()
         # Background update check — non-blocking, only sets a label if newer found
         self._update_message = ""
         self._update_url = ""
@@ -622,6 +625,100 @@ class App(ctk.CTk):
                 return [os.path.join(_BIN, "everest60-controller")] + list(args)
             return [PYTHON, script] + list(args)
         return _cmd(*args)
+
+    # ── Control IPC (issue #20) ─────────────────────────────────────────────────
+
+    def _start_control_server(self):
+        """Host the control socket so external programs and the button-action
+        daemon can drive the app (lighting, page switch, key redefine)."""
+        try:
+            from shared.ipc import ControlServer
+        except Exception as e:
+            print(f"[Control] unavailable: {e}")
+            return
+        self._control_server = ControlServer(self._handle_control)
+        self._control_server.start()
+
+    def _handle_control(self, obj):
+        """Dispatch one control command. Runs on the IPC server thread, so any
+        real UI work is marshalled onto the Tk main thread via self.after()."""
+        cmd = (obj.get("cmd") or "").lower()
+        if cmd == "ping":
+            return {"ok": True, "app": "BaseCamp Linux", "version": APP_VERSION}
+        if cmd == "list":
+            return {"ok": True, "pages": list(self._panels.keys()),
+                    "active": self._active_device, "present": dict(self._dev_present)}
+        if cmd == "page":
+            page = obj.get("page", "")
+            if page not in self._panels:
+                return {"ok": False, "error": f"unknown page '{page}'"}
+            self.after(0, lambda: self._switch_device(page))
+            return {"ok": True}
+        if cmd == "rgb":
+            device = obj.get("device") or self._kb_panel_id
+            args = [str(a) for a in obj.get("args", [])]
+            if not args:
+                return {"ok": False, "error": "rgb: 'args' required"}
+            return self._run_control_cmd(self._cmd_for_device(device, "rgb", *args))
+        if cmd == "run":  # generic: run any device-controller verb
+            device = obj.get("device") or self._kb_panel_id
+            args = [str(a) for a in obj.get("args", [])]
+            if not args:
+                return {"ok": False, "error": "run: 'args' required"}
+            return self._run_control_cmd(self._cmd_for_device(device, *args))
+        if cmd == "image":
+            device = obj.get("device", "everest_max")
+            button = int(obj.get("button", 0))
+            path = obj.get("path", "")
+            if not os.path.isfile(path):
+                return {"ok": False, "error": f"no such file: {path}"}
+            return self._run_control_cmd(
+                self._cmd_for_device(device, "upload", str(button), path))
+        if cmd == "set_key":
+            return self._control_set_key(obj)
+        return {"ok": False, "error": f"unknown cmd '{cmd}'"}
+
+    def _run_control_cmd(self, cmdline):
+        """Run a device-controller command for the control IPC and return output."""
+        from shared.macros import clean_child_env
+        try:
+            r = subprocess.run(cmdline, capture_output=True, timeout=30,
+                               env=clean_child_env())
+            return {"ok": r.returncode == 0, "code": r.returncode,
+                    "stdout": r.stdout.decode("utf-8", "replace").strip(),
+                    "stderr": r.stderr.decode("utf-8", "replace").strip()}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    def _control_set_key(self, obj):
+        """Redefine an Everest Max numpad button (issue #18). The action daemon
+        re-reads the saved config within ~2 s, so saving is enough to take
+        effect; we also refresh the editor if it's loaded."""
+        from shared.config import load_buttons, save_buttons
+        try:
+            button = int(obj.get("button", -1))
+        except (TypeError, ValueError):
+            button = -1
+        if not 0 <= button <= 3:
+            return {"ok": False, "error": "set_key: 'button' must be 0..3 (D1..D4)"}
+        btype  = obj.get("type", "shell")
+        action = obj.get("action", "")
+        buttons = load_buttons()
+        while len(buttons) <= button:
+            buttons.append({"icon": 7, "action": "", "type": "shell"})
+        buttons[button]["type"]   = btype
+        buttons[button]["action"] = action
+        save_buttons(buttons)
+        panel = getattr(self, "_everest_panel", None)
+        if panel is not None:
+            def refresh():
+                try:
+                    panel._btn_type[button].set(btype)
+                    panel._btn_action[button].set(action)
+                except Exception:
+                    pass
+            self.after(0, refresh)
+        return {"ok": True}
 
     # ── i18n ──────────────────────────────────────────────────────────────────
 
@@ -823,6 +920,21 @@ class App(ctk.CTk):
         self._panel_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         self._panel_area.pack(fill="both", expand=True)
 
+        # Empty-state overlay shown over a hardware panel when its device isn't
+        # connected, instead of a panel full of inert controls (issue #19).
+        self._no_device_frame = ctk.CTkFrame(self._panel_area, fg_color=BG)
+        _nd_inner = ctk.CTkFrame(self._no_device_frame, fg_color="transparent")
+        _nd_inner.place(relx=0.5, rely=0.45, anchor="center")
+        ctk.CTkLabel(_nd_inner, text="🔌", font=("Helvetica", 48),
+                     text_color=FG2).pack(pady=(0, 8))
+        self._no_device_title = ctk.CTkLabel(
+            _nd_inner, text="", font=("Helvetica", 16, "bold"), text_color=FG)
+        self._no_device_title.pack()
+        self._no_device_hint = ctk.CTkLabel(
+            _nd_inner, text="", font=("Helvetica", 11), text_color=FG2,
+            wraplength=320, justify="center")
+        self._no_device_hint.pack(pady=(6, 0))
+
         # Instantiate panels (OBS first — other panels reference it)
         self._obs_panel         = OBSPanel(self._panel_area, self)
         self._macro_panel       = MacroPanel(self._panel_area, self)
@@ -884,9 +996,39 @@ class App(ctk.CTk):
         # Update switcher button styles
         self._refresh_switcher_colors()
 
+        # Show/hide the "no device connected" overlay for this panel
+        self._update_empty_state()
+
         # Force CTkButtons/widgets to redraw — CTk skips internal canvas
         # draw for widgets that were built while their panel was hidden
         self.after(20, self._redraw_panel_widgets, device_id)
+
+    def _update_empty_state(self):
+        """Show the 'no device detected' overlay when the active hardware panel's
+        device is not connected; hide it for software panels or present devices.
+        Keeps the switcher usable so software tabs stay reachable (issue #19)."""
+        if not hasattr(self, "_no_device_frame"):
+            return
+        active = self._active_device
+        show = False
+        title_key = "no_device_keyboard"
+        if active in ("everest_max", "everest60"):
+            show = not (self._dev_present.get("everest_max")
+                        or self._dev_present.get("everest60"))
+            title_key = "no_device_keyboard"
+        elif active == "makalu67":
+            show = not self._dev_present.get("makalu67")
+            title_key = "no_device_mouse"
+        elif active == "displaypad":
+            show = not self._dev_present.get("displaypad")
+            title_key = "no_device_displaypad"
+        if show:
+            self._no_device_title.configure(text=self.T(title_key))
+            self._no_device_hint.configure(text=self.T("no_device_hint"))
+            self._no_device_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._no_device_frame.tkraise()
+        else:
+            self._no_device_frame.place_forget()
 
     def _redraw_panel_widgets(self, device_id):
         """Walk the active panel and force _draw() on all CTk widgets."""
@@ -975,6 +1117,8 @@ class App(ctk.CTk):
             self._makalu_panel.set_connected(mouse_present)
         if hasattr(self, "_everest60_panel"):
             self._everest60_panel.set_connected(kb_60_present)
+        # Reflect (dis)connection in the empty-state overlay
+        self._update_empty_state()
 
     def _refresh_switcher_colors(self):
         """Apply fg_color/text_color to each switcher button: blue=active, green=present, gray=absent."""
@@ -1472,6 +1616,9 @@ class App(ctk.CTk):
                 self._everest_panel._cpu_proc.terminate()
         if hasattr(self, "_tray_proc") and self._tray_proc.poll() is None:
             self._tray_proc.terminate()
+        # Stop control IPC server
+        if hasattr(self, "_control_server"):
+            self._control_server.stop()
         # Shutdown plugins
         if hasattr(self, "_plugin_manager"):
             self._plugin_manager.shutdown()
@@ -1564,6 +1711,23 @@ def run():
     if "--install" in sys.argv:
         _install_desktop_entry()
         sys.exit(0)
+    # CLI client for the control interface (issue #20): forward a JSON command
+    # to the already-running GUI and print its reply. Lets scripts drive the app
+    # without a separate binary, e.g.:
+    #   basecamp --ctl '{"cmd":"rgb","device":"everest60","args":["side-static","255","0","0"]}'
+    #   basecamp --ctl '{"cmd":"page","page":"displaypad"}'
+    if "--ctl" in sys.argv:
+        i = sys.argv.index("--ctl")
+        payload = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+        from shared.ipc import send_command
+        try:
+            obj = json.loads(payload) if payload else {"cmd": "ping"}
+        except ValueError as e:
+            print(json.dumps({"ok": False, "error": f"invalid JSON: {e}"}))
+            sys.exit(2)
+        reply = send_command(obj)
+        print(json.dumps(reply))
+        sys.exit(0 if reply.get("ok") else 1)
     psutil.cpu_percent()
     start_minimized = "--minimized" in sys.argv
     if not start_minimized and load_splash_enabled():

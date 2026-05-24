@@ -1871,8 +1871,34 @@ class DisplayPadPanel(ctk.CTkFrame):
                     return name
         return f"Page {p}"
 
+    def _get_extra_actions(self, idx):
+        """Extra action steps for button idx (issue #17). Stored as an `actions`
+        list on the button's action dict; empty for the common single-action case."""
+        if self._current_page != 0 and idx == 0:
+            return []
+        actions = self._page_actions.get(self._current_page, _DEFAULT_ACTIONS)
+        if idx < len(actions):
+            extra = actions[idx].get("actions")
+            if isinstance(extra, list):
+                return extra
+        return []
+
     def _execute_action_k(self, idx):
+        # Run the primary action, then any chained extras in order (issue #17).
         btype, action = self._get_action(idx)
+        self._run_one_action(btype, action, idx)
+        for step in self._get_extra_actions(idx):
+            st = step.get("type", "none")
+            sa = step.get("action", "")
+            if st and st != "none":
+                self._run_one_action(st, sa, idx)
+
+    def _run_one_action(self, btype, action, idx=0):
+        # Redefine another key on demand (issue #18). action is JSON:
+        #   {"page":P,"key":K,"type":T,"action":A}  (page/key optional → current/idx)
+        if btype == "set_key" and action:
+            self.after(0, lambda a=action, i=idx: self._apply_set_key_action(a, i))
+            return
         # Page navigation
         if btype == "page":
             self.after(0, lambda p=idx + 1: self._switch_to_page(p))
@@ -1938,6 +1964,27 @@ class DisplayPadPanel(ctk.CTkFrame):
                 _run_shell(action)
         except Exception:
             pass
+
+    def _apply_set_key_action(self, action_json, host_idx):
+        """Redefine a key in response to a 'set_key' action (issue #18).
+        action_json: {"page":P,"key":K,"type":T,"action":A} — page/key default
+        to the current page and the pressed button."""
+        import json as _j
+        try:
+            d = _j.loads(action_json)
+        except (ValueError, TypeError):
+            return
+        try:
+            page = int(d.get("page", self._current_page))
+            key  = int(d.get("key", host_idx))
+        except (TypeError, ValueError):
+            return
+        self._save_page_action(page, key, d.get("type", "none"), d.get("action", ""))
+        if page == self._current_page and hasattr(self, "_refresh_panel_tile"):
+            try:
+                self._refresh_panel_tile(key)
+            except Exception:
+                pass
 
     def _key_event_loop(self):
         """Persistent key-event listener. Runs for the lifetime of the panel,

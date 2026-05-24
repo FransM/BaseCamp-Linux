@@ -30,7 +30,7 @@ mkdir -p "$ROOT"
 # artefact, or repo-meta is excluded by construction (we cherry-pick).
 cp gui.py                       "$ROOT/"
 cp tray_helper.py               "$ROOT/" 2>/dev/null || true
-cp mountain-time-sync.py        "$ROOT/" 2>/dev/null || true
+cp emax_controller.py           "$ROOT/" 2>/dev/null || true
 cp default_presets.json         "$ROOT/" 2>/dev/null || true
 cp default_presets_60.json      "$ROOT/" 2>/dev/null || true
 cp default_makalu_presets.json  "$ROOT/" 2>/dev/null || true

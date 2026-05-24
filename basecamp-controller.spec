@@ -1,15 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os, glob
+
+
+def _find_libusb():
+    """Locate libusb-1.0 across distros (Fedora /usr/lib64, Debian multiarch …)
+    so this spec builds on any of them."""
+    cands = ["/usr/lib64/libusb-1.0.so.0",
+             "/usr/lib/x86_64-linux-gnu/libusb-1.0.so.0",
+             "/usr/lib/libusb-1.0.so.0"]
+    cands += glob.glob("/usr/lib*/**/libusb-1.0.so.0", recursive=True)
+    for p in cands:
+        if os.path.exists(p):
+            return [(p, '.')]
+    return []
 
 
 a = Analysis(
-    ['mountain-time-sync.py'],
-    pathex=[],
-    binaries=[('/usr/lib64/libusb-1.0.so.0', '.')],
+    ['emax_entry.py'],
+    pathex=['.'],
+    binaries=_find_libusb(),
     datas=[],
-    hiddenimports=['PIL', 'psutil', 'obsws_python', 'usb', 'usb.core', 'usb.util', 'usb.backend.libusb1'],
+    hiddenimports=['PIL', 'psutil', 'obsws_python', 'usb', 'usb.core', 'usb.util', 'usb.backend.libusb1',
+                   'emax_controller', 'shared.ipc', 'shared.macros', 'shared.config'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['_overlay_bootstrap.py'],
     excludes=[],
     noarchive=False,
     optimize=0,

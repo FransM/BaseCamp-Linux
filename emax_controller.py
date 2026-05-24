@@ -906,6 +906,105 @@ def controller_loop(style=STYLE_ANALOG):
         # Smoothed metric values (EMA, alpha=0.2)
         _smooth = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
 
+        def _run_action(btype, action):
+            """Execute one button action by type. Issue #17 lets several run in
+            sequence; issue #16/#18 add page-switch and key-redefine that reach
+            the GUI over the control socket (issue #20)."""
+            if not btype or btype == "none" or not action:
+                return
+            if btype == "page":
+                from shared.ipc import send_command
+                send_command({"cmd": "page", "page": action})
+                return
+            if btype == "set_key":
+                from shared.ipc import send_command
+                import json as _j
+                try:
+                    d = _j.loads(action)
+                except ValueError:
+                    return
+                d["cmd"] = "set_key"
+                send_command(d)
+                return
+            if btype == "obs":
+                obs_btn = {}
+                if action.startswith("scene:"):
+                    obs_btn = {"type": "scene", "scene": action[6:]}
+                elif action == "record":
+                    obs_btn = {"type": "record"}
+                elif action == "stream":
+                    obs_btn = {"type": "stream"}
+                if obs_btn:
+                    threading.Thread(target=_execute_obs_action,
+                                     args=(obs_btn, obs_cfg, obs_holder),
+                                     daemon=True).start()
+                return
+            if btype == "macro":
+                from shared.macros import execute_macro
+                from shared.config import load_macros
+                all_macros = load_macros().get("macros", {})
+                macro = all_macros.get(action)
+                if macro:
+                    if action in _macro_toggle_events:
+                        _macro_toggle_events[action].set()
+                        del _macro_toggle_events[action]
+                        print(f"[Macro] Stopped toggle '{macro.get('name')}'")
+                    else:
+                        stop_ev = None
+                        if macro.get("repeat_mode") == "toggle":
+                            stop_ev = threading.Event()
+                            _macro_toggle_events[action] = stop_ev
+                        print(f"[Macro] Executing '{macro.get('name')}' ({len(macro.get('actions',[]))} actions)")
+                        threading.Thread(target=execute_macro,
+                                         args=(macro, stop_ev), daemon=True).start()
+                else:
+                    print(f"[Macro] UUID '{action}' not found in {list(all_macros.keys())}")
+                return
+            if btype == "keypress":
+                from shared.macros import simulate_keypress
+                threading.Thread(target=simulate_keypress, args=(action,),
+                                 daemon=True).start()
+                return
+            if btype == "text":
+                from shared.macros import simulate_text
+                threading.Thread(target=simulate_text, args=(action,),
+                                 daemon=True).start()
+                return
+            if _plugin_action_handler(btype, action):
+                return  # handled by a plugin-registered action type
+            # Built-in shell / url / folder / app. clean_child_env() strips the
+            # AppImage/PyInstaller library-path injection (issue #11).
+            from shared.macros import clean_child_env
+            sudo_user = os.environ.get("SUDO_USER")
+            if sudo_user:
+                uid = _pwd.getpwnam(sudo_user).pw_uid
+                runtime = f"/run/user/{uid}"
+                env = {
+                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+                    "XDG_RUNTIME_DIR": runtime,
+                    "HOME": _pwd.getpwnam(sudo_user).pw_dir,
+                    "USER": sudo_user,
+                    "LOGNAME": sudo_user,
+                    "PATH": clean_child_env().get("PATH", "/usr/bin:/bin"),
+                }
+                if os.path.exists(os.path.join(runtime, "wayland-0")):
+                    env["WAYLAND_DISPLAY"] = "wayland-0"
+                    env["XDG_SESSION_TYPE"] = "wayland"
+                else:
+                    env["DISPLAY"] = os.environ.get("DISPLAY", ":0")
+                    env["XAUTHORITY"] = os.path.join(
+                        _pwd.getpwnam(sudo_user).pw_dir, ".Xauthority")
+                if btype in ("url", "folder"):
+                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "xdg-open", action], env=env)
+                else:
+                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "bash", "-c", action], env=env)
+            else:
+                child_env = clean_child_env()
+                if btype in ("url", "folder"):
+                    subprocess.Popen(["xdg-open", action], env=child_env)
+                else:
+                    subprocess.Popen(["bash", "-c", action], env=child_env)
+
         def _handle_btn_resp(resp):
             nonlocal last_btn_state, last_btn_action_time
             if resp[0] != 0x01:
@@ -921,88 +1020,15 @@ def controller_loop(style=STYLE_ANALOG):
                         args=(obs_btn, obs_cfg, obs_holder),
                         daemon=True).start()
                 else:
-                    btype = buttons[i].get("type", "shell")
-                    action = buttons[i].get("action", "").strip()
-                    if btype == "obs" and action:
-                        obs_btn = {}
-                        if action.startswith("scene:"):
-                            obs_btn = {"type": "scene", "scene": action[6:]}
-                        elif action == "record":
-                            obs_btn = {"type": "record"}
-                        elif action == "stream":
-                            obs_btn = {"type": "stream"}
-                        if obs_btn:
-                            threading.Thread(
-                                target=_execute_obs_action,
-                                args=(obs_btn, obs_cfg, obs_holder),
-                                daemon=True).start()
-                    elif btype == "macro" and action:
-                        from shared.macros import execute_macro
-                        from shared.config import load_macros
-                        all_macros = load_macros().get("macros", {})
-                        macro = all_macros.get(action)
-                        if macro:
-                            # Toggle mode: stop if already running
-                            if action in _macro_toggle_events:
-                                _macro_toggle_events[action].set()
-                                del _macro_toggle_events[action]
-                                print(f"[Macro] Stopped toggle '{macro.get('name')}'")
-                            else:
-                                stop_ev = None
-                                if macro.get("repeat_mode") == "toggle":
-                                    stop_ev = threading.Event()
-                                    _macro_toggle_events[action] = stop_ev
-                                print(f"[Macro] Executing '{macro.get('name')}' ({len(macro.get('actions',[]))} actions)")
-                                threading.Thread(
-                                    target=execute_macro,
-                                    args=(macro, stop_ev),
-                                    daemon=True).start()
-                        else:
-                            print(f"[Macro] UUID '{action}' not found in {list(all_macros.keys())}")
-                    elif btype == "keypress" and action:
-                        from shared.macros import simulate_keypress
-                        threading.Thread(target=simulate_keypress,
-                                         args=(action,), daemon=True).start()
-                    elif btype == "text" and action:
-                        from shared.macros import simulate_text
-                        threading.Thread(target=simulate_text,
-                                         args=(action,), daemon=True).start()
-                    elif btype != "none" and action and _plugin_action_handler(btype, action):
-                        pass  # handled by plugin
-                    elif action and btype != "none":
-                        sudo_user = os.environ.get("SUDO_USER")
-                        if sudo_user:
-                            uid = _pwd.getpwnam(sudo_user).pw_uid
-                            runtime = f"/run/user/{uid}"
-                            env = {
-                                "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
-                                "XDG_RUNTIME_DIR": runtime,
-                                "HOME": _pwd.getpwnam(sudo_user).pw_dir,
-                                "USER": sudo_user,
-                                "LOGNAME": sudo_user,
-                                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                            }
-                            # Wayland oder X11 automatisch erkennen
-                            if os.path.exists(os.path.join(runtime, "wayland-0")):
-                                env["WAYLAND_DISPLAY"] = "wayland-0"
-                                env["XDG_SESSION_TYPE"] = "wayland"
-                            else:
-                                env["DISPLAY"] = os.environ.get("DISPLAY", ":0")
-                                env["XAUTHORITY"] = os.path.join(
-                                    _pwd.getpwnam(sudo_user).pw_dir, ".Xauthority")
-                            if btype in ("url", "folder"):
-                                subprocess.Popen(
-                                    ["sudo", "-u", sudo_user, "-E", "xdg-open", action],
-                                    env=env)
-                            else:  # shell, app
-                                subprocess.Popen(
-                                    ["sudo", "-u", sudo_user, "-E", "bash", "-c", action],
-                                    env=env)
-                        else:
-                            if btype in ("url", "folder"):
-                                subprocess.Popen(["xdg-open", action])
-                            else:  # shell, app
-                                subprocess.Popen(["bash", "-c", action])
+                    # Primary action, then any chained extras in order (issue #17).
+                    _run_action(buttons[i].get("type", "shell"),
+                                (buttons[i].get("action", "") or "").strip())
+                    for step in buttons[i].get("actions", []) or []:
+                        st = step.get("type", "none")
+                        sa = (step.get("action", "") or "").strip()
+                        if st and st != "none":
+                            time.sleep(0.05)
+                            _run_action(st, sa)
             last_btn_state = pressed  # None when byte42=0 (released)
 
         while True:
@@ -1089,7 +1115,7 @@ def controller_loop(style=STYLE_ANALOG):
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+def main():
     args = sys.argv[1:]
     mode = "time"
     style_arg = None
@@ -1264,3 +1290,7 @@ if __name__ == "__main__":
                 _release(dev)
     else:
         send_time(style)
+
+
+if __name__ == "__main__":
+    main()

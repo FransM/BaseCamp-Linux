@@ -929,6 +929,7 @@ def controller_loop(style=STYLE_ANALOG):
                         btype = buttons[i].get("type", "shell")
                         action = buttons[i].get("action", "").strip()
                         if action and btype != "none":
+                            from shared.macros import clean_child_env
                             sudo_user = os.environ.get("SUDO_USER")
                             if sudo_user:
                                 uid = _pwd.getpwnam(sudo_user).pw_uid
@@ -939,7 +940,8 @@ def controller_loop(style=STYLE_ANALOG):
                                     "HOME": _pwd.getpwnam(sudo_user).pw_dir,
                                     "USER": sudo_user,
                                     "LOGNAME": sudo_user,
-                                    "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                                    # cleaned PATH so AppImage dirs don't leak (issue #11)
+                                    "PATH": clean_child_env().get("PATH", "/usr/bin:/bin"),
                                 }
                                 # Wayland oder X11 automatisch erkennen
                                 if os.path.exists(os.path.join(runtime, "wayland-0")):
@@ -958,10 +960,13 @@ def controller_loop(style=STYLE_ANALOG):
                                         ["sudo", "-u", sudo_user, "-E", "bash", "-c", action],
                                         env=env)
                             else:
+                                # Strip AppImage/PyInstaller lib-path injection so
+                                # the launched program uses system libs (issue #11).
+                                child_env = clean_child_env()
                                 if btype in ("url", "folder"):
-                                    subprocess.Popen(["xdg-open", action])
+                                    subprocess.Popen(["xdg-open", action], env=child_env)
                                 else:  # shell, app
-                                    subprocess.Popen(["bash", "-c", action])
+                                    subprocess.Popen(["bash", "-c", action], env=child_env)
                 last_btn_state = pressed  # None when byte42=0 (released)
 
             # Gather all metrics

@@ -79,9 +79,14 @@ SIDE_LED_INDICES = list(range(126, 170))
 NUM_SIDE_LEDS = len(SIDE_LED_INDICES)
 
 # LED hardware index mapping — maps logical key position to firmware LED address.
+# ESC is 21: every other key is >= 22 and the per-row addresses run contiguously
+# ('1'=22, '2'=23, …), so ESC sits at 21 immediately before '1'. It was previously
+# 0, but address 0 has no physical LED — a zero index is also indistinguishable
+# from the zero padding that fills the tail of each 0x35 packet, so the firmware
+# never lit it and ESC stayed dark on a full-keyboard fill (issue #15).
 LEDIDX = [
     # Row 0: ESC  1    2    3    4    5    6    7    8    9    0    -    =   BSPC
-    0,   22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,
+    21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,
     # Row 1: TAB  Q    W    E    R    T    Y    U    I    O    P    [    ]    \
     42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,
     # Row 2: CAPS A    S    D    F    G    H    J    K    L    ;    '   ENTER

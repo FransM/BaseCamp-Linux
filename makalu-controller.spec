@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
-    ['devices/makalu67/controller.py'],
-    pathex=[],
+    ['makalu_entry.py'],
+    pathex=['.'],
     binaries=[],
     datas=[],
-    hiddenimports=['hid'],
+    hiddenimports=['hid', 'devices.makalu67.controller'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['_overlay_bootstrap.py'],
     excludes=[],
     noarchive=False,
     optimize=0,

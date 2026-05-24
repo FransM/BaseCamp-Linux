@@ -48,18 +48,23 @@ _desktop_apps_cache = None
 
 
 def _run_as_sudouser(cmd):
-    """Run cmd as SUDO_USER (when launched via sudo) or directly."""
+    """Run cmd as SUDO_USER (when launched via sudo) or directly.
+
+    The env is sanitised via clean_child_env() so GTK helpers like zenity don't
+    inherit the AppImage's bundled library paths and fail to launch (issue #11).
+    """
+    from shared.macros import clean_child_env
     import pwd as _pwd
     sudo_user = os.environ.get("SUDO_USER")
     if sudo_user:
         uid = _pwd.getpwnam(sudo_user).pw_uid
-        env = os.environ.copy()
+        env = clean_child_env()
         env["DISPLAY"] = os.environ.get("DISPLAY", ":0")
         env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
         env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
         cmd = ["sudo", "-u", sudo_user, "-E"] + cmd
         return subprocess.run(cmd, capture_output=True, text=True, env=env)
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, env=clean_child_env())
 
 
 def native_open_image(title="Bild wählen", kind="image"):

@@ -2,14 +2,14 @@
 
 
 a = Analysis(
-    ['tray_helper.py'],
-    pathex=[],
+    ['tray_entry.py'],
+    pathex=['.'],
     binaries=[],
     datas=[('lang', 'lang'), ('resources', 'resources')],
-    hiddenimports=['pystray', 'PIL', 'PIL._tkinter_finder'],
+    hiddenimports=['pystray', 'PIL', 'PIL._tkinter_finder', 'tray_helper'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['_overlay_bootstrap.py'],
     excludes=[],
     noarchive=False,
     optimize=0,

@@ -198,6 +198,18 @@ See **[PLUGINS.md](PLUGINS.md)** for the full plugin development guide with API 
 
 ---
 
+## Control interface & action chains
+
+While the app is running it exposes a local control socket so external programs can drive lighting, switch pages, push images and redefine keys — e.g. turn the keyboard red when a meeting is near. Keys can also chain several actions, jump to a page, or redefine another key.
+
+```sh
+basecamp --ctl '{"cmd":"rgb","device":"everest60","args":["side-static","255","0","0"]}'
+```
+
+See **[docs/CONTROL_INTERFACE.md](docs/CONTROL_INTERFACE.md)** for the full command list and the new `page` / `set_key` action types.
+
+---
+
 ## Settings
 
 The cog icon in the top-right corner of the app opens a small settings dialog with three useful features.

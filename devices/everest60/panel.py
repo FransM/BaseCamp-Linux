@@ -299,9 +299,24 @@ class Everest60Panel(ctk.CTkFrame):
         self._side_led_btn.configure(fg_color=h, hover_color=h)
 
     def _apply_side_leds(self):
+        import json as _j
         r, g, b = self._side_led_color
         bri = int(self._side_bri_sl.get())
-        cmd = self._cmd("rgb", "side-static", str(r), str(g), str(b), str(bri))
+        # Preserve the current main-key colours instead of blanking them: the
+        # side ring can only be driven in custom mode, so we pull the last saved
+        # per-key state and push it alongside the uniform ring in one write
+        # (issue #4 follow-up — FransM: "the leds of the kbd are turned off").
+        try:
+            leds, _saved_side, _saved_bri = _load_per_key_60()
+            leds = [list(c) for c in leds]
+        except Exception:
+            leds = []
+        payload = _j.dumps({
+            "leds": leds,
+            "side": [[r, g, b]] * 44,
+            "brightness": bri,
+        })
+        cmd = self._cmd("per-key-rgb", payload)
         try:
             subprocess.run(cmd, check=True,
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
