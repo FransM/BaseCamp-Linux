@@ -1,5 +1,40 @@
 # Changelog
 
+## [2.1.0] - 2026-05-24
+
+A big round of issue fixes plus three new capabilities — an external control interface, multi-action keys, and a live-update system that now reaches the whole app instead of just the GUI. This is a full AppImage release (both Debian and Fedora variants); from 2.1.1 onwards, pure-Python patches can once again ship as tiny source-overlay tarballs, now across every part of the app and every distro at once.
+
+### Fixes
+
+- **Everest Max button actions fire again on AppImage installs (#11, reported by @djibux).** App and Shell actions silently did nothing under Wayland/GNOME while URL actions worked. The cause was the AppImage's bundled library paths (`LD_LIBRARY_PATH`, `APPDIR`, …) leaking into every launched program, so GUI apps loaded our bundled libraries and failed to start before they ever appeared. Launched programs now get a sanitised environment. The same fix repairs the icon file picker not opening on GNOME (zenity/kdialog were hitting the same contamination). Firmware-level key remaps configured in Windows BaseCamp still cannot be cleared from Linux — the Reset button now says so explicitly instead of implying it did.
+- **Tray icon no longer dies when the notification area restarts (#21, @FransM).** pystray's X11 backend raised "Failed to dock icon" and killed the tray thread for good after a desktop-panel restart or idle. The tray now supervises itself and simply re-docks.
+- **"No keyboard detected" screen (#19, @FransM).** Launching with no Mountain device connected showed a panel full of inert controls; it now shows a clear empty state and recovers automatically when a device is plugged in. Software tabs (OBS, Macros, Plugins) stay reachable.
+- **Everest 60 ESC key now lights up (#15, @FransM).** It was mapped to LED address 0, which has no physical LED — and a zero index is indistinguishable from the zero padding at the tail of each packet — so it stayed dark on a full-keyboard fill. Corrected to index 21.
+- **Everest 60 side LEDs keep the main keys (#4, @FransM).** Applying a side-ring colour no longer blanks the per-key lighting; the last saved key colours are pushed alongside the ring in a single write.
+- **Python 3.14 crash on the plugin error path.** Two deferred callbacks referenced an `except … as e` variable after it had gone out of scope, raising `NameError` instead of showing the error. Bound the variable so the error display works.
+
+### Control interface (#20)
+
+While the app runs it hosts a small local Unix socket so external programs — a calendar reminder, a mail hook, a CI script — can drive the hardware: set colours, switch pages, push an image to a DisplayPad key, or redefine a key. One JSON object in, one JSON reply out, from any language:
+
+    basecamp --ctl '{"cmd":"rgb","device":"everest60","args":["side-static","255","0","0"]}'
+
+The full command list is in `docs/CONTROL_INTERFACE.md`.
+
+### Action chains and new action types
+
+- **Multiple actions per key press (#17, @FransM).** A key can run several actions in sequence — for example launch a command and then switch to a page.
+- **Redefine-key action (#18, @FransM).** A key press can reassign another key, for modal / layered layouts.
+- **Switch-page action and actions on plugin keys (#16, @FransM).** Any key can jump to another tab, and plugin/monitor keys can carry a press action so they are no longer dead keys. (Mapping the Everest 60's own keys to F1–F12 still needs the firmware remap protocol, which is not reverse-engineered yet.)
+
+### Live updates now cover the whole app
+
+Until now the source-overlay updater only patched the GUI process; the button-action daemon, the tray, and the per-device controllers ran as separate frozen binaries the overlay could not reach, so any fix in them required a full AppImage. Each of those binaries now uses the same tiny entry-shim + overlay pattern as the GUI (`emax_controller.py` and friends are imported by stable entry shims), so a pure-Python fix anywhere in the app can ship as the small tarball. This takes effect once everyone is on 2.1.0 — the first build that carries the shim binaries; from 2.1.1 on, most patches will be source-only again, and one tarball still serves both the Debian and Fedora builds.
+
+### Build
+
+A reproducible Debian build (`Dockerfile.debian` + `build_appimage_debian.sh`) on `python:3.14-bookworm` produces the `-debian` AppImage against Debian's own glibc, so it runs on Debian 12 / Ubuntu 22.04 / Mint and newer (tested on Mint 22.3). The previous `-debian` image had been built on the Fedora host and actually required a glibc too new for Debian 12, so this is the first genuinely Debian-compatible build. The `libusb` lookup in the controller spec is now distro-agnostic.
+
 ## [2.0.3] - 2026-05-15
 
 Decouples the in-app update check from GitHub's "Latest" pin. The previous code queried `/releases/latest`, which meant whichever release was flagged as Latest on GitHub had to be the newest one to keep auto-updates working. The new code scans the recent release feed instead and picks the highest version number, skipping prereleases and drafts. This lets the project keep v2.0 (which carries the AppImage assets that new users download) pinned as Latest indefinitely, while small source-only patches (2.0.x) still surface in the app for everyone running it. From this version onwards, the Latest pin on GitHub is purely a landing-page hint for new users and has no effect on the updater.
