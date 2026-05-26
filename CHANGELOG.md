@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.1.1] - 2026-05-26
+
+The first source-overlay patch on top of 2.1.0, so it ships as a small tarball that the in-app updater installs in a couple of seconds instead of a full AppImage download. Four issue fixes, all reported by @FransM.
+
+### Fixes
+
+- **Configure button actions on the DisplayPad (#24).** When one key was set to a System Monitor action (CPU, RAM, disk, ...), the action dropdowns of all the keys below it stopped showing the action types and listed the mounted filesystems instead. A loop variable that held the disk options was reusing the same name as the list of action-type labels, so it overwrote the labels for every following key. The two are now kept apart and every key shows its real action again.
+- **DisplayPad "upload failed: Connection timed out" repeating forever (#23).** With a live plugin running (System Monitor, Clock, ...) the device could get stuck printing that line on every update. The plugin image upload was opening its own connection while the key-event listener still held the device, and the two fought over the same USB interface. Plugin uploads now wait for the key listener to step aside, take the device for one batched upload (keeping only the newest image per key), and hand it back, the same way a normal upload already did. Key presses that arrive during the upload are still delivered, and a genuine device error is now logged once rather than on every tick.
+- **Backup file picker opened in /usr/share/icons (#25).** The picker reused the icon-browser default. Backup and restore now open in your home directory.
+- **Startup tab follows the first connected device (#22).** Launching with no keyboard connected but, say, a DisplayPad plugged in used to land on the empty Keyboards page. It now opens the tab of the first device that is actually connected. With nothing connected it stays on Keyboards so the empty state can explain how to connect.
+
 ## [2.1.0] - 2026-05-24
 
 A big round of issue fixes plus three new capabilities — an external control interface, multi-action keys, and a live-update system that now reaches the whole app instead of just the GUI. This is a full AppImage release (both Debian and Fedora variants); from 2.1.1 onwards, pure-Python patches can once again ship as tiny source-overlay tarballs, now across every part of the app and every distro at once.

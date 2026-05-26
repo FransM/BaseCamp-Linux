@@ -938,9 +938,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     if opts is not None:
                         self._cmd_entries[i].pack_forget()
                         self._browse_btns[i].pack_forget()
-                        labels = [lbl for lbl, _v in opts]
+                        # NB: don't reuse `labels` here — it holds the action-type
+                        # labels for the type dropdown of every remaining button.
+                        opt_labels = [lbl for lbl, _v in opts]
                         self._plugin_combo_maps[i] = {lbl: val for lbl, val in opts}
-                        self._plugin_combos[i].configure(values=labels)
+                        self._plugin_combos[i].configure(values=opt_labels)
                         # If current cmd matches one of the values, show that label
                         shown = cmd
                         for lbl, val in opts:
@@ -1433,6 +1435,14 @@ class DisplayPadPanel(ctk.CTkFrame):
         # Key event listener
         self._key_stop        = threading.Event()
         self._key_thread      = None
+        # Set whenever the key listener is NOT holding interface 3, so a plugin
+        # image upload can wait for the device to be free before opening it.
+        self._key_released    = threading.Event()
+        self._key_released.set()
+        # Plugin live-image uploads (System Monitor, Clock, ...)
+        self._plugin_worker_lock   = threading.Lock()
+        self._plugin_worker_active = False
+        self._last_plugin_error    = None
         # Multi-page state
         self._current_page    = 0
         self._page_actions    = {0: _load_displaypad_actions()}
@@ -1992,8 +2002,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         last_fire = {}  # key_index -> monotonic time of last action
 
         while not self._key_stop.is_set():
-            # Wait while upload or animation holds the HID device
+            # Wait while upload or animation holds the HID device. Signal that
+            # interface 3 is free so a pending image upload can grab it.
             if self._uploading or self._animating:
+                self._key_released.set()
                 self._key_stop.wait(timeout=0.5)
                 continue
 
@@ -2008,8 +2020,12 @@ class DisplayPadPanel(ctk.CTkFrame):
                 pass
 
             if hid_dev is None:
+                self._key_released.set()
                 self._key_stop.wait(timeout=1.0)
                 continue
+
+            # We now own interface 3.
+            self._key_released.clear()
 
             # Read events until stop / upload starts / device error.
             # Only packets with data[0] == 0x01 are key-event packets.
@@ -2040,6 +2056,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                     hid_dev.close()
                 except Exception:
                     pass
+                self._key_released.set()
             # Brief pause before reconnecting
             self._key_stop.wait(timeout=0.5)
 
@@ -2437,6 +2454,10 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._info_label.configure(text=self.T("dp_done"), text_color=GRN)
         else:
             self._info_label.configure(text=self.T("dp_error", err=err), text_color=RED)
+        # Flush any plugin images that queued up while this upload held the
+        # device (a one-shot upload doesn't drain the queue itself).
+        if not self._upload_queue.empty() and self._device_present:
+            self._maybe_start_plugin_worker()
 
     def _monitor_loop(self):
         """Background thread: detect device connect/disconnect and auto-reupload."""
@@ -2477,8 +2498,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         pil_image: PIL Image (any size, will be resized to 102x102).
         key_index: 0-11 (K1-K12).
 
-        If a GIF animation is running, the image is queued into the animation
-        loop. Otherwise a standalone upload thread is spawned.
+        Images are always queued. If a GIF animation or a regular upload is
+        running, that worker drains the queue. Otherwise a single short-lived
+        plugin worker is started that pauses the key listener, drains the queue
+        in one device session, and releases the device again.
         """
         if not (0 <= key_index <= 11):
             return
@@ -2489,27 +2512,109 @@ class DisplayPadPanel(ctk.CTkFrame):
         r, g, b = img.split()
         bgr_bytes = Image.merge("RGB", (b, g, r)).tobytes()
 
-        if self._animating or self._uploading:
-            # Worker thread owns the device -- queue the image
-            self._upload_queue.put((key_index, bgr_bytes, None))
-        elif self._device_present:
-            # Device connected but no worker running -- open briefly
-            threading.Thread(
-                target=self._plugin_upload_worker,
-                args=(key_index, bgr_bytes), daemon=True).start()
+        # Don't accumulate frames for a device that nobody will drain (absent
+        # and no worker running) — that would grow the queue without bound.
+        busy = self._animating or self._uploading
+        if not (self._device_present or busy):
+            return
+        self._upload_queue.put((key_index, bgr_bytes, None))
 
-    def _plugin_upload_worker(self, key_index, bgr_bytes):
-        """Background thread: open device, upload one button, close.
-        If the device is busy (animation running), queue instead."""
+        # An animation/upload worker already owns the device and drains the
+        # queue; don't open a competing connection (that races the key-event
+        # listener on interface 3 and causes "Connection timed out").
+        if busy:
+            return
+        self._maybe_start_plugin_worker()
+
+    def _maybe_start_plugin_worker(self):
+        """Start the plugin upload worker unless one is already running."""
+        with self._plugin_worker_lock:
+            if self._plugin_worker_active:
+                return
+            self._plugin_worker_active = True
+        threading.Thread(target=self._plugin_upload_worker, daemon=True).start()
+
+    def _plugin_upload_worker(self):
+        """Open the device once, drain all queued plugin images, then close.
+
+        Takes exclusive access to interface 3 by raising the `_uploading` flag
+        (which makes the key-event listener release the device) and waiting for
+        the listener to actually let go before opening. This serialises with
+        the key listener so concurrent access no longer times out.
+        """
         try:
-            usb_dev, hid_dev = _open_interfaces()
+            if self._animating:
+                return  # animation worker owns the device and drains the queue
+            self._uploading = True
+            # Wait for the key-event listener to release interface 3.
+            self._key_released.wait(timeout=1.5)
+            try:
+                usb_dev, hid_dev = _open_interfaces()
+            except Exception as e:
+                # Device busy/unplugged -- leave images queued and retry on the
+                # next push instead of spinning.
+                self._log_plugin_error(e)
+                return
             try:
                 _init_device(hid_dev)
-                _upload_button(usb_dev, hid_dev, key_index, bgr_bytes)
+                self._drain_plugin_queue(usb_dev, hid_dev)
+                self._last_plugin_error = None
+            except Exception as e:
+                self._log_plugin_error(e)
             finally:
                 _close_interfaces(usb_dev, hid_dev)
-        except OSError:
-            # Device busy (animation/upload in progress) -- queue for later
-            self._upload_queue.put((key_index, bgr_bytes, None))
-        except Exception as e:
-            print(f"[Plugin] DisplayPad upload failed: {e}", flush=True)
+        finally:
+            self._uploading = False
+            with self._plugin_worker_lock:
+                self._plugin_worker_active = False
+            # New images may have arrived while we were finishing up.
+            if (not self._upload_queue.empty()
+                    and not self._animating and self._device_present):
+                self.after(0, self._maybe_start_plugin_worker)
+
+    def _drain_plugin_queue(self, usb_dev, hid_dev):
+        """Upload every queued plugin image in this session, keeping only the
+        latest frame per key. Key presses seen during the upload are dispatched
+        so the keys stay responsive while the listener is paused."""
+        latest = {}
+        while True:
+            try:
+                ki, bgr, frames = self._upload_queue.get_nowait()
+            except queue.Empty:
+                break
+            if frames:
+                # A GIF arrived -- hand it back and let _start_upload handle it.
+                self._upload_queue.put((ki, bgr, frames))
+                self.after(0, self._restart_for_gif)
+                break
+            latest[ki] = bgr
+        if not latest:
+            return
+        key_events = []
+        for ki, bgr in sorted(latest.items()):
+            _upload_button(usb_dev, hid_dev, ki, bgr, key_events)
+        self._dispatch_plugin_key_events(key_events)
+
+    def _dispatch_plugin_key_events(self, events):
+        """Fire actions for key-event packets captured during a plugin upload.
+        Rising-edge against a fresh baseline -- the session is brief, so a held
+        key fires at most once."""
+        prev = [0] * 64
+        for evt in events:
+            for ki, (bi, mask) in enumerate(_KEY_MAP):
+                if bi < len(evt) and (evt[bi] & mask) and not (prev[bi] & mask):
+                    self.after(0, lambda ki=ki: self._execute_action_k(ki))
+            if len(evt) >= len(prev):
+                prev = list(evt[:len(prev)])
+
+    def _restart_for_gif(self):
+        if not self._animating and not self._uploading:
+            self.after(100, self._start_upload)
+
+    def _log_plugin_error(self, e):
+        """Print a plugin upload error only when it changes, so a persistent
+        device problem doesn't flood the log with the same line."""
+        msg = str(e)
+        if msg != self._last_plugin_error:
+            self._last_plugin_error = msg
+            print(f"[Plugin] DisplayPad upload failed: {msg}", flush=True)

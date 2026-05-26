@@ -86,14 +86,16 @@ PLUGINS_DISABLED_FILE       = os.path.join(CONFIG_DIR, "plugins_disabled.json")
 _ensure_owned_dir(PLUGINS_DIR)
 
 
-def _load_last_dir(kind):
+def _load_last_dir(kind, default=None):
     """Return the last directory used for a given file-picker context, or None.
     kind: free-form key like 'image', 'folder', 'app', 'gif' — caller decides.
 
     Lookup order:
       1. Saved last directory for this kind (last_dirs.json)
-      2. $ICON_PATH environment variable, if set and valid
-      3. /usr/share/icons as a sensible Linux default
+      2. Caller-supplied `default` (used by non-icon pickers like backup, so
+         they don't fall through to the icon default below)
+      3. $ICON_PATH environment variable, if set and valid
+      4. /usr/share/icons as a sensible default for icon pickers
     """
     try:
         with open(LAST_DIRS_FILE) as f:
@@ -103,6 +105,8 @@ def _load_last_dir(kind):
             return path
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
+    if default and os.path.isdir(default):
+        return default
     env_path = os.environ.get("ICON_PATH")
     if env_path and os.path.isdir(env_path):
         return env_path

@@ -342,7 +342,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         path = filedialog.asksaveasfilename(
             parent=self, defaultextension=".zip",
-            initialdir=_load_last_dir("backup") or os.path.expanduser("~"),
+            initialdir=_load_last_dir("backup", default=os.path.expanduser("~")),
             initialfile=f"basecamp-backup-{ts}.zip",
             filetypes=[("ZIP", "*.zip")],
             title=self._app.T("settings_backup"))
@@ -363,7 +363,7 @@ class SettingsDialog(ctk.CTkToplevel):
         from shared.config import import_backup, _load_last_dir, _save_last_dir
         path = filedialog.askopenfilename(
             parent=self,
-            initialdir=_load_last_dir("backup") or os.path.expanduser("~"),
+            initialdir=_load_last_dir("backup", default=os.path.expanduser("~")),
             filetypes=[("ZIP", "*.zip"), ("All", "*.*")],
             title=self._app.T("settings_restore"))
         if not path:
@@ -496,7 +496,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 
 
 class App(ctk.CTk):
@@ -586,6 +586,9 @@ class App(ctk.CTk):
         self.after(500, self._start_cpu_auto_clean)
         # Run first device check immediately so the correct panel is shown
         self._check_devices()
+        # Open the tab of the first connected device instead of always landing
+        # on Keyboards when no keyboard is plugged in (issue #22).
+        self._select_startup_device()
         # Control IPC: lets external software (and the button-action daemon)
         # drive lighting, switch pages and redefine keys (issue #20).
         self._start_control_server()
@@ -1068,6 +1071,21 @@ class App(ctk.CTk):
             self._everest_panel._start_cpu_auto_clean()
 
     # ── USB presence check ────────────────────────────────────────────────────
+
+    def _select_startup_device(self):
+        """Pick the initial hardware tab from what's actually connected. If a
+        keyboard is present we keep the (default) Keyboards tab; otherwise we
+        switch to the first connected device. When nothing is detected the
+        default tab stays so its empty state can explain how to connect (#22)."""
+        kb_present = (self._dev_present.get("everest_max")
+                      or self._dev_present.get("everest60"))
+        if kb_present:
+            return  # keyboard connected — keyboard tab is already the right one
+        # No keyboard: open the first other connected device, in priority order.
+        for dev in ("makalu67", "displaypad"):
+            if self._dev_present.get(dev):
+                self._switch_device(dev)
+                return
 
     def _check_devices(self):
         """Periodic USB presence check (runs in main thread — /sys reads are <1ms)."""
