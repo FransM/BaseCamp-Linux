@@ -69,6 +69,11 @@ _KEY_MAP = (
 )
 
 _ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro", "keypress", "text"]
+# Secondary "also on press" action types (issue #16). A key that otherwise only
+# renders a widget (System Monitor, plugin keys) can additionally fire one of
+# these on press, so it is no longer a dead key. Kept to the simple free-text
+# actions that need just one entry field.
+_SECONDARY_TYPES = ["none", "keypress", "text", "shell", "url"]
 
 _DEFAULT_ACTIONS = [{"type": "none", "action": ""} for _ in range(12)]
 
@@ -786,6 +791,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._plugin_combo_maps = {}  # idx -> {display_label: value}
         self._hue_values_map = []
         self._hue_bri_target = {}  # idx -> "group:1" or "light:3"
+        # Secondary "also on press" action (issue #16)
+        self._sec_type    = [tk.StringVar() for _ in range(12)]
+        self._sec_cmd     = [tk.StringVar() for _ in range(12)]
+        self._sec_menus   = []
+        self._sec_entries = []
         self._cards       = []
 
         self._build_ui()
@@ -828,6 +838,15 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     labels.append(lbl)
         return labels
 
+    def _sec_type_labels(self):
+        """Labels for the secondary 'also on press' type menu (issue #16),
+        index-aligned with _SECONDARY_TYPES."""
+        return [self._app.T("action_type_none"),
+                self._app.T("action_type_keypress"),
+                self._app.T("action_type_text"),
+                self._app.T("action_type_shell"),
+                self._app.T("action_type_url")]
+
     def _load_page(self, page):
         """Populate dialog StringVars from page data."""
         self._page = page
@@ -848,6 +867,20 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
             self._act_type[i].set(btype)
             self._act_cmd[i].set(cmd)
+
+            # Secondary "also on press" action (issue #16)
+            _extra = act.get("actions") if isinstance(act, dict) else None
+            _sec = _extra[0] if isinstance(_extra, list) and _extra else {}
+            _sectype = _sec.get("type", "none")
+            if _sectype not in _SECONDARY_TYPES:
+                _sectype = "none"
+            self._sec_type[i].set(_sectype)
+            self._sec_cmd[i].set(_sec.get("action", ""))
+            self._sec_menus[i].set(
+                self._sec_type_labels()[_SECONDARY_TYPES.index(_sectype)])
+            _sec_state = "disabled" if (is_sub and i == 0) else "normal"
+            self._sec_menus[i].configure(state=_sec_state)
+            self._sec_entries[i].configure(state=_sec_state)
 
             menu = self._type_menus[i]
             menu.configure(values=labels)
@@ -1067,6 +1100,31 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             folder_btn.pack(side="left", padx=(0, 4))
             self._browse_btns.append(folder_btn)
 
+            # Secondary "also on press" action (issue #16) — keeps monitor /
+            # plugin keys from being dead: they can additionally fire a
+            # keypress (e.g. F12 via ydotool), text, shell or url on press.
+            sec_row = ctk.CTkFrame(card, fg_color="transparent")
+            sec_row.pack(fill="x", padx=4, pady=(0, 6))
+            ctk.CTkLabel(sec_row, text=self._app.T("dp_also_on_press"),
+                         font=("Helvetica", 10), text_color=FG2,
+                         anchor="w").pack(side="left", padx=(4, 2))
+            sec_menu = ctk.CTkOptionMenu(
+                sec_row, values=self._sec_type_labels(),
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), width=88, height=28,
+                dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_sec_type_change(val, ix))
+            sec_menu.pack(side="left", padx=(2, 2))
+            self._sec_menus.append(sec_menu)
+            sec_entry = ctk.CTkEntry(sec_row, textvariable=self._sec_cmd[i],
+                         fg_color=BG2, text_color=FG, border_color=BORDER,
+                         font=("Helvetica", 11), height=28)
+            sec_entry.pack(side="left", padx=4, expand=True, fill="x")
+            sec_entry.bind("<Return>",   lambda e, ix=i: self._apply(ix))
+            sec_entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
+            attach_clipboard_menu(sec_entry, self._app.T)
+            self._sec_entries.append(sec_entry)
+
         self._info_lbl = ctk.CTkLabel(self, text="",
                                       font=("Helvetica", 11), text_color=GRN)
         self._info_lbl.pack(pady=(0, 4))
@@ -1173,6 +1231,27 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             cur = self._act_cmd[idx].get()
             if cur.startswith("→") or cur.startswith("scene:"):
                 self._act_cmd[idx].set("")
+        self._apply(idx)
+
+    def _on_sec_type_change(self, label, idx):
+        """Secondary 'also on press' action type changed (issue #16)."""
+        labels = self._sec_type_labels()
+        try:
+            internal = _SECONDARY_TYPES[labels.index(label)]
+        except (ValueError, IndexError):
+            internal = "none"
+        self._sec_type[idx].set(internal)
+        if internal == "keypress":
+            self._sec_entries[idx].configure(
+                placeholder_text="e.g. F12, ctrl+shift+a")
+        elif internal == "text":
+            self._sec_entries[idx].configure(
+                placeholder_text=self._app.T("action_type_text_hint"))
+        elif internal == "none":
+            self._sec_cmd[idx].set("")
+            self._sec_entries[idx].configure(placeholder_text="")
+        else:
+            self._sec_entries[idx].configure(placeholder_text="")
         self._apply(idx)
 
     def _on_obs_select(self, val, idx):
@@ -1374,7 +1453,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             except ValueError:
                 pct = "50"
             action = f"{target}:{pct}" if target else ""
-        self._panel._save_page_action(self._page, idx, btype, action)
+        # Secondary "also on press" action (issue #16)
+        sectype = self._sec_type[idx].get() if idx < len(self._sec_type) else "none"
+        secval  = self._sec_cmd[idx].get().strip() if idx < len(self._sec_cmd) else ""
+        extra = [{"type": sectype, "action": secval}] if (
+            sectype and sectype != "none" and secval) else []
+        self._panel._save_page_action(self._page, idx, btype, action, extra)
         self._info_lbl.configure(
             text=self._app.T("dp_act_saved", k=idx + 1), text_color=GRN)
         # Refresh page selector (new pages may have been created / renamed)
@@ -1716,11 +1800,24 @@ class DisplayPadPanel(ctk.CTkFrame):
             return (a.get("type", "none"), a.get("action", ""))
         return ("none", "")
 
-    def _save_page_action(self, page, idx, btype, action):
-        """Save a single action and persist to config."""
+    def _save_page_action(self, page, idx, btype, action, extra=None):
+        """Save a single action and persist to config.
+
+        `extra` is the optional secondary "also on press" action chain
+        (issue #16/#17). When the caller does not pass one, any existing chain
+        on this button is preserved, so editing the primary action in the GUI
+        no longer silently drops it."""
         actions = self._page_actions.setdefault(
             page, [dict(a) for a in _DEFAULT_ACTIONS])
-        actions[idx] = {"type": btype, "action": action}
+        entry = {"type": btype, "action": action}
+        if extra is None:
+            old = actions[idx] if idx < len(actions) else None
+            if isinstance(old, dict) and isinstance(old.get("actions"), list) \
+                    and old["actions"]:
+                entry["actions"] = old["actions"]
+        elif extra:
+            entry["actions"] = list(extra)
+        actions[idx] = entry
         # Ensure sub-pages have an image dict so _switch_to_page produces a
         # clean blank canvas instead of inheriting whatever was last in memory
         if page != 0:

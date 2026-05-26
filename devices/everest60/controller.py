@@ -356,6 +356,19 @@ def set_lighting_side_static(r, g, b, brightness=100, key_colors=None):
     set_lighting_custom(keys, brightness=brightness, side_colors=side)
 
 
+def _load_saved_key_colors():
+    """Return the user's last per-key colours so a side-ring command keeps the
+    main keys lit instead of blanking them (issue #4). The GUI side picker does
+    this via per-key-rgb; loading the same saved state here makes the CLI /
+    control-interface `side-static` behave identically. None if unavailable."""
+    try:
+        from shared.config import _load_per_key_60
+        leds, _side, _bri = _load_per_key_60()
+        return [tuple(c) for c in leds][:NUM_KEYS]
+    except Exception:
+        return None
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _die(msg):
@@ -463,7 +476,10 @@ def main():
                     _die("rgb side-static R G B [brightness]")
                 r, g, b = int(sub_args[1]), int(sub_args[2]), int(sub_args[3])
                 bri = int(sub_args[4]) if len(sub_args) > 4 else 100
-                set_lighting_side_static(r, g, b, brightness=bri)
+                # Keep the user's main-key colours instead of blanking the
+                # keyboard (issue #4) — matches what the GUI side picker does.
+                set_lighting_side_static(r, g, b, brightness=bri,
+                                         key_colors=_load_saved_key_colors())
             else:
                 _die(f"unknown rgb subcommand '{sub}'")
             print("ok")

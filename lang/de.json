@@ -284,6 +284,7 @@
   "dp_actions_title":     "Tasten-Aktionen",
   "dp_configure_actions": "Tasten-Aktionen konfigurieren…",
   "dp_act_saved":         "K{k}: Aktion gespeichert",
+  "dp_also_on_press":     "Auch bei Druck:",
 
   "dp_page_main":         "Haupt",
   "dp_page_label":        "Seite:",

@@ -283,6 +283,7 @@
   "dp_actions_title":     "Button Actions",
   "dp_configure_actions": "Configure Button Actions…",
   "dp_act_saved":         "K{k}: Action saved",
+  "dp_also_on_press":     "Also on press:",
 
   "dp_page_main":         "Main",
   "dp_page_label":        "Page:",

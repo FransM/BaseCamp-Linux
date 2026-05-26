@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.2] - 2026-05-26
+
+Source-overlay patch with two issue fixes, both reported by @FransM.
+
+### Improvements
+
+- **"Also on press" action on DisplayPad keys (#16, @FransM).** Every key in the action editor now has an optional second action (keypress, text, shell or url) that fires on press in addition to its main type. This is what lets a live System Monitor key (CPU, RAM, ...) also send, for example, F12 via ydotool, which was exactly the use case in the issue. So a monitor or plugin key that only draws a widget is no longer a dead key. The action chain was already executed under the hood since 2.1.0, but there was no way to set it from the GUI until now.
+- **Editing a key no longer drops its secondary action.** Saving a key's primary action used to silently discard any attached action chain. It is preserved now.
+
+### Fixes
+
+- **Everest 60 `side-static` no longer blanks the keyboard (#4, @FransM).** Setting the side ring through the control interface or the controller CLI (`--ctl '{"cmd":"rgb","device":"everest60","args":["side-static",...]}'`) lit the ring but turned the main keys off (ESC went white, the rest dark). The side ring can only be driven in custom mode, which also carries a full per-key colour map, and the command was sending an all-black map. It now loads your last saved per-key colours and sends them alongside the ring, the same way the GUI side picker already does.
+
 ## [2.1.1] - 2026-05-26
 
 The first source-overlay patch on top of 2.1.0, so it ships as a small tarball that the in-app updater installs in a couple of seconds instead of a full AppImage download. Four issue fixes, all reported by @FransM.
