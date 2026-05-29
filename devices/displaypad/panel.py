@@ -68,7 +68,7 @@ _KEY_MAP = (
     [(47, m) for m in (0x01, 0x02, 0x04, 0x08, 0x10)]
 )
 
-_ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro", "keypress", "text"]
+_ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro", "keypress", "text", "set_key"]
 # Secondary "also on press" action types (issue #16). A key that otherwise only
 # renders a widget (System Monitor, plugin keys) can additionally fire one of
 # these on press, so it is no longer a dead key. Kept to the simple free-text
@@ -114,14 +114,31 @@ def _open_interfaces():
             break
     if device_path is None:
         raise RuntimeError("DisplayPad Interface 3 not found")
-    hid_dev = hid.Device(path=device_path)
-    hid_dev.nonblocking = False
-    usb_dev = usb.core.find(idVendor=VID, idProduct=PID)
-    if usb_dev is None:
-        hid_dev.close()
-        raise RuntimeError("DisplayPad not found via PyUSB")
-    usb.util.claim_interface(usb_dev, 1)
-    return usb_dev, hid_dev
+    # Opening the hidraw node or claiming interface 1 can transiently fail with
+    # [Errno 16] Resource busy if a previous owner (the key listener or a prior
+    # upload session) hasn't fully let go yet. Retry a couple of times with a
+    # short backoff before giving up (issue #26).
+    last_err = None
+    for attempt in range(3):
+        hid_dev = None
+        try:
+            hid_dev = hid.Device(path=device_path)
+            hid_dev.nonblocking = False
+            usb_dev = usb.core.find(idVendor=VID, idProduct=PID)
+            if usb_dev is None:
+                hid_dev.close()
+                raise RuntimeError("DisplayPad not found via PyUSB")
+            usb.util.claim_interface(usb_dev, 1)
+            return usb_dev, hid_dev
+        except Exception as e:
+            last_err = e
+            if hid_dev is not None:
+                try:
+                    hid_dev.close()
+                except Exception:
+                    pass
+            time.sleep(0.2)
+    raise last_err if last_err else RuntimeError("DisplayPad open failed")
 
 
 def _close_interfaces(usb_dev, hid_dev):
@@ -356,6 +373,54 @@ def _make_folder_icon(base_path, label, out_path):
         # Draw with shadow for readability
         draw.text((x + 1, 5), label, fill=(0, 0, 0), font=font)
         draw.text((x, 4), label, fill=(255, 255, 255), font=font)
+    img.save(out_path, "PNG")
+    return out_path
+
+
+def _make_label_icon(text, out_path):
+    """Render a short label centered on a dark tile — the auto-generated icon
+    for keypress/text actions so those keys aren't blank (issue #31)."""
+    from PIL import ImageFont
+    img = Image.new("RGB", (ICON_SIZE, ICON_SIZE), (28, 28, 36))
+    draw = ImageDraw.Draw(img)
+
+    def _font(sz):
+        for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                  "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf"):
+            try:
+                return ImageFont.truetype(p, sz)
+            except Exception:
+                continue
+        return ImageFont.load_default()
+
+    # Wrap into up to 3 lines, shrinking the font until it fits the tile.
+    label = (text or "").strip()
+    for size in (30, 26, 22, 18, 15, 12):
+        font = _font(size)
+        words = label.split()
+        lines, cur = [], ""
+        for w in words or [label]:
+            trial = (cur + " " + w).strip()
+            if draw.textlength(trial, font=font) <= ICON_SIZE - 8 or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = w
+        if cur:
+            lines.append(cur)
+        lines = lines[:3]
+        line_h = (draw.textbbox((0, 0), "Ag", font=font)[3]) + 2
+        if line_h * len(lines) <= ICON_SIZE - 6 and all(
+                draw.textlength(ln, font=font) <= ICON_SIZE - 6 for ln in lines):
+            break
+    total_h = line_h * len(lines)
+    y = max(2, (ICON_SIZE - total_h) // 2)
+    for ln in lines:
+        tw = draw.textlength(ln, font=font)
+        x = max(2, (ICON_SIZE - tw) // 2)
+        draw.text((x + 1, y + 1), ln, fill=(0, 0, 0), font=font)
+        draw.text((x, y), ln, fill=(255, 255, 255), font=font)
+        y += line_h
     img.save(out_path, "PNG")
     return out_path
 
@@ -828,6 +893,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         labels.append(self._app.T("action_type_macro"))
         labels.append(self._app.T("action_type_keypress"))
         labels.append(self._app.T("action_type_text"))
+        labels.append(self._app.T("action_type_set_key"))
         # Append plugin action labels with separator
         pm = getattr(self._app, "_plugin_manager", None)
         if pm:
@@ -924,6 +990,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 elif btype == "text":
                     self._cmd_entries[i].configure(
                         placeholder_text=self._app.T("action_type_text_hint"))
+                # "set_key" type: redefine another key on press (issue #18/#29).
+                # The entry holds a small JSON object describing the target.
+                elif btype == "set_key":
+                    self._cmd_entries[i].configure(
+                        placeholder_text=self._app.T("action_type_set_key_hint"))
                 # "obs" type: show OBS combo instead of entry
                 elif btype == "obs":
                     self._cmd_entries[i].pack_forget()
@@ -1516,6 +1587,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         # Device presence monitor
         self._monitor_stop    = threading.Event()
         self._device_present  = False
+        # One-time hint when the DisplayPad is on the USB bus but its command
+        # interface (3) never enumerates — the usbhid interface-order quirk
+        # FransM hit on Ubuntu/Mint (issue #36).
+        self._warned_quirk    = False
         # Key event listener
         self._key_stop        = threading.Event()
         self._key_thread      = None
@@ -1527,6 +1602,12 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._plugin_worker_lock   = threading.Lock()
         self._plugin_worker_active = False
         self._last_plugin_error    = None
+        # Serialises every USB session (manual upload, animation, plugin worker)
+        # so two of them can never hold interface 1/3 at once. Without this the
+        # check-and-set on the _uploading/_animating bools races between the GUI
+        # and worker threads and a second _open_interfaces() hits the kernel
+        # while the first still owns the device -> [Errno 16] Resource busy (#26).
+        self._usb_lock = threading.Lock()
         # Multi-page state
         self._current_page    = 0
         self._page_actions    = {0: _load_displaypad_actions()}
@@ -1818,6 +1899,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         elif extra:
             entry["actions"] = list(extra)
         actions[idx] = entry
+        # Auto-generate a label icon for keypress/text keys with no custom image
+        # yet, so they show what they do instead of staying blank (issue #31).
+        self._maybe_auto_label_icon(page, idx, btype, action)
         # Ensure sub-pages have an image dict so _switch_to_page produces a
         # clean blank canvas instead of inheriting whatever was last in memory
         if page != 0:
@@ -1858,6 +1942,41 @@ class DisplayPadPanel(ctk.CTkFrame):
             if not self._uploading and not self._animating:
                 self.after(200, self._start_upload)
 
+    def _maybe_auto_label_icon(self, page, idx, btype, action):
+        """Render and assign a text label icon for keypress/text keys (issue
+        #31). Only fills an empty slot or replaces a previous auto-icon — a
+        user-assigned image is never overwritten."""
+        if btype not in ("keypress", "text") or not (action or "").strip():
+            return
+        # Sub-page K1 is the locked back button — leave it alone.
+        if page != 0 and idx == 0:
+            return
+        if page == self._current_page:
+            cur = self._images.get(str(idx), "")
+        else:
+            cur = self._page_images.get(page, {}).get(str(idx), "")
+        auto = (cur.startswith(os.path.join(CONFIG_DIR, "dp_label_"))
+                or cur.startswith(os.path.join(CONFIG_DIR, "dp_folder_")))
+        is_blank = (not cur) or cur == self._blank_icon or not os.path.exists(cur)
+        if not (is_blank or auto):
+            return  # user-assigned image — keep it
+        label = action.strip()
+        icon_path = os.path.join(CONFIG_DIR, f"dp_label_{page}_{idx}.png")
+        try:
+            _make_label_icon(label, icon_path)
+        except Exception:
+            return
+        self._page_images.setdefault(page, {})[str(idx)] = icon_path
+        if page == self._current_page:
+            self._images[str(idx)] = icon_path
+            # The main-page branch of _save_page_action already refreshes and
+            # re-uploads; do it here for sub-pages so the icon shows right away.
+            if page != 0:
+                if self._tile_lbls:
+                    self._refresh_panel_tile(idx)
+                if not self._uploading and not self._animating:
+                    self.after(200, self._start_upload)
+
     def _save_sub_pages(self):
         """Persist all sub-page data to displaypad_pages.json."""
         out = {}
@@ -1870,7 +1989,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                 }
         _save_displaypad_pages(out)
 
-    def _switch_to_page(self, page_num):
+    def _switch_to_page(self, page_num, _retry=0):
         """Switch active page: swap images/actions, refresh GUI, re-upload."""
         if page_num == self._current_page:
             return
@@ -1880,7 +1999,15 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._stop_animation()
             self.after(500, lambda: self._switch_to_page(page_num))
             return
+        # A plugin image upload (System Monitor / Clock push ~1/s) may hold the
+        # device. Don't silently drop the switch — that left the panel/device on
+        # the old page while the editor already showed the new one, so a fresh
+        # page looked "pre-filled" with the previous page's images (issue #28).
+        # Defer and retry until the short upload finishes (bounded so a stuck
+        # flag can't loop forever).
         if self._uploading:
+            if _retry < 40:  # ~6s worst case at 150ms
+                self.after(150, lambda: self._switch_to_page(page_num, _retry + 1))
             return
         # Save current page state
         old_page = self._current_page
@@ -2103,7 +2230,11 @@ class DisplayPadPanel(ctk.CTkFrame):
             # interface 3 is free so a pending image upload can grab it.
             if self._uploading or self._animating:
                 self._key_released.set()
-                self._key_stop.wait(timeout=0.5)
+                # Poll the flag often so we re-grab interface 3 promptly once an
+                # upload finishes. Plugins (System Monitor, Clock) push roughly
+                # once a second; a slow re-attach here left a blind window where
+                # key presses were silently dropped (issue #27).
+                self._key_stop.wait(timeout=0.1)
                 continue
 
             # Try to open the HID device
@@ -2154,8 +2285,9 @@ class DisplayPadPanel(ctk.CTkFrame):
                 except Exception:
                     pass
                 self._key_released.set()
-            # Brief pause before reconnecting
-            self._key_stop.wait(timeout=0.5)
+            # Brief pause before reconnecting (kept short so presses right after
+            # an upload aren't missed, issue #27).
+            self._key_stop.wait(timeout=0.15)
 
     def apply_lang(self):
         """Called by App when language changes."""
@@ -2396,9 +2528,16 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._anim_stop.set()
 
     def _worker(self, assigned, _retry=0):
+        # Wait for the key-event listener to release interface 3 before grabbing
+        # it. The _uploading/_animating flag is already set by _start_upload, so
+        # the listener is on its way out; opening hidraw while it still holds the
+        # device returns [Errno 16] Resource busy (issue #26).
+        self._key_released.wait(timeout=1.5)
+        self._usb_lock.acquire()
         try:
             usb_dev, hid_dev = _open_interfaces()
         except Exception as e:
+            self._usb_lock.release()
             if _retry < 5:
                 # Device busy at boot — retry after a short delay.
                 # Release flags so the key listener can resume while we wait,
@@ -2543,6 +2682,7 @@ class DisplayPadPanel(ctk.CTkFrame):
             self.after(0, lambda: self._finish(True, ""))
         finally:
             _close_interfaces(usb_dev, hid_dev)
+            self._usb_lock.release()
 
     def _finish(self, success, err):
         self._uploading = False
@@ -2572,7 +2712,38 @@ class DisplayPadPanel(ctk.CTkFrame):
                 # Device just disconnected
                 self._device_present = False
                 self.after(0, self._on_device_disconnected)
+            elif not present and not self._device_present:
+                # Plugged in but interface 3 missing? Likely the usbhid quirk.
+                self._maybe_warn_usb_quirk()
             self._monitor_stop.wait(timeout=3)
+
+    def _maybe_warn_usb_quirk(self):
+        """If the DisplayPad is on the USB bus but its command interface (3)
+        never shows up, the kernel is dropping it due to the interface-order
+        quirk. Surface a clear, actionable hint once instead of silently
+        showing the pad as 'not connected' (issue #36)."""
+        if self._warned_quirk or not PYUSB_AVAILABLE:
+            return
+        try:
+            dev = usb.core.find(idVendor=VID, idProduct=PID)
+        except Exception:
+            return
+        if dev is None:
+            return  # genuinely not plugged in — nothing to warn about
+        # On the bus but hidapi never listed interface 3 → quirk.
+        self._warned_quirk = True
+        print(
+            "[DisplayPad] Detected on USB but its command interface (3) is "
+            "missing — the kernel is likely dropping it (usbhid interface-order "
+            "quirk). Fix: create /etc/modprobe.d/mountain-displaypad.conf with\n"
+            "  options usbhid quirks=0x3282:0x0009:0x4000\n"
+            "then rebuild the initramfs and reboot. See README → Known Issues.",
+            flush=True)
+        try:
+            self.after(0, lambda: self._info_label.configure(
+                text=self.T("dp_quirk_hint"), text_color=YLW))
+        except Exception:
+            pass
 
     def _on_device_connected(self, has_content):
         if self._uploading or self._animating:
@@ -2645,21 +2816,24 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._uploading = True
             # Wait for the key-event listener to release interface 3.
             self._key_released.wait(timeout=1.5)
-            try:
-                usb_dev, hid_dev = _open_interfaces()
-            except Exception as e:
-                # Device busy/unplugged -- leave images queued and retry on the
-                # next push instead of spinning.
-                self._log_plugin_error(e)
-                return
-            try:
-                _init_device(hid_dev)
-                self._drain_plugin_queue(usb_dev, hid_dev)
-                self._last_plugin_error = None
-            except Exception as e:
-                self._log_plugin_error(e)
-            finally:
-                _close_interfaces(usb_dev, hid_dev)
+            # Serialise with the manual upload/animation worker so the two can
+            # never open the device at the same time (issue #26).
+            with self._usb_lock:
+                try:
+                    usb_dev, hid_dev = _open_interfaces()
+                except Exception as e:
+                    # Device busy/unplugged -- leave images queued and retry on
+                    # the next push instead of spinning.
+                    self._log_plugin_error(e)
+                    return
+                try:
+                    _init_device(hid_dev)
+                    self._drain_plugin_queue(usb_dev, hid_dev)
+                    self._last_plugin_error = None
+                except Exception as e:
+                    self._log_plugin_error(e)
+                finally:
+                    _close_interfaces(usb_dev, hid_dev)
         finally:
             self._uploading = False
             with self._plugin_worker_lock:

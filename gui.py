@@ -179,6 +179,22 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text=f"BaseCamp Linux v{APP_VERSION}",
                      font=("Helvetica", 10), text_color=FG2).pack(pady=(0, 12))
 
+        # ── Language section ──
+        # Reachable from any tab so the language can be changed even when only
+        # a DisplayPad (no keyboard panel) is connected (issue #35).
+        ctk.CTkLabel(self, text=app.T("settings_language"),
+                     font=("Helvetica", 11, "bold")).pack(pady=(0, 4))
+        lang_row = ctk.CTkFrame(self, fg_color="transparent")
+        lang_row.pack(fill="x", padx=20, pady=(0, 12))
+        lang_names = list(app._avail_langs.values())
+        self._lang_combo = ctk.CTkComboBox(
+            lang_row, values=lang_names or [""],
+            command=self._do_change_lang,
+            width=200, height=30, font=("Helvetica", 11),
+            fg_color=BG2, button_color=BLUE, text_color=FG)
+        self._lang_combo.set(app._avail_langs.get(app._lang_code, ""))
+        self._lang_combo.pack(side="left", fill="x", expand=True)
+
         # ── Profiles section ──
         from shared.config import list_profiles, get_active_profile
         ctk.CTkLabel(self, text=app.T("settings_profiles"),
@@ -329,6 +345,15 @@ class SettingsDialog(ctk.CTkToplevel):
         self._status.configure(
             text=self._app.T("settings_profile_deleted", name=name),
             text_color=FG2)
+
+    def _do_change_lang(self, val):
+        """Change UI language from the settings dialog (issue #35). Keeps the
+        keyboard panel's language combo in sync and persists via the app."""
+        try:
+            self._app._lang_var.set(val)
+        except Exception:
+            pass
+        self._app._on_lang_change(val)
 
     def _do_reset_pickers(self):
         from shared.config import reset_last_dirs
@@ -496,7 +521,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 
 
 class App(ctk.CTk):

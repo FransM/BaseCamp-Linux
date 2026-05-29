@@ -485,6 +485,34 @@ In rare cases the main display shows the original Mountain logo and cannot be ov
 
 **Fix:** Click **Reset Dial Image** in the Main Display section of the app. This resets the flash controller and clears the stuck state.
 
+### DisplayPad not detected / keys not rendered (USB interface quirk)
+
+On some systems (seen on Ubuntu 24.04 / Linux Mint 22) the DisplayPad enumerates
+but its command interface never appears, so the app shows it as *not connected*,
+the startup logo is missing, and key images don't render. The kernel log shows:
+
+```
+usb 3-3: config 1 has an invalid interface number: 3 but max is 2
+usb 3-3: config 1 has no interface number 2
+usbhid 3-3:1.1: couldn't find an input interrupt endpoint
+```
+
+**Cause:** the DisplayPad reports its USB interfaces out of order and `usbhid`
+rejects interface 3 (which BaseCamp needs for commands and key events).
+
+**Fix** (thanks @FransM) — tell `usbhid` to skip the broken input sync for this
+device:
+
+```bash
+echo 'options usbhid quirks=0x3282:0x0009:0x4000' | \
+  sudo tee /etc/modprobe.d/mountain-displaypad.conf
+sudo update-initramfs -u   # Debian/Ubuntu/Mint
+# Fedora/Nobora: sudo dracut --force
+```
+
+Then reboot. `0x4000` is `HID_QUIRK_NO_INPUT_SYNC`. After this the command
+interface appears and the DisplayPad works normally.
+
 ---
 
 ## Usage

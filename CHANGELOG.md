@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.3] - 2026-05-30
+
+Source-overlay patch — a round of DisplayPad fixes plus two usability additions, all from @FransM's testing.
+
+### Fixes
+
+- **DisplayPad "upload failed: [Errno 16] Resource busy" (#26, @FransM).** A different race from the #23 timeout: the manual image-upload path grabbed the USB interface immediately instead of waiting for the key-event listener to let go first (only the plugin upload did that). Opening the hidraw node while the listener still held it returned *Resource busy*, and the unsynchronised `_uploading`/`_animating` flags let two upload sessions overlap. A single device lock now serialises every USB session, both paths wait for the listener to step aside, and the open retries on a transient busy.
+- **DisplayPad key presses sometimes ignored (#27, @FransM).** With a live plugin pushing about once a second, the key-event listener was paused for each upload and could take up to half a second to re-attach afterwards, leaving a blind window where presses were dropped. The re-attach is now prompt, so plugin/clock keys respond reliably.
+- **New DisplayPad page looked pre-filled (#28, @FransM).** Adding a page and opening it sometimes showed the main page's images. Switching page was silently aborted while a plugin upload held the device (which is almost always, with a live monitor), so the editor moved to the new page while the panel and device stayed on the old one. The switch now waits for the upload to finish instead of dropping.
+- **"Redefine key" action missing from the dropdown (#29, @FransM).** The `set_key` action type shipped in 2.1.0 but was never listed in the action editor. It's now selectable, with a JSON hint for the target.
+
+### Improvements
+
+- **Auto-generated key icons for keypress/text actions (#31, @FransM).** A key set to a keypress or text action with no image of its own now gets a generated label icon so it isn't blank. A user-assigned image is never overwritten.
+- **Language picker in Settings (#35, @FransM).** The language selector now also lives in the ⚙ settings dialog, so it can be changed even when only a DisplayPad (no keyboard panel) is connected.
+- **Everest 60: "Custom" is now an effect (#34, @FransM).** The separate Custom RGB section is gone; "Custom" is an entry in the effect dropdown that opens the per-key editor, so the dropdown reflects the actual mode instead of showing a stale effect name.
+- **DisplayPad usbhid quirk diagnosed and documented (#36, @FransM).** When the DisplayPad is on the USB bus but its command interface never enumerates (the Ubuntu/Mint interface-order quirk), the app now prints a clear hint and shows it in the panel instead of silently reporting "not connected". The README documents the `usbhid quirks=0x3282:0x0009:0x4000` fix.
+
 ## [2.1.2] - 2026-05-26
 
 Source-overlay patch with two issue fixes, both reported by @FransM.

@@ -88,7 +88,8 @@ class Everest60Panel(ctk.CTkFrame):
 
         self._build_rgb_section(scroll)
         self._build_side_leds_section(scroll)
-        self._build_custom_rgb_section(scroll)
+        # Custom RGB is now the "Custom" entry in the effect dropdown (#34) — no
+        # separate section.
 
         self._app.update_idletasks()
         for s in self._sections:
@@ -113,6 +114,11 @@ class Everest60Panel(ctk.CTkFrame):
             ("Tornado Rainbow",   "tornado-rainbow",  True,  True,  False, False, True),
             ("Reactive",          "reactive",         True,  True,  True,  True,  False),
             ("Yeti",              "yeti",             True,  True,  True,  True,  False),
+            # "Custom" lives in the effect dropdown instead of a separate section
+            # (issue #34): selecting it hides the effect controls and shows a
+            # button that opens the per-key editor. No protocol flags — applying
+            # is handled by the editor itself.
+            ("Custom",            "custom",           False, False, False, False, False),
             ("Off",               "off",              False, False, False, False, False),
         ]
         self._rgb_effect_map = {
@@ -129,7 +135,7 @@ class Everest60Panel(ctk.CTkFrame):
         self._rgb_mode_var = tk.StringVar(value=_rgb_names[0])
         ctk.CTkOptionMenu(
             mode_row, variable=self._rgb_mode_var, values=_rgb_names,
-            command=lambda _: self._rgb_update_controls(),
+            command=lambda _: self._on_rgb_mode_change(),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
             text_color=FG, font=("Helvetica", 11), width=180, height=32
         ).pack(side="left")
@@ -200,11 +206,16 @@ class Everest60Panel(ctk.CTkFrame):
         self._rgb_status = ctk.CTkLabel(parent, text="", font=("Helvetica", 11),
                                         text_color=FG2, fg_color="transparent")
         self._rgb_status.pack(pady=(4, 0))
-        self._reg(ctk.CTkButton(
+        self._rgb_apply_btn = self._reg(ctk.CTkButton(
             parent, text="", height=32, corner_radius=4,
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
-            font=("Helvetica", 11), command=self._apply_rgb), "rgb_apply"
-        ).pack(fill="x", padx=10, pady=(4, 10))
+            font=("Helvetica", 11), command=self._apply_rgb), "rgb_apply")
+        self._rgb_apply_btn.pack(fill="x", padx=10, pady=(4, 10))
+        # Editor launcher, shown only when the "Custom" effect is selected (#34).
+        self._rgb_custom_btn = self._reg(ctk.CTkButton(
+            parent, text="", height=32, corner_radius=4,
+            fg_color=BLUE, hover_color="#0884be", text_color=FG,
+            font=("Helvetica", 11), command=self._open_custom_rgb), "custom_rgb_open")
 
         # Restore saved settings
         saved = load_rgb_config()
@@ -326,21 +337,6 @@ class Everest60Panel(ctk.CTkFrame):
             self._side_leds_status.configure(
                 text=str(e.stderr.decode() if e.stderr else e), text_color=RED)
 
-    def _build_custom_rgb_section(self, scroll):
-        s = _Section(scroll, self._app, "🎨", f"{self.T('zone_title')} — {self._model_name}")
-        self._sections.append(s)
-
-        self._custom_rgb_status = ctk.CTkLabel(
-            s.content, text="", font=("Helvetica", 11), text_color=FG2, fg_color="transparent")
-        self._custom_rgb_status.pack(pady=(8, 4))
-
-        self._reg(ctk.CTkButton(
-            s.content, text="",
-            height=32, corner_radius=4, fg_color=BLUE, hover_color="#0884be",
-            text_color=FG, font=("Helvetica", 11),
-            command=self._open_custom_rgb
-        ), "custom_rgb_open").pack(fill="x", padx=10, pady=(0, 10))
-
     def _open_custom_rgb(self):
         from shared.ui_helpers import CustomRGBWindow, _KB60_LAYOUT, _KB60_CANVAS_W, _KB60_CANVAS_H, _KB60_NUM_LEDS
         w = CustomRGBWindow(
@@ -361,6 +357,20 @@ class Everest60Panel(ctk.CTkFrame):
         w.lift()
         w.focus_force()
 
+    def _on_rgb_mode_change(self):
+        """Effect dropdown changed. Persist the selection so 'Custom' sticks
+        across restarts (#34), then refresh which controls are shown."""
+        name = self._rgb_mode_var.get()
+        sub = self._rgb_effect_map.get(name, ("",))[0]
+        if sub == "custom":
+            try:
+                cfg = load_rgb_config()
+                cfg["effect"] = name
+                save_rgb_config(cfg)
+            except Exception:
+                pass
+        self._rgb_update_controls()
+
     def _rgb_update_controls(self):
         """Show/hide RGB controls based on the selected effect.
 
@@ -370,7 +380,7 @@ class Everest60Panel(ctk.CTkFrame):
         led to confusing UI for rainbow / static modes.
         """
         name = self._rgb_mode_var.get()
-        _, hs, hb, hc1, hc2, hd = self._rgb_effect_map.get(
+        sub, hs, hb, hc1, hc2, hd = self._rgb_effect_map.get(
             name, ("", False, False, False, False, False))
 
         def _toggle_row(row, show):
@@ -379,6 +389,21 @@ class Everest60Panel(ctk.CTkFrame):
                     row.pack(fill="x", padx=10, pady=2)
             else:
                 row.pack_forget()
+
+        # "Custom" (issue #34): no effect controls — hide everything and swap the
+        # Apply button for the editor launcher.
+        if sub == "custom":
+            for row in (self._rgb_speed_row, self._rgb_bri_row,
+                        self._rgb_dir_row, self._rgb_color_row):
+                row.pack_forget()
+            self._rgb_apply_btn.pack_forget()
+            if not self._rgb_custom_btn.winfo_ismapped():
+                self._rgb_custom_btn.pack(fill="x", padx=10, pady=(4, 10))
+            return
+        # Any other effect: editor launcher hidden, Apply button visible.
+        self._rgb_custom_btn.pack_forget()
+        if not self._rgb_apply_btn.winfo_ismapped():
+            self._rgb_apply_btn.pack(fill="x", padx=10, pady=(4, 10))
 
         _toggle_row(self._rgb_speed_row, hs)
         _toggle_row(self._rgb_bri_row,   hb)
