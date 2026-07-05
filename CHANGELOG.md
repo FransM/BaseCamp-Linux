@@ -19,6 +19,8 @@ Source-overlay patch — a big round of Everest 60 RGB work driven by @FransM's 
 - **DisplayPad page-model redesign — carousels & chain-to-page (#30 / #17, @FransM).** Pages are no longer tied to a main-page button slot: any key on any page can switch to any page, so a true carousel (A→B→C→D→A on one key, reverse on another) is now expressible. A page's back button is a normal editable key (change its icon/target or remove it), a "page" button can use a custom icon, and "also on press" can jump to a page (e.g. press the CPU key → also open a per-core page). Existing multi-page setups are migrated automatically.
 - **Everest 60 side ring: per-LED painting + lit default (#4, @FransM).** The Custom RGB editor now shows the 44 side-ring LEDs as a paintable per-LED strip below the keyboard (they map to ring hardware indices 126–169) and saves them with the rest of the per-key layout — so each ring LED can be set individually. Separately, when there's no saved per-key state to preserve, the side-ring quick-picker lights the keys white instead of blanking them so the keyboard never goes dark under low light. (The strip is a plain per-LED editor, not a physical ring map; the numpad-row indices still need a capture from numpad hardware.)
 
+## [2.1.3] - 2026-05-30
+
 Source-overlay patch — a round of DisplayPad fixes plus two usability additions, all from @FransM's testing.
 
 ### Fixes
