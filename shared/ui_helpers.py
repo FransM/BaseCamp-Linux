@@ -692,7 +692,7 @@ _SIDE_ZONE_INDICES = [
 class CustomRGBWindow(ctk.CTkToplevel):
     def __init__(self, app, layout=None, canvas_w=None, canvas_h=None,
                  num_leds=126, has_side_leds=True, num_side_leds=45,
-                 has_numpad=True, has_persist=True,
+                 has_numpad=True, has_persist=True, side_layout="ring",
                  load_per_key=None, save_per_key=None,
                  load_presets=None, save_presets=None,
                  apply_cmd=None):
@@ -711,7 +711,11 @@ class CustomRGBWindow(ctk.CTkToplevel):
         self._num_side   = num_side_leds
         self._has_numpad = has_numpad
         self._has_persist = has_persist
-        self._side_yo    = _SIDE_OFFSET if has_side_leds else 0
+        # side_layout: "ring" = the Everest Max ring drawn around the keyboard;
+        # "strip" = a plain per-LED strip below the keyboard for the Everest 60's
+        # 44-LED ring, which has no per-edge geometry data yet (#4).
+        self._side_layout = side_layout
+        self._side_yo    = 0 if side_layout == "strip" else (_SIDE_OFFSET if has_side_leds else 0)
         self._side_sz    = _SIDE_SZ     if has_side_leds else 0
         self._apply_cmd  = apply_cmd
 
@@ -724,7 +728,10 @@ class CustomRGBWindow(ctk.CTkToplevel):
 
         self._leds, raw_side, self._bri = self._load_per_key()
         self._leds      = (list(self._leds) + [(20, 20, 20)] * num_leds)[:num_leds]
-        self._side_leds = list(raw_side) if has_side_leds else []
+        # Always length-normalise the side ring so the strip/ring drawing can
+        # index every LED without an IndexError when the saved data is short.
+        self._side_leds = ((list(raw_side) + [(20, 20, 20)] * num_side_leds)[:num_side_leds]
+                           if has_side_leds else [])
         self._selected   = set()
         self._fill_rgb   = (255, 0, 0)
         self._drag_rect  = None
@@ -902,9 +909,15 @@ class CustomRGBWindow(ctk.CTkToplevel):
         SZ  = self._side_sz
         GAP = 2
 
+        strip_mode = self._has_side and self._side_layout == "strip"
         bx1  = 11;  by1 = 11 + YO
         bx2  = 14 + int(642 * SC) + 4 if self._has_numpad else self._canvas_w - 11
-        by2  = self._canvas_h - YO - 6
+        if strip_mode:
+            # Keyboard box ends at its own content bottom; the side strip fills
+            # the reserved space below it (the caller sizes the canvas taller).
+            by2 = max((y + h) for (_, _, _, y, _, h) in self._layout) + YO + 4
+        else:
+            by2 = self._canvas_h - YO - 6
 
         self._cv.create_rectangle(bx1, by1, bx2, by2,
                                   fill="#1a1a22", outline="#333", width=1)
@@ -936,7 +949,9 @@ class CustomRGBWindow(ctk.CTkToplevel):
                 self._item_led[item] = idx
                 self._led_item[idx]  = item
 
-        if self._has_side:
+        if strip_mode:
+            self._draw_side_strip(bx1, bx2, by2 + 14)
+        elif self._has_side:
             def hstrip(indices, x1, x2, y):
                 n = len(indices)
                 for i, si in enumerate(indices):
@@ -972,6 +987,35 @@ class CustomRGBWindow(ctk.CTkToplevel):
                 vstrip([41,40,39,38],   by1,   by2,   npbx2 + GAP)
                 hstrip([35,36,37],      npbx1, npbx2, by2 + GAP)
                 vstrip([31,32,33,34],   by1,   by2,   npbx1 - GAP - SZ)
+
+    def _draw_side_strip(self, x1, x2, y0):
+        """Draw the Everest 60 side ring as a labelled two-row per-LED strip
+        below the keyboard (#4). Index 0 is top-left above ESC, running clockwise
+        to 43; these map to hardware LEDs 126..169 in the controller. It's a plain
+        per-LED editor, not a physical ring — the exact ring geometry isn't known
+        without the hardware, so the strip lets every LED be painted regardless."""
+        n = self._num_side
+        cols = (n + 1) // 2                      # 22 per row for 44
+        gap = 3
+        sz = min(16, max(9, int((x2 - x1 - (cols - 1) * gap) / cols)))
+        self._cv.create_text(x1, y0 - 3, anchor="sw", text=self._T("side_leds_title"),
+                             fill="#8892a6", font=("Helvetica", 9))
+        row_h = sz + gap + 9
+        for si in range(n):
+            row, col = divmod(si, cols)
+            px = x1 + col * (sz + gap)
+            py = y0 + 4 + row * row_h
+            sel  = (200 + si) in self._selected
+            item = self._cv.create_rectangle(
+                px, py, px + sz, py + sz,
+                fill=_rgb_hex(self._side_leds[si]),
+                outline="#00d4ff" if sel else "#555", width=2 if sel else 1)
+            self._item_led[item]     = 200 + si
+            self._led_item[200 + si] = item
+            # Sparse position ticks so the user can orient (1, 12, 24, 36, 44).
+            if si == 0 or si == n - 1 or (si + 1) % 12 == 0:
+                self._cv.create_text(px + sz // 2, py + sz + 5, text=str(si + 1),
+                                     fill="#556", font=("Helvetica", 7))
 
     def _switch_kb_layout(self, value):
         self._kb_layout_mode = value

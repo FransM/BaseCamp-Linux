@@ -52,6 +52,27 @@ class Everest60Panel(ctk.CTkFrame):
                 widget.configure(**{attr: self.T(key)})
             except Exception:
                 pass
+        # Widgets whose text takes a format argument or drives a dropdown aren't
+        # part of the simple (widget, attr, key) table — refresh them by hand.
+        if hasattr(self, "_rgb_build_lbl"):
+            try:
+                self._rgb_build_lbl.configure(
+                    text=self.T("rgb_build_label", ver=self._rgb_build_ver))
+            except Exception:
+                pass
+        if hasattr(self, "_rgb_cmode_menu"):
+            try:
+                cur = self._cmode_from_label.get(self._rgb_cmode_var.get(), "dual")
+                self._cmode_labels = {
+                    "single":  self.T("rgb_cmode_single"),
+                    "dual":    self.T("rgb_cmode_dual"),
+                    "rainbow": self.T("rgb_cmode_rainbow"),
+                }
+                self._cmode_from_label = {v: k for k, v in self._cmode_labels.items()}
+                self._rgb_cmode_var.set(self._cmode_labels.get(cur, self._cmode_labels["dual"]))
+                self._rgb_update_controls()
+            except Exception:
+                pass
 
     # ── Command builder ───────────────────────────────────────────────────────
 
@@ -103,29 +124,36 @@ class Everest60Panel(ctk.CTkFrame):
         self._build_rgb_content(s.content)
 
     def _build_rgb_content(self, parent):
+        # Effect capability table (issue #32). Instead of separate "… Rainbow"
+        # entries, each effect declares which colour modes it supports and a
+        # single Color-mode dropdown offers only those — this is what the
+        # original Base Camp does and it stops the old "rainbow page sticks"
+        # confusion. dir_kind is None / "wave" (4-way) / "tornado" (2-way).
+        #   (cli_sub, colour_modes, has_speed, has_bri, dir_kind)
         _RGB_EFFECTS = [
-            # (display_name, cli_sub, has_speed, has_bri, has_c1, has_c2, has_dir)
-            ("Static",            "static",           False, True,  True,  False, False),
-            ("Breathing",         "breathing",        True,  True,  True,  True,  False),
-            ("Breathing Rainbow", "breathing-rainbow",True,  True,  False, False, False),
-            ("Wave",              "wave",             True,  True,  True,  True,  True),
-            ("Wave Rainbow",      "wave-rainbow",     True,  True,  False, False, True),
-            ("Tornado",           "tornado",          True,  True,  True,  False, True),
-            ("Tornado Rainbow",   "tornado-rainbow",  True,  True,  False, False, True),
-            ("Reactive",          "reactive",         True,  True,  True,  True,  False),
-            ("Yeti",              "yeti",             True,  True,  True,  True,  False),
-            # "Custom" lives in the effect dropdown instead of a separate section
-            # (issue #34): selecting it hides the effect controls and shows a
-            # button that opens the per-key editor. No protocol flags — applying
-            # is handled by the editor itself.
-            ("Custom",            "custom",           False, False, False, False, False),
-            ("Off",               "off",              False, False, False, False, False),
+            ("Static",    "static",   ("single",),                 False, True,  None),
+            ("Breathing", "breathing",("single", "dual", "rainbow"), True, True,  None),
+            ("Wave",      "wave",     ("single", "dual", "rainbow"), True, True,  "wave"),
+            ("Tornado",   "tornado",  ("single", "rainbow"),        True, True,  "tornado"),
+            ("Reactive",  "reactive", ("dual",),                    True, True,  None),
+            ("Matrix",    "matrix",   ("dual",),                    True, True,  None),  # #38
+            ("Yeti",      "yeti",     ("dual",),                    True, True,  None),
+            # "Custom" (issue #34): opens the per-key editor; no effect controls.
+            ("Custom",    "custom",   (),                           False, False, None),
+            ("Off",       "off",      (),                           False, False, None),
         ]
         self._rgb_effect_map = {
-            name: (sub, hs, hb, hc1, hc2, hd)
-            for name, sub, hs, hb, hc1, hc2, hd in _RGB_EFFECTS
+            name: (sub, modes, hs, hb, dk)
+            for name, sub, modes, hs, hb, dk in _RGB_EFFECTS
         }
         _rgb_names = [e[0] for e in _RGB_EFFECTS]
+        # Color-mode display labels ↔ internal keys.
+        self._cmode_labels = {
+            "single":  self.T("rgb_cmode_single"),
+            "dual":    self.T("rgb_cmode_dual"),
+            "rainbow": self.T("rgb_cmode_rainbow"),
+        }
+        self._cmode_from_label = {v: k for k, v in self._cmode_labels.items()}
 
         # Effect row
         mode_row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -139,6 +167,20 @@ class Everest60Panel(ctk.CTkFrame):
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
             text_color=FG, font=("Helvetica", 11), width=180, height=32
         ).pack(side="left")
+
+        # Color-mode row (Single / Dual / Rainbow) — only shown when the effect
+        # offers a choice (issue #32).
+        self._rgb_cmode_row = ctk.CTkFrame(parent, fg_color="transparent")
+        self._reg(ctk.CTkLabel(self._rgb_cmode_row, text="", font=("Helvetica", 11),
+                               text_color=FG2), "rgb_colormode_label").pack(side="left", padx=(0, 6))
+        self._rgb_cmode_var = tk.StringVar(value=self._cmode_labels["dual"])
+        self._rgb_cmode_menu = ctk.CTkOptionMenu(
+            self._rgb_cmode_row, variable=self._rgb_cmode_var,
+            values=list(self._cmode_labels.values()),
+            command=lambda _: self._on_rgb_cmode_change(),
+            fg_color=BG3, button_color=BG3, button_hover_color=BG2,
+            text_color=FG, font=("Helvetica", 11), width=140, height=32)
+        self._rgb_cmode_menu.pack(side="left")
 
         # Speed / brightness sliders
         def _slider(par, key, init):
@@ -217,6 +259,17 @@ class Everest60Panel(ctk.CTkFrame):
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
             font=("Helvetica", 11), command=self._open_custom_rgb), "custom_rgb_open")
 
+        # Version line at the very bottom of the form (FransM's request in #32:
+        # a build marker so screenshots/reports can be tied to a version).
+        try:
+            from gui import APP_VERSION as _ver
+        except Exception:
+            _ver = "?"
+        self._rgb_build_lbl = ctk.CTkLabel(
+            parent, text=self.T("rgb_build_label", ver=_ver),
+            font=("Helvetica", 9), text_color=FG2, fg_color="transparent")
+        self._rgb_build_ver = _ver  # refreshed in apply_lang (takes a format arg)
+
         # Restore saved settings
         saved = load_rgb_config()
         if saved.get("effect") in self._rgb_effect_map:
@@ -235,6 +288,9 @@ class Everest60Panel(ctk.CTkFrame):
             self._rgb_c2_btn.configure(fg_color=h, hover_color=h)
         if "direction" in saved:
             self._rgb_dir_var.set(saved["direction"])
+        saved_cmode = saved.get("cmode")
+        if saved_cmode in self._cmode_labels:
+            self._rgb_cmode_var.set(self._cmode_labels[saved_cmode])
 
         self._rgb_update_controls()
 
@@ -322,6 +378,11 @@ class Everest60Panel(ctk.CTkFrame):
             leds = [list(c) for c in leds]
         except Exception:
             leds = []
+        if not leds:
+            # No saved per-key state — light the keys white instead of letting
+            # the controller pad them black, so the keyboard never goes dark
+            # (issue #4, FransM: "I really hate it when my kbd goes dark").
+            leds = [[255, 255, 255]] * 64
         payload = _j.dumps({
             "leds": leds,
             "side": [[r, g, b]] * 44,
@@ -343,9 +404,12 @@ class Everest60Panel(ctk.CTkFrame):
             self._app,
             layout=_KB60_LAYOUT,
             canvas_w=_KB60_CANVAS_W,
-            canvas_h=_KB60_CANVAS_H,
+            # Extra vertical space for the 44-LED side-ring strip below the keys.
+            canvas_h=_KB60_CANVAS_H + 96,
             num_leds=_KB60_NUM_LEDS,
-            has_side_leds=False,
+            has_side_leds=True,      # per-LED side ring painting (#4)
+            num_side_leds=44,        # hw indices 126..169
+            side_layout="strip",     # no per-edge ring geometry for the 60 yet
             has_numpad=False,
             has_persist=False,
             load_per_key=_load_per_key_60,
@@ -357,80 +421,107 @@ class Everest60Panel(ctk.CTkFrame):
         w.lift()
         w.focus_force()
 
+    def _available_cmodes(self, name):
+        """Colour-mode keys the given effect supports (subset of single/dual/rainbow)."""
+        return self._rgb_effect_map.get(name, ("", (), False, False, None))[1]
+
+    def _current_cmode(self, name):
+        """Effective colour mode: the dropdown choice if the effect offers it,
+        else the effect's single supported mode (None for custom/off)."""
+        modes = self._available_cmodes(name)
+        if not modes:
+            return None
+        sel = self._cmode_from_label.get(self._rgb_cmode_var.get())
+        return sel if sel in modes else modes[0]
+
     def _on_rgb_mode_change(self):
-        """Effect dropdown changed. Persist the selection so 'Custom' sticks
-        across restarts (#34), then refresh which controls are shown."""
+        """Effect changed: repopulate the colour-mode dropdown with the modes
+        this effect supports (keeping the current choice if still valid),
+        persist the effect (#34), then refresh which controls are shown."""
         name = self._rgb_mode_var.get()
-        sub = self._rgb_effect_map.get(name, ("",))[0]
-        if sub == "custom":
-            try:
-                cfg = load_rgb_config()
-                cfg["effect"] = name
-                save_rgb_config(cfg)
-            except Exception:
-                pass
+        modes = self._available_cmodes(name)
+        if modes:
+            self._rgb_cmode_menu.configure(values=[self._cmode_labels[m] for m in modes])
+            if self._cmode_from_label.get(self._rgb_cmode_var.get()) not in modes:
+                self._rgb_cmode_var.set(self._cmode_labels[modes[0]])
+        try:
+            cfg = load_rgb_config()
+            cfg["effect"] = name
+            save_rgb_config(cfg)
+        except Exception:
+            pass
+        self._rgb_update_controls()
+
+    def _on_rgb_cmode_change(self):
+        """Colour-mode changed — just refresh visibility (colour pickers)."""
         self._rgb_update_controls()
 
     def _rgb_update_controls(self):
-        """Show/hide RGB controls based on the selected effect.
+        """Pack exactly the controls the selected (effect, colour-mode) uses, in
+        a fixed top-to-bottom order, then re-measure the accordion.
 
-        Whole rows (speed, direction) collapse when not used; colour pickers
-        within the shared colour row are individually hidden so we don't leave
-        an empty stub. The previous behaviour just greyed controls out which
-        led to confusing UI for rainbow / static modes.
-        """
+        The previous implementation toggled rows via winfo_ismapped() + re-pack,
+        which (a) appended re-shown rows to the bottom, scrambling order, and
+        (b) left rows hidden inside the section's fixed measured height. That is
+        what produced FransM's 'no speed on breathing', 'no speed/direction on
+        wave' and 'rainbow page sticks' reports (#32/#39). Re-packing everything
+        in canonical order and re-measuring fixes all three at the root."""
         name = self._rgb_mode_var.get()
-        sub, hs, hb, hc1, hc2, hd = self._rgb_effect_map.get(
-            name, ("", False, False, False, False, False))
+        sub, modes, hs, hb, dk = self._rgb_effect_map.get(
+            name, ("", (), False, False, None))
+        cmode = self._current_cmode(name)
 
-        def _toggle_row(row, show):
-            if show:
-                if not row.winfo_ismapped():
-                    row.pack(fill="x", padx=10, pady=2)
-            else:
-                row.pack_forget()
-
-        # "Custom" (issue #34): no effect controls — hide everything and swap the
-        # Apply button for the editor launcher.
-        if sub == "custom":
-            for row in (self._rgb_speed_row, self._rgb_bri_row,
-                        self._rgb_dir_row, self._rgb_color_row):
-                row.pack_forget()
-            self._rgb_apply_btn.pack_forget()
-            if not self._rgb_custom_btn.winfo_ismapped():
-                self._rgb_custom_btn.pack(fill="x", padx=10, pady=(4, 10))
-            return
-        # Any other effect: editor launcher hidden, Apply button visible.
-        self._rgb_custom_btn.pack_forget()
-        if not self._rgb_apply_btn.winfo_ismapped():
-            self._rgb_apply_btn.pack(fill="x", padx=10, pady=(4, 10))
-
-        _toggle_row(self._rgb_speed_row, hs)
-        _toggle_row(self._rgb_bri_row,   hb)
-        _toggle_row(self._rgb_dir_row,   hd)
-
-        # Colour 1 / colour 2 share a row — pack/unpack individually so we
-        # don't show a label without its button. They're packed left-to-right
-        # in this order: c1 label, c1 btn, c2 label, c2 btn — recreate the
-        # left-side order with the visible ones only.
-        for w in (self._rgb_c1_lbl, self._rgb_c1_btn,
+        # Forget every toggleable widget, then re-pack the visible ones in order.
+        for w in (self._rgb_cmode_row, self._rgb_speed_row, self._rgb_bri_row,
+                  self._rgb_color_row, self._rgb_dir_row, self._rgb_status,
+                  self._rgb_apply_btn, self._rgb_custom_btn, self._rgb_build_lbl,
+                  self._rgb_c1_lbl, self._rgb_c1_btn,
                   self._rgb_c2_lbl, self._rgb_c2_btn):
             w.pack_forget()
-        if hc1:
-            self._rgb_c1_lbl.pack(side="left", padx=(0, 4))
-            self._rgb_c1_btn.pack(side="left", padx=(0, 12))
-        if hc2:
-            self._rgb_c2_lbl.pack(side="left", padx=(0, 4))
-            self._rgb_c2_btn.pack(side="left")
-        # Hide the whole colour row if neither slot is used (e.g. *_rainbow)
-        _toggle_row(self._rgb_color_row, hc1 or hc2)
 
-        # Direction values
-        is_tornado = "tornado" in name.lower()
-        dirs = self._dir_tornado if is_tornado else self._dir_wave
-        self._rgb_dir_menu.configure(values=dirs)
-        if self._rgb_dir_var.get() not in dirs:
-            self._rgb_dir_var.set(dirs[0])
+        show_c1 = cmode in ("single", "dual")
+        show_c2 = cmode == "dual"
+
+        if len(modes) >= 2:                       # only when there's a real choice
+            self._rgb_cmode_row.pack(fill="x", padx=10, pady=2)
+        if hs:
+            self._rgb_speed_row.pack(fill="x", padx=10, pady=2)
+        if hb:
+            self._rgb_bri_row.pack(fill="x", padx=10, pady=2)
+        if show_c1 or show_c2:
+            if show_c1:
+                self._rgb_c1_lbl.pack(side="left", padx=(0, 4))
+                self._rgb_c1_btn.pack(side="left", padx=(0, 12))
+            if show_c2:
+                self._rgb_c2_lbl.pack(side="left", padx=(0, 4))
+                self._rgb_c2_btn.pack(side="left")
+            self._rgb_color_row.pack(fill="x", padx=10, pady=2)
+        if dk is not None:
+            self._rgb_dir_row.pack(fill="x", padx=10, pady=2)
+            dirs = self._dir_tornado if dk == "tornado" else self._dir_wave
+            self._rgb_dir_menu.configure(values=dirs)
+            if self._rgb_dir_var.get() not in dirs:
+                self._rgb_dir_var.set(dirs[0])
+
+        self._rgb_status.pack(pady=(4, 0))
+        if sub == "custom":
+            self._rgb_custom_btn.pack(fill="x", padx=10, pady=(4, 10))
+        elif sub:                                 # any real effect (incl. off)
+            self._rgb_apply_btn.pack(fill="x", padx=10, pady=(4, 10))
+        self._rgb_build_lbl.pack(pady=(0, 8))     # version line stays at the bottom
+
+        self._remeasure_rgb_section()
+
+    def _remeasure_rgb_section(self):
+        """Recompute the RGB accordion's content height so a changed control set
+        isn't clipped or bottom-padded by the previously measured height (#32)."""
+        sec = getattr(self, "_rgb_section", None)
+        if sec is None:
+            return
+        try:
+            sec.measure()
+        except Exception:
+            pass
 
     def _pick_color(self, slot):
         from shared.ui_helpers import pick_color
@@ -446,48 +537,62 @@ class Everest60Panel(ctk.CTkFrame):
             self._rgb_color2 = rgb
             self._rgb_c2_btn.configure(fg_color=h, hover_color=h)
 
-    def _apply_rgb(self):
+    def _build_rgb_command(self):
+        """Translate the current UI selection into an everest60 `rgb` CLI command.
+
+        Returns (cmd, save_dict). cmd is None for Custom (the editor applies it)
+        and Off-less unknowns. Rainbow colour-mode routes to the `<effect>-rainbow`
+        subcommand; single/dual pass a trailing colour-mode value (0/16)."""
         name = self._rgb_mode_var.get()
-        sub, hs, hb, hc1, hc2, hd = self._rgb_effect_map.get(name, ("off", False, False, False, False, False))
+        sub, modes, hs, hb, dk = self._rgb_effect_map.get(
+            name, ("off", (), False, False, None))
+        cmode = self._current_cmode(name)
         speed = int(self._rgb_speed_sl.get())
         bri   = int(self._rgb_bri_sl.get())
         r1, g1, b1 = self._rgb_color1
         r2, g2, b2 = self._rgb_color2
         direction  = self._rgb_dir_map.get(self._rgb_dir_var.get(), 0)
+        cm_val = 0 if cmode == "single" else 16   # COLOR_SINGLE / COLOR_DUAL
 
+        save = {
+            "effect": name, "cmode": cmode or "dual", "speed": speed,
+            "brightness": bri, "color1": list(self._rgb_color1),
+            "color2": list(self._rgb_color2), "direction": self._rgb_dir_var.get(),
+        }
+
+        if sub == "custom":
+            return None, {"effect": name}
         if sub == "off":
-            cmd = self._cmd("rgb", "off")
-        elif sub == "static":
-            cmd = self._cmd("rgb", "static", str(r1), str(g1), str(b1), str(bri))
-        elif sub == "breathing":
-            cmd = self._cmd("rgb", "breathing", str(r1), str(g1), str(b1),
-                            str(r2), str(g2), str(b2), str(bri), str(speed))
-        elif sub == "breathing-rainbow":
-            cmd = self._cmd("rgb", "breathing-rainbow", str(bri), str(speed))
-        elif sub == "wave":
-            cmd = self._cmd("rgb", "wave", str(r1), str(g1), str(b1),
-                            str(r2), str(g2), str(b2), str(bri), str(speed), str(direction))
-        elif sub == "wave-rainbow":
-            cmd = self._cmd("rgb", "wave-rainbow", str(bri), str(speed), str(direction))
-        elif sub == "tornado":
-            cmd = self._cmd("rgb", "tornado", str(r1), str(g1), str(b1),
-                            str(bri), str(speed), str(direction))
-        elif sub == "tornado-rainbow":
-            cmd = self._cmd("rgb", "tornado-rainbow", str(bri), str(speed), str(direction))
-        elif sub == "reactive":
-            cmd = self._cmd("rgb", "reactive", str(r1), str(g1), str(b1),
-                            str(r2), str(g2), str(b2), str(bri), str(speed))
-        elif sub == "yeti":
-            cmd = self._cmd("rgb", "yeti", str(r1), str(g1), str(b1),
-                            str(r2), str(g2), str(b2), str(bri), str(speed))
-        else:
-            return
+            return self._cmd("rgb", "off"), save
+        if sub == "static":
+            return self._cmd("rgb", "static", str(r1), str(g1), str(b1), str(bri)), save
+        if cmode == "rainbow" and sub in ("breathing", "wave", "tornado"):
+            args = [f"{sub}-rainbow", str(bri), str(speed)]
+            if dk is not None:
+                args.append(str(direction))
+            return self._cmd("rgb", *args), save
+        if sub == "breathing":
+            return self._cmd("rgb", "breathing", str(r1), str(g1), str(b1),
+                             str(r2), str(g2), str(b2), str(bri), str(speed),
+                             str(cm_val)), save
+        if sub == "wave":
+            return self._cmd("rgb", "wave", str(r1), str(g1), str(b1),
+                             str(r2), str(g2), str(b2), str(bri), str(speed),
+                             str(direction), str(cm_val)), save
+        if sub == "tornado":
+            return self._cmd("rgb", "tornado", str(r1), str(g1), str(b1),
+                             str(bri), str(speed), str(direction)), save
+        if sub in ("reactive", "matrix", "yeti"):
+            return self._cmd("rgb", sub, str(r1), str(g1), str(b1),
+                             str(r2), str(g2), str(b2), str(bri), str(speed)), save
+        return None, None
 
-        save_rgb_config({
-            "effect": name, "speed": speed, "brightness": bri,
-            "color1": list(self._rgb_color1), "color2": list(self._rgb_color2),
-            "direction": self._rgb_dir_var.get(),
-        })
+    def _apply_rgb(self):
+        cmd, save = self._build_rgb_command()
+        if cmd is None:
+            return
+        if save:
+            save_rgb_config(save)
 
         self._rgb_status.configure(text=self.T("rgb_applying"), text_color=YLW)
 
@@ -499,6 +604,43 @@ class Everest60Panel(ctk.CTkFrame):
 
         self._run_async(cmd, _done)
 
+    def apply_saved_rgb(self):
+        """Re-push the saved lighting to the keyboard on connect/startup (#42):
+        settings were persisted to rgb_settings.json but never sent, so the board
+        kept its default lighting until the user pressed Apply. The widgets are
+        already primed from the saved config at build time, so we reuse the same
+        command builder. Custom mode replays its saved per-key map instead. Does
+        nothing when nothing has been saved yet (don't clobber the board)."""
+        try:
+            saved = load_rgb_config()
+            if not saved.get("effect"):
+                return
+            sub = self._rgb_effect_map.get(self._rgb_mode_var.get(), ("",))[0]
+            if sub == "custom":
+                self._apply_saved_custom()
+                return
+            cmd, _save = self._build_rgb_command()
+            if cmd:
+                self._run_async(cmd, None)
+        except Exception:
+            pass
+
+    def _apply_saved_custom(self):
+        """Replay the last per-key map for the Custom effect on connect (#42)."""
+        import json as _j
+        try:
+            leds, side, bri = _load_per_key_60()
+        except Exception:
+            return
+        if not leds:
+            return
+        payload = _j.dumps({
+            "leds": [list(c) for c in leds],
+            "side": [list(c) for c in side] if side else [],
+            "brightness": int(bri),
+        })
+        self._run_async(self._cmd("per-key-rgb", payload), None)
+
     # ── Connection state ──────────────────────────────────────────────────────
 
     def set_connected(self, connected: bool):
@@ -507,6 +649,10 @@ class Everest60Panel(ctk.CTkFrame):
         self._connected = connected
         if connected:
             self._banner.pack_forget()
+            # Push the saved lighting now that the board is present (#42). Delay
+            # a beat so the HID interface has finished enumerating before we open
+            # it — otherwise the very first apply can race the device coming up.
+            self.after(900, self.apply_saved_rgb)
         else:
             self._banner.pack(fill="x", padx=12, pady=(8, 4), before=self.winfo_children()[1])
 

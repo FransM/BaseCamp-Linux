@@ -407,5 +407,12 @@
   "pluginmgr_install_ok": "Plugin installed! Restart to activate.",
   "pluginmgr_install_fail": "Installation failed: {err}",
   "pluginmgr_install_exists": "Plugin already exists: {pid}",
-  "pluginmgr_more": "More plugins: github.com/ramisotti13-eng/basecamp-plugins"
+  "pluginmgr_more": "More plugins: github.com/ramisotti13-eng/basecamp-plugins",
+  "rgb_colormode_label": "Color mode:",
+  "rgb_cmode_single": "Single",
+  "rgb_cmode_dual": "Dual",
+  "rgb_cmode_rainbow": "Rainbow",
+  "rgb_build_label": "BaseCamp Linux v{ver}",
+  "dp_page_target": "Go to page:",
+  "dp_new_page": "＋ New page"
 }

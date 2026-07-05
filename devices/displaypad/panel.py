@@ -73,7 +73,7 @@ _ACTION_TYPES = ["none", "shell", "url", "folder", "app", "page", "obs", "macro"
 # renders a widget (System Monitor, plugin keys) can additionally fire one of
 # these on press, so it is no longer a dead key. Kept to the simple free-text
 # actions that need just one entry field.
-_SECONDARY_TYPES = ["none", "keypress", "text", "shell", "url"]
+_SECONDARY_TYPES = ["none", "keypress", "text", "shell", "url", "page"]
 
 _DEFAULT_ACTIONS = [{"type": "none", "action": ""} for _ in range(12)]
 
@@ -129,6 +129,18 @@ def _open_interfaces():
                 hid_dev.close()
                 raise RuntimeError("DisplayPad not found via PyUSB")
             usb.util.claim_interface(usb_dev, 1)
+            # Quiesce the display interface with SET_IDLE(0) before streaming
+            # image data. Windows Base Camp issues SET_IDLE for interfaces 0, 1
+            # and 3; the Linux stack only covered 0 and 3 (hidraw does them),
+            # leaving interface 1 un-idled. A pad that was unplugged/replugged
+            # could then wedge interface 1 and the first upload timed out
+            # (issue #40, from FransM's Windows-vs-Linux capture comparison).
+            # HID class request: bmRequestType=0x21, bRequest=SET_IDLE(0x0A),
+            # wValue=0 (duration 0, report 0), wIndex=interface 1. Best-effort.
+            try:
+                usb_dev.ctrl_transfer(0x21, 0x0A, 0x0000, 1, None, timeout=500)
+            except Exception:
+                pass
             return usb_dev, hid_dev
         except Exception as e:
             last_err = e
@@ -157,14 +169,22 @@ def _close_interfaces(usb_dev, hid_dev):
 
 
 def _init_device(hid_dev):
-    for attempt in range(4):
-        if attempt > 0:
-            time.sleep(1.0)
+    """Bring the DisplayPad up by sending INIT and waiting for its 0x11 reply.
+
+    After an unplug/replug the pad frequently misses the first INIT: the old
+    code wrote INIT once and then blocked reading for up to 10s before trying
+    again, so recovery was slow and often timed out with "Connection timed out"
+    when the GUI was restarted on a replugged pad (issue #40). Windows Base Camp
+    instead re-sends INIT several times until the pad answers. We do the same —
+    short read windows between frequent re-writes make a missed INIT recover in
+    a fraction of a second instead of stalling."""
+    for attempt in range(15):
         hid_dev.write(INIT_MSG)
-        for _ in range(50):
-            resp = hid_dev.read(64, timeout=200)
+        for _ in range(10):
+            resp = hid_dev.read(64, timeout=100)
             if resp and resp[0] == 0x11:
                 return
+        time.sleep(0.1)
     raise RuntimeError("DisplayPad did not respond to INIT")
 
 
@@ -479,14 +499,12 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         self.geometry(f"+{pw - w//2}+{ph - h//2}")
 
     def _is_locked(self, idx):
-        """Return True if this tile should not be editable (back/folder icons)."""
-        p = self._panel._current_page
-        if p != 0 and idx == 0:
-            return True  # K1 = back on sub-pages
-        if p == 0:
-            actions = self._panel._page_actions.get(0, _DEFAULT_ACTIONS)
-            if idx < len(actions) and actions[idx].get("type") == "page":
-                return True  # folder button on main
+        """Whether this tile's image is not user-editable.
+
+        Since the page-model redesign (#30) every key — including K1 and any
+        'page'/back button — is a normal key that CAN take a custom icon (the
+        assigned image wins over the default folder/back icon in
+        _inject_page_icons), so nothing is locked anymore."""
         return False
 
     def _build_ui(self):
@@ -852,6 +870,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._obs_combos   = []
         self._macro_combos = []
         self._hue_combos   = []
+        self._page_combos  = []   # 'page' target picker (#30 carousel)
+        self._page_targets = [None] * 12  # idx -> resolved target page id or "new"
         self._plugin_combos = []  # plugin types with value_options
         self._plugin_combo_maps = {}  # idx -> {display_label: value}
         self._hue_values_map = []
@@ -911,25 +931,24 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._app.T("action_type_keypress"),
                 self._app.T("action_type_text"),
                 self._app.T("action_type_shell"),
-                self._app.T("action_type_url")]
+                self._app.T("action_type_url"),
+                self._app.T("action_type_page")]
 
     def _load_page(self, page):
         """Populate dialog StringVars from page data."""
         self._page = page
         actions = self._panel._page_actions.get(page, _DEFAULT_ACTIONS)
-        is_sub = page != 0
-        include_page = not is_sub  # "page" type only on main
-        labels = self._type_labels(include_page)
-        types_for_page = self._get_action_types(include_page=not is_sub)
+        # Any page can host 'page' navigation actions now (#30 carousel), so the
+        # type list is the same on every page and K1 is no longer a locked back.
+        labels = self._type_labels(include_page=True)
+        types_for_page = self._get_action_types(include_page=True)
 
         for i in range(12):
             act = actions[i] if i < len(actions) else {"type": "none", "action": ""}
             btype = act.get("type", "none")
             cmd   = act.get("action", "")
-
-            # Sub-page K1 = back (locked)
-            if is_sub and i == 0:
-                btype, cmd = "back", ""
+            # Remember an existing 'page' target so the picker can preselect it.
+            self._page_targets[i] = act.get("target") if btype == "page" else None
 
             self._act_type[i].set(btype)
             self._act_cmd[i].set(cmd)
@@ -944,9 +963,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._sec_cmd[i].set(_sec.get("action", ""))
             self._sec_menus[i].set(
                 self._sec_type_labels()[_SECONDARY_TYPES.index(_sectype)])
-            _sec_state = "disabled" if (is_sub and i == 0) else "normal"
-            self._sec_menus[i].configure(state=_sec_state)
-            self._sec_entries[i].configure(state=_sec_state)
+            self._sec_menus[i].configure(state="normal")
+            self._sec_entries[i].configure(state="normal")
 
             menu = self._type_menus[i]
             menu.configure(values=labels)
@@ -954,107 +972,111 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._obs_combos[i].pack_forget()
             self._macro_combos[i].pack_forget()
             self._hue_combos[i].pack_forget()
+            self._page_combos[i].pack_forget()
             self._plugin_combos[i].pack_forget()
             self._cmd_entries[i].pack_forget()
             self._browse_btns[i].pack_forget()
             self._cmd_entries[i].pack(side="left", padx=4, expand=True, fill="x")
             self._browse_btns[i].pack(side="left", padx=(0, 4))
 
-            if is_sub and i == 0:
-                menu.set(self._app.T("dp_page_back"))
-                menu.configure(state="disabled")
-                self._cmd_entries[i].configure(state="disabled")
-                self._browse_btns[i].configure(state="disabled", image=self._folder_img_dim)
+            menu.configure(state="normal")
+            self._cmd_entries[i].configure(state="normal")
+            if btype in types_for_page:
+                idx_in_labels = types_for_page.index(btype)
+                menu.set(labels[idx_in_labels] if idx_in_labels < len(labels) else labels[0])
             else:
-                menu.configure(state="normal")
-                self._cmd_entries[i].configure(state="normal")
-                if btype in types_for_page:
-                    idx_in_labels = types_for_page.index(btype)
-                    menu.set(labels[idx_in_labels] if idx_in_labels < len(labels) else labels[0])
+                menu.set(labels[0])
+            # Browse button state
+            browse_active = btype in ("folder", "app")
+            self._browse_btns[i].configure(
+                state="normal" if browse_active else "disabled",
+                image=self._folder_img if browse_active else self._folder_img_dim)
+            # "page" type: label entry (button caption) + target picker (#30)
+            if btype == "page":
+                self._cmd_entries[i].configure(
+                    placeholder_text=self._app.T("dp_page_name_hint"))
+                _plabels, _pmap = self._page_target_options()
+                self._page_combos[i].configure(values=_plabels)
+                _sel = None
+                for _lbl, _pid in _pmap.items():
+                    if _pid == self._page_targets[i]:
+                        _sel = _lbl
+                        break
+                self._page_combos[i].set(_sel or self._app.T("dp_new_page"))
+                self._page_combos[i].pack(side="left", padx=(0, 4))
+            # "keypress" type: show placeholder hint
+            elif btype == "keypress":
+                self._cmd_entries[i].configure(
+                    placeholder_text="e.g. grave, F12, ctrl+shift+a")
+            # "text" type: text to be typed out
+            elif btype == "text":
+                self._cmd_entries[i].configure(
+                    placeholder_text=self._app.T("action_type_text_hint"))
+            # "set_key" type: redefine another key on press (issue #18/#29).
+            # The entry holds a small JSON object describing the target.
+            elif btype == "set_key":
+                self._cmd_entries[i].configure(
+                    placeholder_text=self._app.T("action_type_set_key_hint"))
+            # "obs" type: show OBS combo instead of entry
+            elif btype == "obs":
+                self._cmd_entries[i].pack_forget()
+                self._browse_btns[i].pack_forget()
+                obs_panel = self._app._obs_panel
+                scenes = obs_panel.get_scenes() if obs_panel.is_connected() else []
+                self._obs_combos[i].configure(values=scenes + ["— Record", "— Stream"])
+                if cmd.startswith("scene:"):
+                    self._obs_combos[i].set(cmd[6:])
+                elif cmd in ("record", "stream"):
+                    self._obs_combos[i].set(f"— {cmd.capitalize()}")
+                elif scenes:
+                    self._obs_combos[i].set(scenes[0])
+                self._obs_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            # "macro" type: show macro picker instead of entry
+            elif btype == "macro":
+                self._cmd_entries[i].pack_forget()
+                self._browse_btns[i].pack_forget()
+                self._populate_macro_combo(self._macro_combos[i], cmd, btn_idx=i)
+                self._macro_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            # "hue_toggle" / "hue_scene": show hue picker
+            elif btype in ("hue_toggle", "hue_scene"):
+                self._cmd_entries[i].pack_forget()
+                self._browse_btns[i].pack_forget()
+                self._populate_hue_combo(self._hue_combos[i], btype, cmd, btn_idx=i)
+                self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            # "hue_bri": combo for light/group + entry for %
+            elif btype == "hue_bri":
+                self._browse_btns[i].pack_forget()
+                # Split "group:1:50" into target "group:1" + pct "50"
+                if cmd.count(":") >= 2:
+                    target = cmd.rsplit(":", 1)[0]
+                    pct = cmd.rsplit(":", 1)[1]
                 else:
-                    menu.set(labels[0])
-                # Browse button state
-                browse_active = btype in ("folder", "app")
-                self._browse_btns[i].configure(
-                    state="normal" if browse_active else "disabled",
-                    image=self._folder_img if browse_active else self._folder_img_dim)
-                # "page" type: entry is for label text
-                if btype == "page":
-                    self._cmd_entries[i].configure(
-                        placeholder_text=self._app.T("dp_page_name_hint"))
-                # "keypress" type: show placeholder hint
-                elif btype == "keypress":
-                    self._cmd_entries[i].configure(
-                        placeholder_text="e.g. grave, F12, ctrl+shift+a")
-                # "text" type: text to be typed out
-                elif btype == "text":
-                    self._cmd_entries[i].configure(
-                        placeholder_text=self._app.T("action_type_text_hint"))
-                # "set_key" type: redefine another key on press (issue #18/#29).
-                # The entry holds a small JSON object describing the target.
-                elif btype == "set_key":
-                    self._cmd_entries[i].configure(
-                        placeholder_text=self._app.T("action_type_set_key_hint"))
-                # "obs" type: show OBS combo instead of entry
-                elif btype == "obs":
+                    target, pct = "", "50"
+                self._hue_bri_target[i] = target
+                self._populate_hue_combo(self._hue_combos[i], btype, target, btn_idx=None)
+                self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+                self._cmd_entries[i].configure(state="normal", placeholder_text="%")
+                self._act_cmd[i].set(pct)
+            # Plugin action with value_options: editable combo prefilled by plugin
+            else:
+                pm = getattr(self._app, "_plugin_manager", None)
+                opts = pm.get_action_value_options(btype) if pm else None
+                if opts is not None:
                     self._cmd_entries[i].pack_forget()
                     self._browse_btns[i].pack_forget()
-                    obs_panel = self._app._obs_panel
-                    scenes = obs_panel.get_scenes() if obs_panel.is_connected() else []
-                    self._obs_combos[i].configure(values=scenes + ["— Record", "— Stream"])
-                    if cmd.startswith("scene:"):
-                        self._obs_combos[i].set(cmd[6:])
-                    elif cmd in ("record", "stream"):
-                        self._obs_combos[i].set(f"— {cmd.capitalize()}")
-                    elif scenes:
-                        self._obs_combos[i].set(scenes[0])
-                    self._obs_combos[i].pack(side="left", padx=4, expand=True, fill="x")
-                # "macro" type: show macro picker instead of entry
-                elif btype == "macro":
-                    self._cmd_entries[i].pack_forget()
-                    self._browse_btns[i].pack_forget()
-                    self._populate_macro_combo(self._macro_combos[i], cmd, btn_idx=i)
-                    self._macro_combos[i].pack(side="left", padx=4, expand=True, fill="x")
-                # "hue_toggle" / "hue_scene": show hue picker
-                elif btype in ("hue_toggle", "hue_scene"):
-                    self._cmd_entries[i].pack_forget()
-                    self._browse_btns[i].pack_forget()
-                    self._populate_hue_combo(self._hue_combos[i], btype, cmd, btn_idx=i)
-                    self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
-                # "hue_bri": combo for light/group + entry for %
-                elif btype == "hue_bri":
-                    self._browse_btns[i].pack_forget()
-                    # Split "group:1:50" into target "group:1" + pct "50"
-                    if cmd.count(":") >= 2:
-                        target = cmd.rsplit(":", 1)[0]
-                        pct = cmd.rsplit(":", 1)[1]
-                    else:
-                        target, pct = "", "50"
-                    self._hue_bri_target[i] = target
-                    self._populate_hue_combo(self._hue_combos[i], btype, target, btn_idx=None)
-                    self._hue_combos[i].pack(side="left", padx=4, expand=True, fill="x")
-                    self._cmd_entries[i].configure(state="normal", placeholder_text="%")
-                    self._act_cmd[i].set(pct)
-                # Plugin action with value_options: editable combo prefilled by plugin
-                else:
-                    pm = getattr(self._app, "_plugin_manager", None)
-                    opts = pm.get_action_value_options(btype) if pm else None
-                    if opts is not None:
-                        self._cmd_entries[i].pack_forget()
-                        self._browse_btns[i].pack_forget()
-                        # NB: don't reuse `labels` here — it holds the action-type
-                        # labels for the type dropdown of every remaining button.
-                        opt_labels = [lbl for lbl, _v in opts]
-                        self._plugin_combo_maps[i] = {lbl: val for lbl, val in opts}
-                        self._plugin_combos[i].configure(values=opt_labels)
-                        # If current cmd matches one of the values, show that label
-                        shown = cmd
-                        for lbl, val in opts:
-                            if val == cmd:
-                                shown = lbl
-                                break
-                        self._plugin_combos[i].set(shown)
-                        self._plugin_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+                    # NB: don't reuse `labels` here — it holds the action-type
+                    # labels for the type dropdown of every remaining button.
+                    opt_labels = [lbl for lbl, _v in opts]
+                    self._plugin_combo_maps[i] = {lbl: val for lbl, val in opts}
+                    self._plugin_combos[i].configure(values=opt_labels)
+                    # If current cmd matches one of the values, show that label
+                    shown = cmd
+                    for lbl, val in opts:
+                        if val == cmd:
+                            shown = lbl
+                            break
+                    self._plugin_combos[i].set(shown)
+                    self._plugin_combos[i].pack(side="left", padx=4, expand=True, fill="x")
 
         # Update page selector
         self._page_selector.set(self._panel._get_page_name(page))
@@ -1134,6 +1156,16 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 command=lambda val, ix=i: self._on_macro_select(val, ix))
             self._macro_combos.append(macro_combo)
             # not packed yet — shown only when macro type selected
+
+            # 'page' target picker (#30): choose which page this button jumps to
+            # (any existing page, or a freshly minted one for a carousel).
+            page_combo = ctk.CTkOptionMenu(
+                row, values=[""], width=110, height=30,
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_page_target_select(val, ix))
+            self._page_combos.append(page_combo)
+            # not packed yet — shown only when 'page' type selected
 
             hue_combo = ctk.CTkComboBox(
                 row, values=[], width=140, height=30,
@@ -1222,18 +1254,39 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     pass
                 break
 
+    def _page_target_options(self):
+        """(labels, {label: target}) for the page-target picker: every existing
+        page, plus a 'New page' entry that mints a fresh one (#30)."""
+        mapping, labels = {}, []
+        for p in self._panel._get_available_pages():
+            lbl = self._panel._get_page_name(p)
+            labels.append(lbl)
+            mapping[lbl] = p
+        newlbl = self._app.T("dp_new_page")
+        labels.append(newlbl)
+        mapping[newlbl] = "new"
+        return labels, mapping
+
+    def _on_page_target_select(self, val, idx):
+        """User picked a destination page (or 'New page') for a 'page' button."""
+        _labels, mapping = self._page_target_options()
+        self._page_targets[idx] = mapping.get(val, "new")
+        self._apply(idx)
+
     def _on_type_change(self, label, idx):
-        # Ignore separator selection
+        # 'page' is offered on every page now (#30), so the type/label lists must
+        # always include it — matching what _load_page built the dropdown with.
+        # Using the shorter (no-page) list here would make selecting 'Switch page'
+        # on a sub-page fail to resolve and silently reset the key to 'none'.
         if label == "── Plugins ──":
             cur = self._act_type[idx].get()
-            labels = self._type_labels(include_page=self._page == 0)
-            types = self._get_action_types(include_page=self._page == 0)
+            labels = self._type_labels(include_page=True)
+            types = self._get_action_types(include_page=True)
             if cur in types:
                 self._type_menus[idx].set(labels[types.index(cur)])
             return
-        is_sub = self._page != 0
-        types = self._get_action_types(include_page=not is_sub)
-        labels = self._type_labels(include_page=not is_sub)
+        types = self._get_action_types(include_page=True)
+        labels = self._type_labels(include_page=True)
         try:
             internal = types[labels.index(label)]
         except (ValueError, IndexError):
@@ -1245,10 +1298,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         else:
             btn.configure(state="disabled", image=self._folder_img_dim)
 
-        # Show/hide OBS combo / macro combo / hue combo vs entry+browse
+        # Show/hide OBS combo / macro combo / hue combo / page picker vs entry+browse
         self._obs_combos[idx].pack_forget()
         self._macro_combos[idx].pack_forget()
         self._hue_combos[idx].pack_forget()
+        self._page_combos[idx].pack_forget()
         self._cmd_entries[idx].pack_forget()
         self._browse_btns[idx].pack_forget()
         if internal == "obs":
@@ -1287,12 +1341,23 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._cmd_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
             self._browse_btns[idx].pack(side="left", padx=(0, 4))
 
-        # "page" type: entry is for the label text (shown on folder icon)
+        # "page" type: label entry (button caption) + target picker (#30).
         if internal == "page":
             self._cmd_entries[idx].configure(state="normal")
             cur = self._act_cmd[idx].get()
             if not cur or cur.startswith("→") or cur.startswith("/") or cur.startswith("scene:"):
                 self._act_cmd[idx].set(f"Page {idx + 1}")
+            labels, mapping = self._page_target_options()
+            self._page_combos[idx].configure(values=labels)
+            if self._page_targets[idx] is None:
+                self._page_targets[idx] = "new"   # a fresh 'page' key mints a page
+            sel = self._app.T("dp_new_page")
+            for lbl, pid in mapping.items():
+                if pid == self._page_targets[idx]:
+                    sel = lbl
+                    break
+            self._page_combos[idx].set(sel)
+            self._page_combos[idx].pack(side="left", padx=(0, 4))
         elif internal == "keypress":
             self._cmd_entries[idx].configure(state="normal",
                 placeholder_text="e.g. grave, F12, ctrl+shift+a")
@@ -1524,12 +1589,27 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             except ValueError:
                 pct = "50"
             action = f"{target}:{pct}" if target else ""
-        # Secondary "also on press" action (issue #16)
+        # Secondary "also on press" action (issue #16/#17)
         sectype = self._sec_type[idx].get() if idx < len(self._sec_type) else "none"
         secval  = self._sec_cmd[idx].get().strip() if idx < len(self._sec_cmd) else ""
-        extra = [{"type": sectype, "action": secval}] if (
-            sectype and sectype != "none" and secval) else []
-        self._panel._save_page_action(self._page, idx, btype, action, extra)
+        extra = []
+        if sectype and sectype != "none":
+            step = {"type": sectype, "action": secval}
+            if sectype == "page":
+                # 'also on press → go to page' (#17): the entry holds a page
+                # name; resolve it to a page id so the chain can navigate.
+                _lbls, mapping = self._page_target_options()
+                tgt = mapping.get(secval)
+                if isinstance(tgt, int):
+                    step["target"] = tgt
+                    extra = [step]
+                # unresolved / 'New page' name → skip (nothing to jump to)
+            elif secval:
+                extra = [step]
+        # Primary 'page' action carries the target picked in the combo (#30).
+        target = self._page_targets[idx] if btype == "page" else None
+        self._panel._save_page_action(self._page, idx, btype, action, extra, target=target)
+        self._panel._gc_orphan_pages()
         self._info_lbl.configure(
             text=self._app.T("dp_act_saved", k=idx + 1), text_color=GRN)
         # Refresh page selector (new pages may have been created / renamed)
@@ -1615,12 +1695,18 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._page_fullscreen = {0: _load_displaypad_fullscreen()}
         self._page_gif_frames = {}   # page -> {idx: frames}
         self._page_gui_frames = {}   # page -> {idx: gui_frames}
-        # Load sub-pages from config
+        # Load sub-pages from config. `v` marks the page-model version: v<2 is a
+        # pre-#30 page (still using the hard-locked back button) — remember those
+        # so migration only touches them and never re-derives a back button the
+        # user has since removed.
+        _legacy_pages = []
         for ps, pdata in _load_displaypad_pages().items():
             p = int(ps)
             self._page_actions[p]    = pdata.get("actions", [dict(a) for a in _DEFAULT_ACTIONS])
             self._page_images[p]     = pdata.get("buttons", {})
             self._page_fullscreen[p] = pdata.get("fullscreen")
+            if pdata.get("v", 1) < 2:
+                _legacy_pages.append(p)
         # Resource paths for folder/back icons
         _HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _FROZEN = getattr(sys, "frozen", False)
@@ -1632,6 +1718,25 @@ class DisplayPadPanel(ctk.CTkFrame):
         if not os.path.exists(self._blank_icon):
             Image.new("RGB", (ICON_SIZE, ICON_SIZE), (0, 0, 0)).save(self._blank_icon)
 
+        # ── Page-model migration (#30) ────────────────────────────────────────
+        def _back_act():
+            return {"type": "page", "action": self.T("dp_page_back"),
+                    "target": 0, "icon": self._back_icon}
+        # Convert the old dedicated 'back' action into a normal page→main action
+        # everywhere, so it's editable and shows correctly in the dropdown
+        # (idempotent — nothing left to convert on the next launch).
+        for acts in self._page_actions.values():
+            for i, a in enumerate(acts):
+                if a.get("type") == "back":
+                    acts[i] = _back_act()
+        # Only for pre-#30 pages: give an untouched K1 (still the default 'none')
+        # the implicit back button the old model provided. v>=2 pages are left
+        # as-is so a user CAN remove the back button and have it stay removed.
+        for p in _legacy_pages:
+            acts = self._page_actions.get(p)
+            if p != 0 and acts and acts[0].get("type", "none") == "none":
+                acts[0] = _back_act()
+
         self._images = dict(self._page_images.get(0, {}))
         for k, path in self._images.items():
             if path and os.path.exists(path) and path.lower().endswith('.gif'):
@@ -1642,14 +1747,8 @@ class DisplayPadPanel(ctk.CTkFrame):
                     if gui_f:
                         self._gui_frames_sm[int(k)] = gui_f
 
-        # Inject folder icons (with label) for "page" buttons on main page
-        for i, act in enumerate(self._page_actions.get(0, _DEFAULT_ACTIONS)):
-            if act.get("type") == "page":
-                labeled = os.path.join(CONFIG_DIR, f"dp_folder_{i}.png")
-                if os.path.exists(labeled):
-                    self._images[str(i)] = labeled
-                elif os.path.exists(self._folder_icon):
-                    self._images[str(i)] = self._folder_icon
+        # Inject navigation icons for 'page'/'back' buttons on the start page.
+        self._inject_page_icons(0)
 
         # Restore fullscreen GIF if saved
         fs_path = self._page_fullscreen.get(0)
@@ -1872,73 +1971,229 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._actions_dialog_win = DisplayPadActionsDialog(self)
 
     def _get_action(self, idx):
-        """Return (type_str, action_str) for button idx on current page."""
-        if self._current_page != 0 and idx == 0:
-            return ("back", "")
+        """Return (type_str, action_str) for button idx on current page.
+
+        Since the page-model redesign (#30/#17) every key — including K1 on a
+        sub-page — is a normal editable action; the old hard-locked 'back' on
+        sub-page K1 is gone. Minted pages get a back action on K1 by default,
+        but the user can change or remove it."""
         actions = self._page_actions.get(self._current_page, _DEFAULT_ACTIONS)
         if idx < len(actions):
             a = actions[idx]
             return (a.get("type", "none"), a.get("action", ""))
         return ("none", "")
 
-    def _save_page_action(self, page, idx, btype, action, extra=None):
-        """Save a single action and persist to config.
+    @staticmethod
+    def _page_target(act, idx):
+        """Resolve a 'page' action's destination page id. New configs carry an
+        explicit integer 'target'; legacy main-page actions had no target and
+        mapped to the fixed sub-page idx+1, so fall back to that (#30 migration)."""
+        t = act.get("target")
+        try:
+            return int(t)
+        except (TypeError, ValueError):
+            return idx + 1
 
-        `extra` is the optional secondary "also on press" action chain
-        (issue #16/#17). When the caller does not pass one, any existing chain
-        on this button is preserved, so editing the primary action in the GUI
-        no longer silently drops it."""
+    def _all_page_ids(self):
+        """Every page id that exists or is referenced: 0, any page with stored
+        actions/images, and every 'page' action target anywhere."""
+        ids = {0}
+        ids.update(self._page_actions.keys())
+        ids.update(self._page_images.keys())
+        for page, acts in self._page_actions.items():
+            for i, act in enumerate(acts):
+                if act.get("type") == "page":
+                    ids.add(self._page_target(act, i))
+        return {p for p in ids if isinstance(p, int) and p >= 0}
+
+    def _mint_page_id(self):
+        """Allocate a fresh page id above every existing/referenced one (#30)."""
+        return max(self._all_page_ids()) + 1
+
+    def _folder_icon_name(self, page, idx):
+        """Config path of the auto folder-label icon for a nav button. Page 0
+        keeps the legacy dp_folder_{idx}.png name; sub-pages qualify by page id
+        so labels don't collide across pages."""
+        fname = f"dp_folder_{idx}.png" if page == 0 else f"dp_folder_{page}_{idx}.png"
+        return os.path.join(CONFIG_DIR, fname)
+
+    def _inject_page_icons(self, page):
+        """Give every navigation button on `page` its icon: a custom icon set on
+        the action, else the auto folder-label icon, else the shared folder icon
+        — or the back icon for a legacy 'back' action. Applies to all pages now
+        that any key can navigate (#30)."""
+        stored = self._page_images.get(page, {})
+        for i, act in enumerate(self._page_actions.get(page, _DEFAULT_ACTIONS)):
+            t = act.get("type")
+            if t == "page":
+                custom = act.get("icon")
+                user_img = stored.get(str(i), "")
+                if custom and os.path.exists(custom):
+                    self._images[str(i)] = custom
+                elif (user_img and os.path.exists(user_img)
+                      and not self._is_nav_icon(user_img)):
+                    # A custom image assigned to this switch button via the image
+                    # editor wins over the default folder icon (#30 custom icon).
+                    self._images[str(i)] = user_img
+                else:
+                    labeled = self._folder_icon_name(page, i)
+                    self._images[str(i)] = (labeled if os.path.exists(labeled)
+                                            else self._folder_icon)
+            elif t == "back":
+                self._images[str(i)] = self._back_icon
+
+    def _ensure_page(self, page_id, back_to=0):
+        """Create page `page_id` if it doesn't exist, seeding K1 with a back
+        button that returns to `back_to`. The back button is a normal 'page'
+        action the user can re-target, re-icon or remove (#30)."""
+        page_id = int(page_id)
+        if page_id == 0 or page_id in self._page_actions:
+            return
+        acts = [dict(a) for a in _DEFAULT_ACTIONS]
+        acts[0] = {"type": "page", "action": self.T("dp_page_back"),
+                   "target": int(back_to), "icon": self._back_icon}
+        self._page_actions[page_id] = acts
+        self._page_images.setdefault(page_id, {})
+        self._save_sub_pages()
+
+    def _gc_orphan_pages(self):
+        """Drop pages that nothing navigates to and that hold no content — e.g.
+        a page minted when the user picked 'New page' but then retargeted the
+        button to an existing page (#30). Conservative: never touches page 0 or
+        the current page, keeps any page with an image/fullscreen or a non-default
+        action (the auto back button on K1 doesn't count as content)."""
+        referenced = {0, self._current_page}
+        for page, acts in self._page_actions.items():
+            for i, a in enumerate(acts):
+                if a.get("type") == "page":
+                    referenced.add(self._page_target(a, i))
+                # A page targeted only by an 'also on press' chain step (#17) is
+                # still referenced — don't GC it.
+                for step in (a.get("actions") or []):
+                    if step.get("type") == "page" and isinstance(step.get("target"), int):
+                        referenced.add(step["target"])
+        removed = False
+        for p in list(self._page_actions.keys()):
+            if p in referenced or p == 0:
+                continue
+            imgs = {k: v for k, v in (self._page_images.get(p, {}) or {}).items()
+                    if v and v != self._blank_icon}
+            if imgs or self._page_fullscreen.get(p):
+                continue
+            empty = True
+            for i, a in enumerate(self._page_actions.get(p, [])):
+                t = a.get("type", "none")
+                if t == "none" or (i == 0 and t in ("page", "back")):
+                    continue  # default slot or the auto back button
+                empty = False
+                break
+            if empty:
+                self._page_actions.pop(p, None)
+                self._page_images.pop(p, None)
+                self._page_fullscreen.pop(p, None)
+                removed = True
+        if removed:
+            self._save_sub_pages()
+
+    def _is_nav_icon(self, path):
+        """True if `path` is an auto-assigned navigation icon (folder/back) — as
+        opposed to a user-chosen image we must not clobber."""
+        if not path:
+            return True
+        return (path == self._blank_icon or path == self._back_icon
+                or path == self._folder_icon
+                or path.startswith(os.path.join(CONFIG_DIR, "dp_folder_")))
+
+    def _save_page_action(self, page, idx, btype, action, extra=None,
+                          target=None, icon=None):
+        """Save one button's action and persist it.
+
+        `extra`  — optional secondary "also on press" chain (issue #16/#17);
+                   when omitted, any existing chain on the button is preserved.
+        `target` — for a 'page' action, the destination page id. None/"new"
+                   mints a fresh page (or reuses the button's current target).
+        `icon`   — optional custom image path for a 'page' button (#30).
+
+        The editor always switches the panel to the page being edited first, so
+        `page == self._current_page` and `self._images` is this page's live map."""
         actions = self._page_actions.setdefault(
             page, [dict(a) for a in _DEFAULT_ACTIONS])
+        old = actions[idx] if idx < len(actions) else {}
+        if not isinstance(old, dict):
+            old = {}
         entry = {"type": btype, "action": action}
         if extra is None:
-            old = actions[idx] if idx < len(actions) else None
-            if isinstance(old, dict) and isinstance(old.get("actions"), list) \
-                    and old["actions"]:
+            if isinstance(old.get("actions"), list) and old["actions"]:
                 entry["actions"] = old["actions"]
         elif extra:
             entry["actions"] = list(extra)
+
+        # ── 'page' action: resolve/allocate target + custom icon ──────────────
+        if btype == "page":
+            if target in (None, "", "new"):
+                target = (old.get("target")
+                          if old.get("type") == "page" and isinstance(old.get("target"), int)
+                          else self._mint_page_id())
+            target = int(target)
+            entry["target"] = target
+            keep_icon = icon or (old.get("icon") if old.get("type") == "page" else None)
+            if keep_icon:
+                entry["icon"] = keep_icon
+            self._ensure_page(target, back_to=page)
+
         actions[idx] = entry
+        self._page_images.setdefault(page, {})
+
         # Auto-generate a label icon for keypress/text keys with no custom image
         # yet, so they show what they do instead of staying blank (issue #31).
         self._maybe_auto_label_icon(page, idx, btype, action)
-        # Ensure sub-pages have an image dict so _switch_to_page produces a
-        # clean blank canvas instead of inheriting whatever was last in memory
-        if page != 0:
-            self._page_images.setdefault(page, {})
-            # Setting a slot to "none" on a sub-page also clears its image so
-            # the button goes blank (matches what the editor implies).
-            if btype == "none":
-                self._page_images[page].pop(str(idx), None)
-                if page == self._current_page:
-                    self._images[str(idx)] = self._blank_icon
-                    if self._tile_lbls:
-                        self._refresh_panel_tile(idx)
-                    if not self._uploading and not self._animating:
-                        self.after(200, self._start_upload)
-        if page == 0:
-            _save_displaypad_actions(actions)
-        else:
-            self._save_sub_pages()
-        # Auto-assign/clear folder icon for "page" type on main page
-        if page == 0:
-            if btype == "page":
-                # Generate folder icon with optional label text
-                icon_path = os.path.join(CONFIG_DIR, f"dp_folder_{idx}.png")
+
+        # ── Button image ──────────────────────────────────────────────────────
+        # Only the current page owns the live `self._images` map; a 'set_key'
+        # action (#18) can redefine a key on a page the user isn't viewing, so
+        # for any other page we edit that page's stored image dict directly and
+        # leave the visible page (and its gif/fullscreen state) untouched.
+        is_current = (page == self._current_page)
+        imgs = self._images if is_current else self._page_images[page]
+        if btype == "page":
+            icon_path = entry.get("icon")
+            existing = imgs.get(str(idx), "")
+            if icon_path and os.path.exists(icon_path):
+                imgs[str(idx)] = icon_path
+            elif existing and os.path.exists(existing) and not self._is_nav_icon(existing):
+                pass  # keep an image the user assigned via the editor (#30 custom icon)
+            else:
+                icon_path = self._folder_icon_name(page, idx)
                 _make_folder_icon(self._folder_icon, action, icon_path)
-                self._images[str(idx)] = icon_path
+                imgs[str(idx)] = icon_path
+            if is_current:
                 self._fullscreen_group.discard(idx)
                 self._gif_frames.pop(idx, None)
                 self._gui_frames_sm.pop(idx, None)
-            elif self._images.get(str(idx), "").startswith(
-                    os.path.join(CONFIG_DIR, "dp_folder_")):
-                # Was a page button, now changed — replace with blank
-                self._images[str(idx)] = self._blank_icon
-            self._page_images[0] = dict(self._images)
-            _save_displaypad_buttons(self._images)
+        elif btype == "back":
+            imgs[str(idx)] = self._back_icon
+        elif btype == "none":
+            # Blank the slot, but never wipe a user-assigned decorative image.
+            if self._is_nav_icon(imgs.get(str(idx), "")):
+                imgs[str(idx)] = self._blank_icon
+        elif btype not in ("keypress", "text") and self._is_nav_icon(
+                imgs.get(str(idx), "")) and imgs.get(str(idx)) != self._blank_icon:
+            # Was a nav button, now a non-visual action — drop the nav icon.
+            imgs[str(idx)] = self._blank_icon
+
+        # ── Persist ───────────────────────────────────────────────────────────
+        if is_current:
+            self._page_images[page] = dict(self._images)
+        if page == 0:
+            _save_displaypad_actions(actions)
+            _save_displaypad_buttons(self._page_images.get(0, {}))
+        else:
+            self._save_sub_pages()
+
+        # Only the visible page drives the panel preview / device upload.
+        if is_current:
             if self._tile_lbls:
                 self._refresh_panel_tile(idx)
-            # Push change to device
             if not self._uploading and not self._animating:
                 self.after(200, self._start_upload)
 
@@ -1947,9 +2202,6 @@ class DisplayPadPanel(ctk.CTkFrame):
         #31). Only fills an empty slot or replaces a previous auto-icon — a
         user-assigned image is never overwritten."""
         if btype not in ("keypress", "text") or not (action or "").strip():
-            return
-        # Sub-page K1 is the locked back button — leave it alone.
-        if page != 0 and idx == 0:
             return
         if page == self._current_page:
             cur = self._images.get(str(idx), "")
@@ -1978,15 +2230,19 @@ class DisplayPadPanel(ctk.CTkFrame):
                     self.after(200, self._start_upload)
 
     def _save_sub_pages(self):
-        """Persist all sub-page data to displaypad_pages.json."""
+        """Persist every non-main page to displaypad_pages.json. Page ids are no
+        longer bounded to 1..12 (a carousel can mint arbitrary ids — #30), so we
+        iterate the actual page keys instead of a fixed range."""
         out = {}
-        for p in range(1, 13):
-            if p in self._page_actions or p in self._page_images:
-                out[str(p)] = {
-                    "buttons": self._page_images.get(p, {}),
-                    "actions": self._page_actions.get(p, [dict(a) for a in _DEFAULT_ACTIONS]),
-                    "fullscreen": self._page_fullscreen.get(p),
-                }
+        for p in set(self._page_actions) | set(self._page_images):
+            if p == 0:
+                continue
+            out[str(p)] = {
+                "v": 2,   # page-model version — >=2 means don't re-derive back (#30)
+                "buttons": self._page_images.get(p, {}),
+                "actions": self._page_actions.get(p, [dict(a) for a in _DEFAULT_ACTIONS]),
+                "fullscreen": self._page_fullscreen.get(p),
+            }
         _save_displaypad_pages(out)
 
     def _switch_to_page(self, page_num, _retry=0):
@@ -2027,18 +2283,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._gui_next = {}
         self._fullscreen_group = set()
 
-        # Inject special icons
-        if page_num != 0:
-            self._images["0"] = self._back_icon
-        else:
-            # Inject folder icons (with label) for "page" buttons
-            for i, act in enumerate(self._page_actions.get(0, _DEFAULT_ACTIONS)):
-                if act.get("type") == "page":
-                    labeled = os.path.join(CONFIG_DIR, f"dp_folder_{i}.png")
-                    if os.path.exists(labeled):
-                        self._images[str(i)] = labeled
-                    else:
-                        self._images[str(i)] = self._folder_icon
+        # Inject navigation icons for every 'page'/'back' button on this page
+        # (any key can navigate now — #30).
+        self._inject_page_icons(page_num)
 
         # Fill empty buttons with blank image (device keeps old image otherwise)
         for idx in range(NUM_KEYS):
@@ -2084,32 +2331,29 @@ class DisplayPadPanel(ctk.CTkFrame):
             self.after(200, self._start_upload)
 
     def _get_available_pages(self):
-        """Return list of page numbers that exist (0 + any with 'page' actions on main)."""
-        pages = [0]
-        for i, act in enumerate(self._page_actions.get(0, _DEFAULT_ACTIONS)):
-            if act.get("type") == "page":
-                pages.append(i + 1)
-        return sorted(set(pages))
+        """Return the sorted list of page ids that exist. Pages are no longer
+        tied to a main-page button slot — any 'page' action on any page can
+        target any page id (#30 carousel)."""
+        return sorted(self._all_page_ids())
 
     def _get_page_name(self, p):
-        """Return the user-defined name for a page, falling back to 'Page N'."""
+        """Return the user-defined name for a page, falling back to 'Page N'.
+        The name is taken from the label of any 'page' action that targets it
+        (searched across all pages, not just the main page)."""
         if p == 0:
             return self.T("dp_page_main")
-        idx = p - 1
-        actions = self._page_actions.get(0, _DEFAULT_ACTIONS)
-        if 0 <= idx < len(actions):
-            act = actions[idx]
-            if act.get("type") == "page":
-                name = (act.get("action") or "").strip()
-                if name:
-                    return name
+        for page, acts in self._page_actions.items():
+            for i, act in enumerate(acts):
+                if act.get("type") == "page" and self._page_target(act, i) == p:
+                    name = (act.get("action") or "").strip()
+                    if name:
+                        return name
         return f"Page {p}"
 
     def _get_extra_actions(self, idx):
         """Extra action steps for button idx (issue #17). Stored as an `actions`
-        list on the button's action dict; empty for the common single-action case."""
-        if self._current_page != 0 and idx == 0:
-            return []
+        list on the button's action dict; empty for the common single-action case.
+        K1 on a sub-page is a normal key now (#30), so it too may carry a chain."""
         actions = self._page_actions.get(self._current_page, _DEFAULT_ACTIONS)
         if idx < len(actions):
             extra = actions[idx].get("actions")
@@ -2119,23 +2363,35 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _execute_action_k(self, idx):
         # Run the primary action, then any chained extras in order (issue #17).
-        btype, action = self._get_action(idx)
-        self._run_one_action(btype, action, idx)
+        # Pass the full action dict so a step can carry a page 'target' — this
+        # is what lets 'also on press' jump to a page (e.g. press the CPU key →
+        # also switch to a per-core page, issue #17).
+        primary = self._get_action_dict(idx)
+        self._run_one_action(primary.get("type", "none"),
+                             primary.get("action", ""), idx, step=primary)
         for step in self._get_extra_actions(idx):
             st = step.get("type", "none")
             sa = step.get("action", "")
             if st and st != "none":
-                self._run_one_action(st, sa, idx)
+                self._run_one_action(st, sa, idx, step=step)
 
-    def _run_one_action(self, btype, action, idx=0):
+    def _get_action_dict(self, idx, page=None):
+        """Full action dict for button idx on `page` (current page if None)."""
+        page = self._current_page if page is None else page
+        actions = self._page_actions.get(page, _DEFAULT_ACTIONS)
+        return actions[idx] if idx < len(actions) else {"type": "none", "action": ""}
+
+    def _run_one_action(self, btype, action, idx=0, step=None):
         # Redefine another key on demand (issue #18). action is JSON:
         #   {"page":P,"key":K,"type":T,"action":A}  (page/key optional → current/idx)
         if btype == "set_key" and action:
             self.after(0, lambda a=action, i=idx: self._apply_set_key_action(a, i))
             return
-        # Page navigation
+        # Page navigation — target any page id (#30 carousel). Legacy actions
+        # with no explicit target fall back to the old idx+1 sub-page.
         if btype == "page":
-            self.after(0, lambda p=idx + 1: self._switch_to_page(p))
+            target = self._page_target(step if step is not None else {}, idx)
+            self.after(0, lambda p=target: self._switch_to_page(p))
             return
         if btype == "back":
             self.after(0, lambda: self._switch_to_page(0))
@@ -2503,8 +2759,19 @@ class DisplayPadPanel(ctk.CTkFrame):
             if k not in assigned:
                 assigned[k] = None
         if not assigned:
-            self._uploading = False
-            self._info_label.configure(text=self.T("dp_no_images"), text_color=YLW)
+            if self._device_present:
+                # No images to show — but the pad may still be holding stale
+                # frames in its own memory (e.g. a plugin icon whose action was
+                # later removed kept rendering, even across reboots — issue #41).
+                # An empty-assigned worker run blanks every key and finishes.
+                self._uploading = True
+                self._info_label.configure(text=self.T("dp_connecting_pad"), text_color=FG2)
+                self._anim_thread = threading.Thread(
+                    target=self._worker, args=({},), daemon=True)
+                self._anim_thread.start()
+            else:
+                self._uploading = False
+                self._info_label.configure(text=self.T("dp_no_images"), text_color=YLW)
             return
         try:
             self._min_frame_ms = max(1, int(self._min_ms_var.get()))
@@ -2751,7 +3018,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._on_brightness_change(f"{self._brightness}%")
         if has_content:
             self._info_label.configure(text=self.T("dp_reconnected"), text_color=FG2)
-            self.after(2500, self._start_upload)
+        # Always re-run the upload on connect: with images it repaints them,
+        # without any it still clears stale frames the pad kept in its own
+        # memory (issue #41 — a removed plugin icon lingering across reboots).
+        self.after(2500, self._start_upload)
 
     def _on_device_disconnected(self):
         if not self._uploading and not self._animating:

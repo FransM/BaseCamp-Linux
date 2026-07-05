@@ -681,16 +681,21 @@ def _load_per_key_60():
         d = _read_json(PER_KEY_60_FILE)
         leds = [tuple(c) for c in d.get("leds", [])]
         leds = (leds + [(20, 20, 20)] * 64)[:64]
+        # Side ring: 44 LEDs (hw 126..169). Persisted so the per-LED ring editor
+        # (#4) keeps its state across sessions.
+        side = [tuple(c) for c in d.get("side", [])]
+        side = (side + [(20, 20, 20)] * 44)[:44]
         bri  = int(d.get("brightness", 100))
-        return leds, [], bri
+        return leds, side, bri
     except Exception:
-        return [(20, 20, 20)] * 64, [], 100
+        return [(20, 20, 20)] * 64, [(20, 20, 20)] * 44, 100
 
 
-def _save_per_key_60(leds, _side, bri):
+def _save_per_key_60(leds, side, bri):
     with open(PER_KEY_60_FILE, "w") as f:
         f.write(json.dumps({
             "leds": [list(c) for c in leds],
+            "side": [list(c) for c in (side or [])],
             "brightness": bri,
         }, indent=2))
 

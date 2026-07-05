@@ -57,6 +57,7 @@ EFFECT_WAVE      = 0x02
 EFFECT_TORNADO   = 0x03
 EFFECT_BREATHING = 0x04
 EFFECT_REACTIVE  = 0x05
+EFFECT_MATRIX    = 0x06   # issue #38 — confirmed from matrix.pcapng (dual colour)
 EFFECT_CUSTOM    = 0x07
 EFFECT_YETI      = 0x08
 EFFECT_OFF       = 0x09
@@ -192,6 +193,31 @@ def _send_mode(dev, effect, speed=50, brightness=100,
     _send(dev, buf)
 
 
+def _set_mode_only(dev, effect):
+    """Activate an effect (cmd 0x16) without sending colour details (0x17).
+
+    Custom mode paints via the 0x34/0x35 map, so it must NOT send 0x17: the
+    Windows Base Camp capture (custom_allred.pcapng) contains no 0x17 in custom
+    mode, and our 0x17 defaults colour1 to white — that stray packet is what
+    briefly flashed the whole keyboard white before the map landed (issue #33)."""
+    buf = _make_buf(0x16)
+    buf[5] = 1
+    buf[9] = effect
+    _send(dev, buf)
+
+
+def _commit_mode(dev, effect):
+    """Latch the active effect (cmd 0x1a).
+
+    Windows sends this right after switching mode and again after each custom
+    colour map. Without the trailing latch a freshly written custom map could
+    leave keys showing their pre-apply colour (the 'commit/latch packet' half of
+    issue #33). Byte layout: [1]=0x1a [2..4]=magic [5]=effect code."""
+    buf = _make_buf(0x1a)
+    buf[5] = effect
+    _send(dev, buf)
+
+
 def set_lighting_off(brightness=100):
     dev = open_device()
     try:
@@ -209,11 +235,14 @@ def set_lighting_static(r, g, b, brightness=100):
         dev.close()
 
 
-def set_lighting_breathing(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50):
+def set_lighting_breathing(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50,
+                           color_mode=COLOR_DUAL):
+    # color_mode: COLOR_SINGLE (one colour) or COLOR_DUAL (two). Breathing also
+    # supports rainbow via set_lighting_breathing_rainbow (issue #32).
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_BREATHING, speed=speed, brightness=brightness,
-                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2)
+                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2, color_mode=color_mode)
     finally:
         dev.close()
 
@@ -227,11 +256,14 @@ def set_lighting_breathing_rainbow(brightness=100, speed=50):
         dev.close()
 
 
-def set_lighting_wave(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50, direction=0):
+def set_lighting_wave(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, speed=50,
+                      direction=0, color_mode=COLOR_DUAL):
+    # color_mode: COLOR_SINGLE or COLOR_DUAL. Rainbow via set_lighting_wave_rainbow.
     dev = open_device()
     try:
         _send_mode(dev, EFFECT_WAVE, speed=speed, brightness=brightness,
-                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2, direction=direction)
+                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2, direction=direction,
+                   color_mode=color_mode)
     finally:
         dev.close()
 
@@ -274,6 +306,18 @@ def set_lighting_reactive(r=255, g=0, b=0, r2=0, g2=0, b2=0, brightness=100, spe
         dev.close()
 
 
+def set_lighting_matrix(r=255, g=0, b=0, r2=0, g2=0, b2=255, brightness=100, speed=50):
+    # Matrix is a dual-colour firmware effect (issue #38). Its 0x17 mode-detail
+    # packet is byte-for-byte the same shape as the other effects, so it rides
+    # the shared _send_mode path — only the effect code (0x06) differs.
+    dev = open_device()
+    try:
+        _send_mode(dev, EFFECT_MATRIX, speed=speed, brightness=brightness,
+                   r1=r, g1=g, b1=b, r2=r2, g2=g2, b2=b2)
+    finally:
+        dev.close()
+
+
 def set_lighting_yeti(r=255, g=0, b=0, r2=0, g2=0, b2=255, brightness=100, speed=50):
     dev = open_device()
     try:
@@ -310,7 +354,10 @@ def set_lighting_custom(colors, brightness=100, side_colors=None):
 
     dev = open_device()
     try:
-        _send_mode(dev, EFFECT_CUSTOM, brightness=brightness, color_mode=0)
+        # Activate custom mode WITHOUT 0x17 colour details (issue #33 white flash),
+        # then latch — mirroring the Windows custom-mode command order.
+        _set_mode_only(dev, EFFECT_CUSTOM)
+        _commit_mode(dev, EFFECT_CUSTOM)
 
         # Begin
         buf = _make_buf(0x34)
@@ -340,6 +387,8 @@ def set_lighting_custom(colors, brightness=100, side_colors=None):
 
         # End
         _send(dev, _make_buf(0x36))
+        # Latch the map so the keys hold the colours we just wrote (issue #33).
+        _commit_mode(dev, EFFECT_CUSTOM)
     finally:
         dev.close()
 
@@ -352,7 +401,11 @@ def set_lighting_side_static(r, g, b, brightness=100, key_colors=None):
     key colour map. If `key_colors` is None the main keys are blanked out.
     """
     side = [(r & 0xFF, g & 0xFF, b & 0xFF)] * NUM_SIDE_LEDS
-    keys = key_colors if key_colors is not None else [(0, 0, 0)] * NUM_KEYS
+    # When we have no saved per-key state to preserve, light the keys white
+    # rather than blanking them — a dark keyboard under low light is worse than
+    # a neutral default (issue #4, FransM). Callers pass the saved colours when
+    # they have them so the user's layout is kept instead.
+    keys = key_colors if key_colors is not None else [(255, 255, 255)] * NUM_KEYS
     set_lighting_custom(keys, brightness=brightness, side_colors=side)
 
 
@@ -417,7 +470,9 @@ def main():
                 b2 = int(sub_args[6]) if len(sub_args) > 6 else 0
                 bri = int(sub_args[7]) if len(sub_args) > 7 else 100
                 spd = int(sub_args[8]) if len(sub_args) > 8 else 50
-                set_lighting_breathing(r, g, b, r2, g2, b2, brightness=bri, speed=spd)
+                cm  = int(sub_args[9]) if len(sub_args) > 9 else COLOR_DUAL
+                set_lighting_breathing(r, g, b, r2, g2, b2, brightness=bri, speed=spd,
+                                       color_mode=cm)
             elif sub == "breathing-rainbow":
                 bri = int(sub_args[1]) if len(sub_args) > 1 else 100
                 spd = int(sub_args[2]) if len(sub_args) > 2 else 50
@@ -432,7 +487,9 @@ def main():
                 bri = int(sub_args[7]) if len(sub_args) > 7 else 100
                 spd = int(sub_args[8]) if len(sub_args) > 8 else 50
                 d   = int(sub_args[9]) if len(sub_args) > 9 else 0
-                set_lighting_wave(r, g, b, r2, g2, b2, brightness=bri, speed=spd, direction=d)
+                cm  = int(sub_args[10]) if len(sub_args) > 10 else COLOR_DUAL
+                set_lighting_wave(r, g, b, r2, g2, b2, brightness=bri, speed=spd,
+                                  direction=d, color_mode=cm)
             elif sub == "wave-rainbow":
                 bri = int(sub_args[1]) if len(sub_args) > 1 else 100
                 spd = int(sub_args[2]) if len(sub_args) > 2 else 50
@@ -471,6 +528,16 @@ def main():
                 bri = int(sub_args[7]) if len(sub_args) > 7 else 100
                 spd = int(sub_args[8]) if len(sub_args) > 8 else 50
                 set_lighting_yeti(r, g, b, r2, g2, b2, brightness=bri, speed=spd)
+            elif sub == "matrix":
+                r  = int(sub_args[1]) if len(sub_args) > 1 else 255
+                g  = int(sub_args[2]) if len(sub_args) > 2 else 0
+                b  = int(sub_args[3]) if len(sub_args) > 3 else 0
+                r2 = int(sub_args[4]) if len(sub_args) > 4 else 0
+                g2 = int(sub_args[5]) if len(sub_args) > 5 else 0
+                b2 = int(sub_args[6]) if len(sub_args) > 6 else 255
+                bri = int(sub_args[7]) if len(sub_args) > 7 else 100
+                spd = int(sub_args[8]) if len(sub_args) > 8 else 50
+                set_lighting_matrix(r, g, b, r2, g2, b2, brightness=bri, speed=spd)
             elif sub == "side-static":
                 if len(sub_args) < 4:
                     _die("rgb side-static R G B [brightness]")
