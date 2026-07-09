@@ -286,6 +286,13 @@
   "dp_configure_actions": "Configure Button Actions…",
   "dp_act_saved":         "K{k}: Action saved",
   "dp_also_on_press":     "Also on press:",
+  "dp_on_double_click":   "On double-click:",
+  "dp_panel_timeout":     "Page timeout:",
+  "dp_timeout_off":       "Off",
+  "dp_timeout_after":     "After",
+  "dp_timeout_idle":      "Idle",
+  "dp_timeout_secs":      "s →",
+  "dp_timeout_prev":      "Previous page",
 
   "dp_page_main":         "Main",
   "dp_page_label":        "Page:",

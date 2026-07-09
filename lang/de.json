@@ -287,6 +287,13 @@
   "dp_configure_actions": "Tasten-Aktionen konfigurieren…",
   "dp_act_saved":         "K{k}: Aktion gespeichert",
   "dp_also_on_press":     "Auch bei Druck:",
+  "dp_on_double_click":   "Bei Doppelklick:",
+  "dp_panel_timeout":     "Seiten-Timeout:",
+  "dp_timeout_off":       "Aus",
+  "dp_timeout_after":     "Nach",
+  "dp_timeout_idle":      "Untätig",
+  "dp_timeout_secs":      "s →",
+  "dp_timeout_prev":      "Vorherige Seite",
 
   "dp_page_main":         "Haupt",
   "dp_page_label":        "Seite:",

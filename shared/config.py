@@ -75,6 +75,7 @@ DISPLAYPAD_BTN_FILE        = os.path.join(CONFIG_DIR, "displaypad_buttons.json")
 DISPLAYPAD_FULLSCREEN_FILE = os.path.join(CONFIG_DIR, "displaypad_fullscreen.json")
 DISPLAYPAD_ACTIONS_FILE    = os.path.join(CONFIG_DIR, "displaypad_actions.json")
 DISPLAYPAD_PAGES_FILE      = os.path.join(CONFIG_DIR, "displaypad_pages.json")
+DISPLAYPAD_TIMEOUTS_FILE   = os.path.join(CONFIG_DIR, "displaypad_page_timeouts.json")
 DISPLAYPAD_ROTATION_FILE    = os.path.join(CONFIG_DIR, "displaypad_rotation")
 DISPLAYPAD_BRIGHTNESS_FILE  = os.path.join(CONFIG_DIR, "displaypad_brightness")
 DISPLAYPAD_DEBOUNCE_FILE    = os.path.join(CONFIG_DIR, "displaypad_debounce")
@@ -871,6 +872,43 @@ def _save_displaypad_pages(data):
     with open(DISPLAYPAD_PAGES_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
+
+
+def _load_displaypad_page_timeouts():
+    """Per-page auto-timeout config (issue #45).
+
+    Returns {int(page): {"mode": "off"|"after"|"idle", "seconds": int,
+    "target": int|"prev"}}. 'after' fires N seconds after the page is shown;
+    'idle' fires N seconds after the last keypress on that page."""
+    out = {}
+    try:
+        raw = _read_json(DISPLAYPAD_TIMEOUTS_FILE)
+        for k, v in (raw or {}).items():
+            if not isinstance(v, dict):
+                continue
+            tgt = v.get("target", 0)
+            if tgt != "prev":
+                try:
+                    tgt = int(tgt)
+                except (TypeError, ValueError):
+                    tgt = 0
+            out[int(k)] = {
+                "mode": v.get("mode", "off"),
+                "seconds": int(v.get("seconds", 0) or 0),
+                "target": tgt,
+            }
+    except Exception:
+        pass
+    return out
+
+
+def _save_displaypad_page_timeouts(data):
+    out = {}
+    for p, v in (data or {}).items():
+        if isinstance(v, dict) and v.get("mode", "off") != "off" and int(v.get("seconds", 0) or 0) > 0:
+            out[str(p)] = v
+    with open(DISPLAYPAD_TIMEOUTS_FILE, "w") as f:
+        json.dump(out, f, indent=2)
 
 
 def _load_displaypad_rotation():

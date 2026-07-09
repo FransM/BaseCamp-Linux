@@ -34,6 +34,7 @@ from shared.config import (
     _load_displaypad_rotation, _save_displaypad_rotation,
     _load_displaypad_brightness, _save_displaypad_brightness,
     _load_displaypad_debounce, _save_displaypad_debounce,
+    _load_displaypad_page_timeouts, _save_displaypad_page_timeouts,
 )
 
 try:
@@ -183,6 +184,11 @@ def _init_device(hid_dev):
         for _ in range(10):
             resp = hid_dev.read(64, timeout=100)
             if resp and resp[0] == 0x11:
+                # The pad acknowledges INIT before its display engine is ready to
+                # accept pixel data; streaming immediately after a fresh
+                # enumeration timed out the first image write ("Connection timed
+                # out", issue #43). A short settle lets the firmware come up.
+                time.sleep(0.25)
                 return
         time.sleep(0.1)
     raise RuntimeError("DisplayPad did not respond to INIT")
@@ -881,6 +887,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._sec_cmd     = [tk.StringVar() for _ in range(12)]
         self._sec_menus   = []
         self._sec_entries = []
+        # Double-click action (issue #47)
+        self._dbl_type    = [tk.StringVar() for _ in range(12)]
+        self._dbl_cmd     = [tk.StringVar() for _ in range(12)]
+        self._dbl_menus   = []
+        self._dbl_entries = []
         self._cards       = []
 
         self._build_ui()
@@ -965,6 +976,18 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._sec_type_labels()[_SECONDARY_TYPES.index(_sectype)])
             self._sec_menus[i].configure(state="normal")
             self._sec_entries[i].configure(state="normal")
+
+            # Double-click action (issue #47)
+            _dbl = act.get("double") if isinstance(act, dict) else None
+            _dbltype = _dbl.get("type", "none") if isinstance(_dbl, dict) else "none"
+            if _dbltype not in _SECONDARY_TYPES:
+                _dbltype = "none"
+            self._dbl_type[i].set(_dbltype)
+            self._dbl_cmd[i].set(_dbl.get("action", "") if isinstance(_dbl, dict) else "")
+            self._dbl_menus[i].set(
+                self._sec_type_labels()[_SECONDARY_TYPES.index(_dbltype)])
+            self._dbl_menus[i].configure(state="normal")
+            self._dbl_entries[i].configure(state="normal")
 
             menu = self._type_menus[i]
             menu.configure(values=labels)
@@ -1080,6 +1103,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
         # Update page selector
         self._page_selector.set(self._panel._get_page_name(page))
+        # Refresh the per-page auto-timeout row for the selected page (#45).
+        self._load_timeout(page)
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -1099,6 +1124,39 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             command=self._on_page_change)
         self._page_selector.pack(side="right")
         self._page_list = pages
+
+        # ── Per-page auto-timeout (issue #45) ─────────────────────────────────
+        # Applies to the page currently selected above: after N seconds (or N
+        # seconds of no keypress in 'idle' mode) the panel jumps to a target page.
+        to_row = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
+        to_row.pack(fill="x", padx=12, pady=(0, 6))
+        ctk.CTkLabel(to_row, text=self._app.T("dp_panel_timeout"),
+                     font=("Helvetica", 10), text_color=FG2).pack(
+                         side="left", padx=(10, 4), pady=6)
+        self._to_mode_menu = ctk.CTkOptionMenu(
+            to_row, values=self._timeout_mode_labels(),
+            fg_color=BG3, button_color=BLUE, button_hover_color="#0884be",
+            text_color=FG, font=("Helvetica", 10), width=96, height=26,
+            dynamic_resizing=False,
+            command=lambda v: self._on_timeout_change())
+        self._to_mode_menu.pack(side="left", padx=2)
+        self._to_secs_var = tk.StringVar(value="10")
+        self._to_secs_entry = ctk.CTkEntry(
+            to_row, textvariable=self._to_secs_var, width=44, height=26,
+            fg_color=BG3, text_color=FG, border_color=BORDER,
+            font=("Helvetica", 10))
+        self._to_secs_entry.pack(side="left", padx=(4, 1))
+        self._to_secs_entry.bind("<Return>",   lambda e: self._on_timeout_change())
+        self._to_secs_entry.bind("<FocusOut>", lambda e: self._on_timeout_change())
+        ctk.CTkLabel(to_row, text=self._app.T("dp_timeout_secs"),
+                     font=("Helvetica", 10), text_color=FG2).pack(side="left", padx=(0, 2))
+        self._to_target_menu = ctk.CTkOptionMenu(
+            to_row, values=[""],
+            fg_color=BG3, button_color=BLUE, button_hover_color="#0884be",
+            text_color=FG, font=("Helvetica", 10), width=110, height=26,
+            dynamic_resizing=False,
+            command=lambda v: self._on_timeout_change())
+        self._to_target_menu.pack(side="left", padx=(2, 10))
 
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG2, corner_radius=6,
                                         width=480, height=460)
@@ -1228,6 +1286,31 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             attach_clipboard_menu(sec_entry, self._app.T)
             self._sec_entries.append(sec_entry)
 
+            # Double-click action (issue #47) — a distinct action on a quick
+            # second press. When set, the primary is held until the click window
+            # elapses; when 'none', the key stays instant.
+            dbl_row = ctk.CTkFrame(card, fg_color="transparent")
+            dbl_row.pack(fill="x", padx=4, pady=(0, 6))
+            ctk.CTkLabel(dbl_row, text=self._app.T("dp_on_double_click"),
+                         font=("Helvetica", 10), text_color=FG2,
+                         anchor="w").pack(side="left", padx=(4, 2))
+            dbl_menu = ctk.CTkOptionMenu(
+                dbl_row, values=self._sec_type_labels(),
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), width=88, height=28,
+                dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_dbl_type_change(val, ix))
+            dbl_menu.pack(side="left", padx=(2, 2))
+            self._dbl_menus.append(dbl_menu)
+            dbl_entry = ctk.CTkEntry(dbl_row, textvariable=self._dbl_cmd[i],
+                         fg_color=BG2, text_color=FG, border_color=BORDER,
+                         font=("Helvetica", 11), height=28)
+            dbl_entry.pack(side="left", padx=4, expand=True, fill="x")
+            dbl_entry.bind("<Return>",   lambda e, ix=i: self._apply(ix))
+            dbl_entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
+            attach_clipboard_menu(dbl_entry, self._app.T)
+            self._dbl_entries.append(dbl_entry)
+
         self._info_lbl = ctk.CTkLabel(self, text="",
                                       font=("Helvetica", 11), text_color=GRN)
         self._info_lbl.pack(pady=(0, 4))
@@ -1253,6 +1336,69 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 except Exception:
                     pass
                 break
+
+    # ── Per-page auto-timeout controls (issue #45) ────────────────────────────
+    _TIMEOUT_MODES = ["off", "after", "idle"]
+
+    def _timeout_mode_labels(self):
+        return [self._app.T("dp_timeout_off"),
+                self._app.T("dp_timeout_after"),
+                self._app.T("dp_timeout_idle")]
+
+    def _timeout_target_options(self):
+        """(labels, {label: target}) for the timeout destination picker: every
+        page plus a 'previous page' entry that returns to wherever we came from."""
+        mapping, labels = {}, []
+        prevlbl = self._app.T("dp_timeout_prev")
+        labels.append(prevlbl)
+        mapping[prevlbl] = "prev"
+        for p in self._panel._get_available_pages():
+            lbl = self._panel._get_page_name(p)
+            labels.append(lbl)
+            mapping[lbl] = p
+        return labels, mapping
+
+    def _load_timeout(self, page):
+        """Populate the timeout row from the selected page's stored config."""
+        to = self._panel._page_timeout.get(page) or {}
+        mode = to.get("mode", "off")
+        if mode not in self._TIMEOUT_MODES:
+            mode = "off"
+        self._to_mode_menu.set(self._timeout_mode_labels()[self._TIMEOUT_MODES.index(mode)])
+        secs = int(to.get("seconds", 0) or 0)
+        self._to_secs_var.set(str(secs if secs > 0 else 10))
+        labels, mapping = self._timeout_target_options()
+        self._to_target_menu.configure(values=labels)
+        tgt = to.get("target", "prev")
+        sel = None
+        for lbl, val in mapping.items():
+            if val == tgt:
+                sel = lbl
+                break
+        self._to_target_menu.set(sel or self._app.T("dp_timeout_prev"))
+
+    def _on_timeout_change(self):
+        """Persist the timeout row into the selected page's config (#45)."""
+        try:
+            mode = self._TIMEOUT_MODES[
+                self._timeout_mode_labels().index(self._to_mode_menu.get())]
+        except (ValueError, IndexError):
+            mode = "off"
+        try:
+            secs = max(1, int(float(self._to_secs_var.get())))
+        except (ValueError, TypeError):
+            secs = 10
+        _labels, mapping = self._timeout_target_options()
+        tgt = mapping.get(self._to_target_menu.get(), "prev")
+        if mode == "off":
+            self._panel._page_timeout.pop(self._page, None)
+        else:
+            self._panel._page_timeout[self._page] = {
+                "mode": mode, "seconds": secs, "target": tgt}
+        _save_displaypad_page_timeouts(self._panel._page_timeout)
+        # Re-arm live if the page being edited is the one on the device now.
+        if self._page == self._panel._current_page:
+            self._panel._arm_page_timeout(self._page)
 
     def _page_target_options(self):
         """(labels, {label: target}) for the page-target picker: every existing
@@ -1285,6 +1431,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             if cur in types:
                 self._type_menus[idx].set(labels[types.index(cur)])
             return
+        old_type = self._act_type[idx].get()
         types = self._get_action_types(include_page=True)
         labels = self._type_labels(include_page=True)
         try:
@@ -1292,6 +1439,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, IndexError):
             internal = "none"
         self._act_type[idx].set(internal)
+        # A value carried over from the previous type is meaningless for the new
+        # one (a mountpoint like /home/frans left over after switching from
+        # 'Monitor: Disk' to 'Monitor: Disks (cycle)', which wants seconds, not a
+        # path). Clear it so each branch below can fill its own default (issue #9).
+        if internal != old_type:
+            self._act_cmd[idx].set("")
         btn = self._browse_btns[idx]
         if internal in ("folder", "app"):
             btn.configure(state="normal", image=self._folder_img)
@@ -1303,6 +1456,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._macro_combos[idx].pack_forget()
         self._hue_combos[idx].pack_forget()
         self._page_combos[idx].pack_forget()
+        self._plugin_combos[idx].pack_forget()
         self._cmd_entries[idx].pack_forget()
         self._browse_btns[idx].pack_forget()
         if internal == "obs":
@@ -1338,8 +1492,28 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             # Rebuild full value when combo changes
             self._hue_bri_target[idx] = target
         else:
-            self._cmd_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
-            self._browse_btns[idx].pack(side="left", padx=(0, 4))
+            # Plugin action types may declare `value_options` (e.g. 'Monitor:
+            # Disk' offers a mountpoint dropdown). Types without them — including
+            # sibling plugin types like 'Monitor: Disks (cycle)' — fall through to
+            # the plain entry. Without mirroring _load_page here, switching to a
+            # no-options type left the previous dropdown packed (issue #9).
+            pm = getattr(self._app, "_plugin_manager", None)
+            opts = pm.get_action_value_options(internal) if pm else None
+            if opts is not None:
+                opt_labels = [lbl for lbl, _v in opts]
+                self._plugin_combo_maps[idx] = {lbl: val for lbl, val in opts}
+                self._plugin_combos[idx].configure(values=opt_labels)
+                cur = self._act_cmd[idx].get()
+                shown = cur
+                for lbl, val in opts:
+                    if val == cur:
+                        shown = lbl
+                        break
+                self._plugin_combos[idx].set(shown)
+                self._plugin_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
+            else:
+                self._cmd_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
+                self._browse_btns[idx].pack(side="left", padx=(0, 4))
 
         # "page" type: label entry (button caption) + target picker (#30).
         if internal == "page":
@@ -1388,6 +1562,27 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._sec_entries[idx].configure(placeholder_text="")
         else:
             self._sec_entries[idx].configure(placeholder_text="")
+        self._apply(idx)
+
+    def _on_dbl_type_change(self, label, idx):
+        """Double-click action type changed (issue #47)."""
+        labels = self._sec_type_labels()
+        try:
+            internal = _SECONDARY_TYPES[labels.index(label)]
+        except (ValueError, IndexError):
+            internal = "none"
+        self._dbl_type[idx].set(internal)
+        if internal == "keypress":
+            self._dbl_entries[idx].configure(
+                placeholder_text="e.g. F12, ctrl+shift+a")
+        elif internal == "text":
+            self._dbl_entries[idx].configure(
+                placeholder_text=self._app.T("action_type_text_hint"))
+        elif internal == "none":
+            self._dbl_cmd[idx].set("")
+            self._dbl_entries[idx].configure(placeholder_text="")
+        else:
+            self._dbl_entries[idx].configure(placeholder_text="")
         self._apply(idx)
 
     def _on_obs_select(self, val, idx):
@@ -1606,9 +1801,25 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 # unresolved / 'New page' name → skip (nothing to jump to)
             elif secval:
                 extra = [step]
+        # Double-click action (issue #47): authoritative dict from this key's
+        # double-click row ({"type":"none"} clears it).
+        dbltype = self._dbl_type[idx].get() if idx < len(self._dbl_type) else "none"
+        dblval  = self._dbl_cmd[idx].get().strip() if idx < len(self._dbl_cmd) else ""
+        double = {"type": "none", "action": ""}
+        if dbltype and dbltype != "none":
+            step = {"type": dbltype, "action": dblval}
+            if dbltype == "page":
+                _l2, map2 = self._page_target_options()
+                tgt2 = map2.get(dblval)
+                if isinstance(tgt2, int):
+                    step["target"] = tgt2
+                    double = step
+            elif dblval:
+                double = step
         # Primary 'page' action carries the target picked in the combo (#30).
         target = self._page_targets[idx] if btype == "page" else None
-        self._panel._save_page_action(self._page, idx, btype, action, extra, target=target)
+        self._panel._save_page_action(self._page, idx, btype, action, extra,
+                                      target=target, double=double)
         self._panel._gc_orphan_pages()
         self._info_lbl.configure(
             text=self._app.T("dp_act_saved", k=idx + 1), text_color=GRN)
@@ -1659,6 +1870,17 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._rotation         = _load_displaypad_rotation()
         self._brightness       = _load_displaypad_brightness()
         self._debounce         = _load_displaypad_debounce()
+        # Double-click support (issue #47): a key with a 'double' action fires
+        # that on a quick second press; a lone press fires the primary only after
+        # the window elapses. Keys without a double action stay instant.
+        self._dc_timers        = {}     # key idx -> pending single-press after() id
+        self._dc_window        = 0.6    # seconds to wait for a second press
+        self._dc_antibounce    = 0.12   # min gap between the two taps (filters bounce)
+        # Per-page auto-timeout (issue #45): jump to a target page after N seconds
+        # (mode 'after') or N seconds of no keypress (mode 'idle').
+        self._page_timeout     = _load_displaypad_page_timeouts()
+        self._timeout_after_id = None
+        self._prev_page        = 0      # page we switched here from ('prev' target)
         # GUI preview animation
         self._gui_frames_sm  = {}
         self._gui_fidx       = {}
@@ -1667,6 +1889,16 @@ class DisplayPadPanel(ctk.CTkFrame):
         # Device presence monitor
         self._monitor_stop    = threading.Event()
         self._device_present  = False
+        # hidraw path of interface 3 for the currently-present pad. A quick
+        # unplug/replug re-enumerates the pad under a new path without the
+        # presence flag ever toggling within one poll window; comparing paths
+        # catches that so we still re-init (issue #44).
+        self._dp_path         = None
+        # True only after a successful INIT on the current connection. Plugin
+        # image uploads wait for this so they don't stream pixels to a pad that
+        # has enumerated but not finished booting (the "mountain logo not shown
+        # yet" state that timed out the first plugin upload, issue #43).
+        self._pad_ready       = False
         # One-time hint when the DisplayPad is on the USB bus but its command
         # interface (3) never enumerates — the usbhid interface-order quirk
         # FransM hit on Ubuntu/Mint (issue #36).
@@ -1771,6 +2003,8 @@ class DisplayPadPanel(ctk.CTkFrame):
         threading.Thread(target=self._monitor_loop, daemon=True).start()
         threading.Thread(target=self._key_event_loop, daemon=True).start()
         self.bind("<Destroy>", lambda e: (self._monitor_stop.set(), self._key_stop.set()))
+        # Arm the auto-timeout for the start page, if it has one (#45).
+        self.after(800, lambda: self._arm_page_timeout(self._current_page))
 
     def T(self, key, **kwargs):
         return self._app.T(key, **kwargs)
@@ -2067,11 +2301,20 @@ class DisplayPadPanel(ctk.CTkFrame):
             for i, a in enumerate(acts):
                 if a.get("type") == "page":
                     referenced.add(self._page_target(a, i))
-                # A page targeted only by an 'also on press' chain step (#17) is
-                # still referenced — don't GC it.
+                # A page targeted only by an 'also on press' chain step (#17) or a
+                # double-click action (#47) is still referenced — don't GC it.
                 for step in (a.get("actions") or []):
                     if step.get("type") == "page" and isinstance(step.get("target"), int):
                         referenced.add(step["target"])
+                dbl = a.get("double")
+                if (isinstance(dbl, dict) and dbl.get("type") == "page"
+                        and isinstance(dbl.get("target"), int)):
+                    referenced.add(dbl["target"])
+        # A page reachable only as an auto-timeout destination is referenced too (#45).
+        for _p, to in (self._page_timeout or {}).items():
+            tgt = (to or {}).get("target")
+            if isinstance(tgt, int):
+                referenced.add(tgt)
         removed = False
         for p in list(self._page_actions.keys()):
             if p in referenced or p == 0:
@@ -2105,7 +2348,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                 or path.startswith(os.path.join(CONFIG_DIR, "dp_folder_")))
 
     def _save_page_action(self, page, idx, btype, action, extra=None,
-                          target=None, icon=None):
+                          target=None, icon=None, double=None):
         """Save one button's action and persist it.
 
         `extra`  — optional secondary "also on press" chain (issue #16/#17);
@@ -2113,6 +2356,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         `target` — for a 'page' action, the destination page id. None/"new"
                    mints a fresh page (or reuses the button's current target).
         `icon`   — optional custom image path for a 'page' button (#30).
+        `double` — optional double-click action dict (issue #47). None preserves
+                   any existing one (so runtime set_key edits don't wipe it); a
+                   dict sets it; a dict with type 'none' clears it.
 
         The editor always switches the panel to the page being edited first, so
         `page == self._current_page` and `self._images` is this page's live map."""
@@ -2127,6 +2373,13 @@ class DisplayPadPanel(ctk.CTkFrame):
                 entry["actions"] = old["actions"]
         elif extra:
             entry["actions"] = list(extra)
+        # Double-click action (#47): None = preserve, dict = authoritative.
+        if double is None:
+            od = old.get("double")
+            if isinstance(od, dict) and od.get("type", "none") not in ("none", ""):
+                entry["double"] = od
+        elif isinstance(double, dict) and double.get("type", "none") not in ("none", ""):
+            entry["double"] = double
 
         # ── 'page' action: resolve/allocate target + custom icon ──────────────
         if btype == "page":
@@ -2265,8 +2518,20 @@ class DisplayPadPanel(ctk.CTkFrame):
             if _retry < 40:  # ~6s worst case at 150ms
                 self.after(150, lambda: self._switch_to_page(page_num, _retry + 1))
             return
+        # Cancel any pending double-click timers: they belong to the page we're
+        # leaving. Left armed, a stale timer would fire the primary against the
+        # wrong page, or a later single press on the new page would be mistaken
+        # for its second click (issue #47, surfaced by the #30/#45 page switches).
+        for _tid in self._dc_timers.values():
+            try:
+                self.after_cancel(_tid)
+            except Exception:
+                pass
+        self._dc_timers.clear()
+
         # Save current page state
         old_page = self._current_page
+        self._prev_page = old_page   # 'previous page' timeout target (#45)
         self._page_images[old_page] = dict(self._images)
         self._page_gif_frames[old_page] = dict(self._gif_frames)
         self._page_gui_frames[old_page] = dict(self._gui_frames_sm)
@@ -2330,6 +2595,9 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._uploading = True
             self.after(200, self._start_upload)
 
+        # Start this page's auto-timeout countdown, if any (#45).
+        self._arm_page_timeout(page_num)
+
     def _get_available_pages(self):
         """Return the sorted list of page ids that exist. Pages are no longer
         tied to a main-page button slot — any 'page' action on any page can
@@ -2362,6 +2630,34 @@ class DisplayPadPanel(ctk.CTkFrame):
         return []
 
     def _execute_action_k(self, idx):
+        # A keypress resets the idle auto-timeout for the current page (#45).
+        self._note_keypress()
+        # Double-click (issue #47): if this key has a 'double' action, delay the
+        # primary until the window elapses so a quick second press can trigger the
+        # double action instead. Keys with no double action fire instantly.
+        dbl = self._get_double_action(idx)
+        if dbl is None:
+            self._fire_action_chain(idx)
+            return
+        tid = self._dc_timers.pop(idx, None)
+        if tid is not None:
+            # Second press inside the window → double-click action, cancel single.
+            try:
+                self.after_cancel(tid)
+            except Exception:
+                pass
+            self._run_one_action(dbl.get("type", "none"),
+                                 dbl.get("action", ""), idx, step=dbl)
+        else:
+            self._dc_timers[idx] = self.after(
+                int(self._dc_window * 1000), lambda i=idx: self._dc_fire_single(i))
+
+    def _dc_fire_single(self, idx):
+        """Window elapsed with no second press → treat as a single click."""
+        self._dc_timers.pop(idx, None)
+        self._fire_action_chain(idx)
+
+    def _fire_action_chain(self, idx):
         # Run the primary action, then any chained extras in order (issue #17).
         # Pass the full action dict so a step can carry a page 'target' — this
         # is what lets 'also on press' jump to a page (e.g. press the CPU key →
@@ -2374,6 +2670,63 @@ class DisplayPadPanel(ctk.CTkFrame):
             sa = step.get("action", "")
             if st and st != "none":
                 self._run_one_action(st, sa, idx, step=step)
+
+    def _get_double_action(self, idx):
+        """The 'double' action dict for button idx on the current page, or None
+        when the key has no double-click action configured (issue #47)."""
+        d = self._get_action_dict(idx).get("double")
+        if isinstance(d, dict) and d.get("type", "none") not in ("none", ""):
+            return d
+        return None
+
+    def _is_double_key(self, k):
+        """Cheap check used by the key listener to pick a per-key debounce: a
+        double-click key needs a short anti-bounce so a deliberate second tap
+        isn't swallowed by the normal debounce (issue #47)."""
+        acts = self._page_actions.get(self._current_page)
+        if acts and k < len(acts) and isinstance(acts[k], dict):
+            d = acts[k].get("double")
+            return isinstance(d, dict) and d.get("type", "none") not in ("none", "")
+        return False
+
+    # ── Per-page auto-timeout (issue #45) ─────────────────────────────────────
+    def _arm_page_timeout(self, page):
+        """(Re)start the auto-timeout timer for `page`, cancelling any pending
+        one. No-op unless the page has an 'after'/'idle' timeout configured."""
+        if self._timeout_after_id is not None:
+            try:
+                self.after_cancel(self._timeout_after_id)
+            except Exception:
+                pass
+            self._timeout_after_id = None
+        to = self._page_timeout.get(page)
+        if not to:
+            return
+        secs = int(to.get("seconds", 0) or 0)
+        if to.get("mode", "off") in ("after", "idle") and secs > 0:
+            self._timeout_after_id = self.after(
+                secs * 1000, lambda p=page: self._fire_page_timeout(p))
+
+    def _fire_page_timeout(self, page):
+        self._timeout_after_id = None
+        if self._current_page != page:
+            return
+        to = self._page_timeout.get(page) or {}
+        tgt = to.get("target", 0)
+        if tgt == "prev":
+            tgt = self._prev_page
+        try:
+            tgt = int(tgt)
+        except (TypeError, ValueError):
+            tgt = 0
+        if tgt != page:
+            self._switch_to_page(tgt)
+
+    def _note_keypress(self):
+        """Idle-mode timeout restarts its countdown on every keypress (#45)."""
+        to = self._page_timeout.get(self._current_page)
+        if to and to.get("mode") == "idle" and int(to.get("seconds", 0) or 0) > 0:
+            self._arm_page_timeout(self._current_page)
 
     def _get_action_dict(self, idx, page=None):
         """Full action dict for button idx on `page` (current page if None)."""
@@ -2531,7 +2884,12 @@ class DisplayPadPanel(ctk.CTkFrame):
                     for k, (bi, mask) in enumerate(_KEY_MAP):
                         if bi < len(data):
                             if (data[bi] & mask) and not (prev[bi] & mask):
-                                if now - last_fire.get(k, 0) >= self._debounce:
+                                # A double-click key uses a short anti-bounce so a
+                                # deliberate second tap gets through; every other
+                                # key keeps the user's debounce (issue #47).
+                                deb = (self._dc_antibounce if self._is_double_key(k)
+                                       else self._debounce)
+                                if now - last_fire.get(k, 0) >= deb:
                                     last_fire[k] = now
                                     self.after(0, lambda k=k: self._execute_action_k(k))
                     prev = data
@@ -2819,6 +3177,10 @@ class DisplayPadPanel(ctk.CTkFrame):
             return
         try:
             _init_device(hid_dev)
+            # The pad is now booted and addressable: let queued plugin uploads
+            # proceed (they wait on this to avoid streaming to a not-yet-ready
+            # pad, issue #43).
+            self._pad_ready = True
 
             rot = self._rotation
 
@@ -2966,23 +3328,43 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _monitor_loop(self):
         """Background thread: detect device connect/disconnect and auto-reupload."""
         while not self._monitor_stop.is_set():
-            present = HID_AVAILABLE and any(
-                d['interface_number'] == 3
-                for d in hid.enumerate(VID, PID)
-            )
+            path = None
+            if HID_AVAILABLE:
+                try:
+                    for d in hid.enumerate(VID, PID):
+                        if d['interface_number'] == 3:
+                            path = d['path']
+                            break
+                except Exception:
+                    path = None
+            present = path is not None
+
             if present and not self._device_present:
                 # Device just connected / reconnected
                 self._device_present = True
+                self._dp_path = path
+                self._pad_ready = False
+                has_content = bool(self._images or self._gif_frames)
+                self.after(0, lambda hc=has_content: self._on_device_connected(hc))
+            elif present and self._device_present and path != self._dp_path:
+                # Re-enumerated under a new path without us seeing the gap: the
+                # user unplugged and replugged within a single poll window, so
+                # the pad booted fresh and needs INIT again even though presence
+                # never toggled (issue #44).
+                self._dp_path = path
+                self._pad_ready = False
                 has_content = bool(self._images or self._gif_frames)
                 self.after(0, lambda hc=has_content: self._on_device_connected(hc))
             elif not present and self._device_present:
                 # Device just disconnected
                 self._device_present = False
+                self._dp_path = None
+                self._pad_ready = False
                 self.after(0, self._on_device_disconnected)
             elif not present and not self._device_present:
                 # Plugged in but interface 3 missing? Likely the usbhid quirk.
                 self._maybe_warn_usb_quirk()
-            self._monitor_stop.wait(timeout=3)
+            self._monitor_stop.wait(timeout=2)
 
     def _maybe_warn_usb_quirk(self):
         """If the DisplayPad is on the USB bus but its command interface (3)
@@ -3012,8 +3394,13 @@ class DisplayPadPanel(ctk.CTkFrame):
         except Exception:
             pass
 
-    def _on_device_connected(self, has_content):
+    def _on_device_connected(self, has_content, _tries=0):
         if self._uploading or self._animating:
+            # A previous upload/animation session still owns the device. Don't
+            # drop the reconnect (that left the pad un-initialised after a
+            # replug, issue #44) — retry until the session finishes, then init.
+            if _tries < 30:
+                self.after(500, lambda: self._on_device_connected(has_content, _tries + 1))
             return
         self._on_brightness_change(f"{self._brightness}%")
         if has_content:
@@ -3062,6 +3449,12 @@ class DisplayPadPanel(ctk.CTkFrame):
         # listener on interface 3 and causes "Connection timed out").
         if busy:
             return
+        # Hold off until the pad has been INIT'd on this connection. The primary
+        # connect upload sets _pad_ready and then flushes the queue via _finish,
+        # so nothing is lost — this only stops a plugin from streaming pixels to
+        # a pad that enumerated but hasn't finished booting (issue #43).
+        if not self._pad_ready:
+            return
         self._maybe_start_plugin_worker()
 
     def _maybe_start_plugin_worker(self):
@@ -3098,6 +3491,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                     return
                 try:
                     _init_device(hid_dev)
+                    self._pad_ready = True
                     self._drain_plugin_queue(usb_dev, hid_dev)
                     self._last_plugin_error = None
                 except Exception as e:

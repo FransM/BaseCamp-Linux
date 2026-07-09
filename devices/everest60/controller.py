@@ -354,43 +354,76 @@ def set_lighting_custom(colors, brightness=100, side_colors=None):
 
     dev = open_device()
     try:
-        # Activate custom mode WITHOUT 0x17 colour details (issue #33 white flash),
-        # then latch — mirroring the Windows custom-mode command order.
-        _set_mode_only(dev, EFFECT_CUSTOM)
-        _commit_mode(dev, EFFECT_CUSTOM)
-
-        # Begin
-        buf = _make_buf(0x34)
-        buf[5] = _brightness_val(brightness)
-        buf[6] = 0xC0
-        _send(dev, buf)
-
-        # Map — 14 IRGB entries per packet (65 - 9 header bytes = 56, 56//4 = 14)
-        COLORS_PER_PKT = 14
-        total = len(stream)
-        idx = 0
-        while idx < total:
-            buf = _make_buf(0x35)
-            pos = 9
-            count = 0
-            while idx < total and count < COLORS_PER_PKT:
-                hw, r, g, b = stream[idx]
-                buf[pos]     = hw
-                buf[pos + 1] = r
-                buf[pos + 2] = g
-                buf[pos + 3] = b
-                pos += 4
-                idx += 1
-                count += 1
-            buf[5] = 0x0A if idx == total else 0x0E
-            _send(dev, buf)
-
-        # End
-        _send(dev, _make_buf(0x36))
-        # Latch the map so the keys hold the colours we just wrote (issue #33).
-        _commit_mode(dev, EFFECT_CUSTOM)
+        _write_custom_map(dev, stream, brightness=brightness)
     finally:
         dev.close()
+
+
+def _write_custom_map(dev, stream, brightness=100):
+    """Paint an explicit [(hw_index, r, g, b), ...] stream in custom mode.
+
+    Shared by set_lighting_custom and the ESC-index diagnostic (#46). Activates
+    custom mode WITHOUT 0x17 colour details (issue #33 white flash), streams the
+    map in 0x35 packets, then latches with 0x1a so the keys hold the colours."""
+    _set_mode_only(dev, EFFECT_CUSTOM)
+    _commit_mode(dev, EFFECT_CUSTOM)
+
+    # Begin
+    buf = _make_buf(0x34)
+    buf[5] = _brightness_val(brightness)
+    buf[6] = 0xC0
+    _send(dev, buf)
+
+    # Map — 14 IRGB entries per packet (65 - 9 header bytes = 56, 56//4 = 14)
+    COLORS_PER_PKT = 14
+    total = len(stream)
+    idx = 0
+    while idx < total:
+        buf = _make_buf(0x35)
+        pos = 9
+        count = 0
+        while idx < total and count < COLORS_PER_PKT:
+            hw, r, g, b = stream[idx]
+            buf[pos]     = hw & 0xFF
+            buf[pos + 1] = r & 0xFF
+            buf[pos + 2] = g & 0xFF
+            buf[pos + 3] = b & 0xFF
+            pos += 4
+            idx += 1
+            count += 1
+        buf[5] = 0x0A if idx == total else 0x0E
+        _send(dev, buf)
+
+    # End
+    _send(dev, _make_buf(0x36))
+    # Latch the map so the keys hold the colours we just wrote (issue #33).
+    _commit_mode(dev, EFFECT_CUSTOM)
+
+
+def diagnose_esc_index(start=0, end=21, hold=3.0):
+    """ESC-index finder for issue #46.
+
+    We could never confirm the firmware LED address of the ESC key without an
+    Everest 60 in hand: filling every key red leaves ESC a stray blue-green
+    because our best guess (index 21) doesn't drive its LED. This walks a range
+    of candidate indices, lighting every confirmed key dim blue and ONE candidate
+    index bright red at a time, so someone with the keyboard can watch and report
+    which index actually turns the physical ESC key red. Feed that number back
+    into LEDIDX[0]."""
+    # Baseline: every confirmed key LED (all LEDIDX entries except ESC's slot).
+    base = [(hw, 0, 0, 40) for hw in LEDIDX[1:]]
+    dev = open_device()
+    print(f"ESC-index scan {start}..{end}. Watch the ESC key; note the index that "
+          f"turns it RED. All other keys stay dim blue. {hold}s per index.\n")
+    try:
+        for cand in range(start, end + 1):
+            stream = list(base) + [(cand, 255, 0, 0)]
+            _write_custom_map(dev, stream, brightness=100)
+            print(f"  index {cand:3d}: ESC red now?", flush=True)
+            time.sleep(hold)
+    finally:
+        dev.close()
+    print("\nDone. Report the index that lit ESC so LEDIDX[0] can be corrected.")
 
 
 def set_lighting_side_static(r, g, b, brightness=100, key_colors=None):
@@ -547,6 +580,12 @@ def main():
                 # keyboard (issue #4) — matches what the GUI side picker does.
                 set_lighting_side_static(r, g, b, brightness=bri,
                                          key_colors=_load_saved_key_colors())
+            elif sub == "esc-scan":
+                # ESC-index finder (issue #46): rgb esc-scan [start] [end] [hold]
+                start = int(sub_args[1]) if len(sub_args) > 1 else 0
+                end   = int(sub_args[2]) if len(sub_args) > 2 else 21
+                hold  = float(sub_args[3]) if len(sub_args) > 3 else 3.0
+                diagnose_esc_index(start=start, end=end, hold=hold)
             else:
                 _die(f"unknown rgb subcommand '{sub}'")
             print("ok")

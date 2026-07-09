@@ -1,23 +1,40 @@
 # Changelog
 
-## [2.1.4] - 2026-05-30
+## [2.1.5] - 2026-07-09
 
-Source-overlay patch — a big round of Everest 60 RGB work driven by @FransM's Windows packet captures, a DisplayPad page-model redesign, and several connection/startup fixes.
+Source-overlay patch: follow-ups on the 2.1.4 DisplayPad startup work, two new DisplayPad conveniences, and plugin fixes, all from @FransM's testing.
 
 ### Fixes
 
-- **Everest 60 effect panel still hid too many controls (#32, @FransM).** Breathing showed no speed slider, Wave no speed or direction, and switching to a "… Rainbow" entry "stuck" — the old show/hide logic relied on widget-mapped state and re-packed rows out of order, so controls fell outside the accordion's fixed height. Effects now declare which colour modes they support and a single **Color-mode** dropdown (Single / Dual / Rainbow) replaces the separate "… Rainbow" entries; the panel re-packs every control in a fixed order and re-measures so nothing is clipped. A version line now sits at the bottom of the form.
-- **Everest 60 custom colour flashed the keyboard white / left ESC out (#33, @FransM).** Comparing FransM's Windows capture showed the custom-mode path was sending a mode-detail packet that defaults every key to white before the colour map lands — Windows sends no such packet in custom mode. It's gone now, and the commit/latch packet Windows sends after the map (which we were missing) is sent too.
+- **DisplayPad "upload failed: Connection timed out" at startup (#43, @FransM).** A plugin (Clock, System Monitor) could push its first image before the pad had finished booting (its mountain logo not shown yet), and streaming pixels to a not-yet-ready pad timed out. Plugin uploads now wait until the pad has been INIT'd on the current connection, and a short settle follows the INIT handshake before the first image is sent.
+- **DisplayPad did not re-init after unplug/replug (#44, @FransM).** A quick unplug and replug re-enumerated the pad under a new device path without the presence poll ever seeing the gap, so no re-init ran (no logo, no key images). The monitor now also reconnects when the pad's path changes, a reconnect that lands mid-upload is retried instead of dropped, and the pad-ready state is reset on every (re)connect.
+- **System Monitor: GPU temperature wrong or missing on hybrid laptops (basecamp-plugins #10, @FransM).** On a laptop with an integrated plus a discrete NVIDIA card, the psutil sensor path reported the built-in GPU or nothing. The plugin now reads the discrete card via `nvidia-smi` first and falls back to psutil (amdgpu/nouveau/i915) when it isn't present.
+- **Disk (cycle) action still showed a filesystem dropdown (basecamp-plugins #9, @FransM).** Switching a button from "Monitor: Disk" to "Monitor: Disks (cycle)" left the old mountpoint dropdown and its value in place. Changing an action type now rebuilds the value widget for the new type and clears the carried-over value.
+
+### Features / Improvements
+
+- **DisplayPad double-click actions (#47, @FransM).** Each key can carry a second action fired on a quick double press. When set, the primary is held until the click window elapses so the double can win; keys with no double action stay instant.
+- **DisplayPad per-page auto-timeout (#45, @FransM).** A page can jump to a target page after N seconds ("After") or after N seconds of no keypress ("Idle"), configured per page in the action editor. The target can be a specific page or the page you came from. Handy for a monitor page that shows all mounts and then returns on its own.
+- **Everest 60 ESC-index diagnostic (#46, @FransM).** Filling the keyboard red still left ESC the wrong colour because its firmware LED address was never confirmed. A new `rgb esc-scan` command walks candidate indices, lighting one at a time red on a dim-blue board, so the index that actually lights ESC can be identified on the hardware.
+
+## [2.1.4] - 2026-05-30
+
+Source-overlay patch: a big round of Everest 60 RGB work driven by @FransM's Windows packet captures, a DisplayPad page-model redesign, and several connection/startup fixes.
+
+### Fixes
+
+- **Everest 60 effect panel still hid too many controls (#32, @FransM).** Breathing showed no speed slider, Wave no speed or direction, and switching to a "… Rainbow" entry "stuck". The old show/hide logic relied on widget-mapped state and re-packed rows out of order, so controls fell outside the accordion's fixed height. Effects now declare which colour modes they support and a single **Color-mode** dropdown (Single / Dual / Rainbow) replaces the separate "… Rainbow" entries; the panel re-packs every control in a fixed order and re-measures so nothing is clipped. A version line now sits at the bottom of the form.
+- **Everest 60 custom colour flashed the keyboard white / left ESC out (#33, @FransM).** Comparing FransM's Windows capture showed the custom-mode path was sending a mode-detail packet that defaults every key to white before the colour map lands. Windows sends no such packet in custom mode. It's gone now, and the commit/latch packet Windows sends after the map (which we were missing) is sent too.
 - **RGB settings not applied on startup/autostart (#42, @solimar1963).** Saved lighting was written to `rgb_settings.json` but never pushed, so the keyboard kept its default lighting until the user pressed Apply. It's now re-applied automatically when the keyboard is detected.
 - **DisplayPad stale plugin icon with no action (#41, @FransM).** A key whose plugin action was removed kept showing the old icon (the pad holds the last frame in its own memory, even across reboots). Connecting now always refreshes the pad, and an empty layout still clears every key.
 - **DisplayPad connection failed after unplug/replug + restart (#40, @FransM).** Following FransM's Windows-vs-Linux capture comparison: the display interface is now quiesced with the `SET_IDLE` request Windows sends (which Linux was only doing for two of the three interfaces), and the INIT handshake re-sends several times instead of writing once and blocking, so a replugged pad comes back reliably.
 
 ### Features / Improvements
 
-- **Everest 60: Matrix effect (#38, @FransM).** Added from FransM's capture — it's a dual-colour firmware effect with speed and brightness.
+- **Everest 60: Matrix effect (#38, @FransM).** Added from FransM's capture. It's a dual-colour firmware effect with speed and brightness.
 - **Everest 60: full Breathing colour modes (#39, @FransM).** Breathing now offers Single, Dual and Rainbow with speed and brightness, matching the hardware.
-- **DisplayPad page-model redesign — carousels & chain-to-page (#30 / #17, @FransM).** Pages are no longer tied to a main-page button slot: any key on any page can switch to any page, so a true carousel (A→B→C→D→A on one key, reverse on another) is now expressible. A page's back button is a normal editable key (change its icon/target or remove it), a "page" button can use a custom icon, and "also on press" can jump to a page (e.g. press the CPU key → also open a per-core page). Existing multi-page setups are migrated automatically.
-- **Everest 60 side ring: per-LED painting + lit default (#4, @FransM).** The Custom RGB editor now shows the 44 side-ring LEDs as a paintable per-LED strip below the keyboard (they map to ring hardware indices 126–169) and saves them with the rest of the per-key layout — so each ring LED can be set individually. Separately, when there's no saved per-key state to preserve, the side-ring quick-picker lights the keys white instead of blanking them so the keyboard never goes dark under low light. (The strip is a plain per-LED editor, not a physical ring map; the numpad-row indices still need a capture from numpad hardware.)
+- **DisplayPad page-model redesign: carousels & chain-to-page (#30 / #17, @FransM).** Pages are no longer tied to a main-page button slot: any key on any page can switch to any page, so a true carousel (A→B→C→D→A on one key, reverse on another) is now expressible. A page's back button is a normal editable key (change its icon/target or remove it), a "page" button can use a custom icon, and "also on press" can jump to a page (e.g. press the CPU key → also open a per-core page). Existing multi-page setups are migrated automatically.
+- **Everest 60 side ring: per-LED painting + lit default (#4, @FransM).** The Custom RGB editor now shows the 44 side-ring LEDs as a paintable per-LED strip below the keyboard (they map to ring hardware indices 126 to 169) and saves them with the rest of the per-key layout, so each ring LED can be set individually. Separately, when there's no saved per-key state to preserve, the side-ring quick-picker lights the keys white instead of blanking them so the keyboard never goes dark under low light. (The strip is a plain per-LED editor, not a physical ring map; the numpad-row indices still need a capture from numpad hardware.)
 
 ## [2.1.3] - 2026-05-30
 
