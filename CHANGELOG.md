@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.6] - 2026-07-09
+
+Source-overlay patch: a one-fix follow-up on the Everest 60 ESC key.
+
+### Fixes
+
+- **Everest 60 ESC key ignored the custom colour (#46 / followup #33, @FransM).** @FransM confirmed on the hardware that the ESC LED is firmware index 0. The custom map wrote it correctly, but the final packet was zero-padded, and a zero entry is itself an index-0 write of black that overwrote ESC right after it was set (the real reason it read dark in #15, not a missing LED as the old note guessed). The map now pads with a real entry instead of zeros, and ESC is set to index 0, so it takes the colour like every other key. The earlier stopgap (index 21) drove a phantom LED and is gone.
+
 ## [2.1.5] - 2026-07-09
 
 Source-overlay patch: follow-ups on the 2.1.4 DisplayPad startup work, two new DisplayPad conveniences, and plugin fixes, all from @FransM's testing.

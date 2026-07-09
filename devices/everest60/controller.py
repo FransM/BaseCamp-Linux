@@ -80,14 +80,15 @@ SIDE_LED_INDICES = list(range(126, 170))
 NUM_SIDE_LEDS = len(SIDE_LED_INDICES)
 
 # LED hardware index mapping — maps logical key position to firmware LED address.
-# ESC is 21: every other key is >= 22 and the per-row addresses run contiguously
-# ('1'=22, '2'=23, …), so ESC sits at 21 immediately before '1'. It was previously
-# 0, but address 0 has no physical LED — a zero index is also indistinguishable
-# from the zero padding that fills the tail of each 0x35 packet, so the firmware
-# never lit it and ESC stayed dark on a full-keyboard fill (issue #15).
+# ESC is 0 (confirmed by @FransM on the hardware, issue #46). It read dark in
+# #15 not because address 0 has no LED but because a zero index is
+# indistinguishable from the zero padding at the tail of a 0x35 packet, so the
+# padding's [0,0,0,0] entries re-wrote ESC black after it was set. That padding
+# is now filled with a real entry instead of zeros (see _write_custom_map), so
+# ESC at index 0 lights correctly. The earlier stopgap (21) drove a phantom LED.
 LEDIDX = [
     # Row 0: ESC  1    2    3    4    5    6    7    8    9    0    -    =   BSPC
-    21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,
+    0,   22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,
     # Row 1: TAB  Q    W    E    R    T    Y    U    I    O    P    [    ]    \
     42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,
     # Row 2: CAPS A    S    D    F    G    H    J    K    L    ;    '   ENTER
@@ -376,6 +377,17 @@ def _write_custom_map(dev, stream, brightness=100):
 
     # Map — 14 IRGB entries per packet (65 - 9 header bytes = 56, 56//4 = 14)
     COLORS_PER_PKT = 14
+    # Pad the final packet with copies of the last real entry rather than leaving
+    # zero bytes: an all-zero [0,0,0,0] slot is an index-0 write of black, which
+    # would blank the ESC key (hw index 0) after it was set — the root cause of
+    # ESC staying dark on a full fill (#15/#46). The duplicate is idempotent (it
+    # just re-writes some other key its own colour) and never touches index 0
+    # unless index 0 is itself the last entry, in which case it keeps ESC's own
+    # colour. Empty streams are left as-is.
+    stream = list(stream)
+    if stream:
+        while len(stream) % COLORS_PER_PKT != 0:
+            stream.append(stream[-1])
     total = len(stream)
     idx = 0
     while idx < total:
@@ -403,13 +415,11 @@ def _write_custom_map(dev, stream, brightness=100):
 def diagnose_esc_index(start=0, end=21, hold=3.0):
     """ESC-index finder for issue #46.
 
-    We could never confirm the firmware LED address of the ESC key without an
-    Everest 60 in hand: filling every key red leaves ESC a stray blue-green
-    because our best guess (index 21) doesn't drive its LED. This walks a range
-    of candidate indices, lighting every confirmed key dim blue and ONE candidate
-    index bright red at a time, so someone with the keyboard can watch and report
-    which index actually turns the physical ESC key red. Feed that number back
-    into LEDIDX[0]."""
+    ESC is index 0 (confirmed by @FransM), which is what LEDIDX[0] now uses. This
+    scanner stays as a way to re-verify or to map a variant: it walks a range of
+    candidate indices, lighting every other key dim blue and ONE candidate index
+    bright red at a time, so someone with the keyboard can watch and report which
+    index turns the physical ESC key red."""
     # Baseline: every confirmed key LED (all LEDIDX entries except ESC's slot).
     base = [(hw, 0, 0, 40) for hw in LEDIDX[1:]]
     dev = open_device()
