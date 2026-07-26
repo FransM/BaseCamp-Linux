@@ -130,18 +130,7 @@ def _open_interfaces():
                 hid_dev.close()
                 raise RuntimeError("DisplayPad not found via PyUSB")
             usb.util.claim_interface(usb_dev, 1)
-            # Quiesce the display interface with SET_IDLE(0) before streaming
-            # image data. Windows Base Camp issues SET_IDLE for interfaces 0, 1
-            # and 3; the Linux stack only covered 0 and 3 (hidraw does them),
-            # leaving interface 1 un-idled. A pad that was unplugged/replugged
-            # could then wedge interface 1 and the first upload timed out
-            # (issue #40, from FransM's Windows-vs-Linux capture comparison).
-            # HID class request: bmRequestType=0x21, bRequest=SET_IDLE(0x0A),
-            # wValue=0 (duration 0, report 0), wIndex=interface 1. Best-effort.
-            try:
-                usb_dev.ctrl_transfer(0x21, 0x0A, 0x0000, 1, None, timeout=500)
-            except Exception:
-                pass
+            _init_handshake_ctrl(usb_dev)
             return usb_dev, hid_dev
         except Exception as e:
             last_err = e
@@ -152,6 +141,70 @@ def _open_interfaces():
                     pass
             time.sleep(0.2)
     raise last_err if last_err else RuntimeError("DisplayPad open failed")
+
+
+def _init_handshake_ctrl(usb_dev):
+    """
+    Step 1: temporarily claim IF0 (the keyboard interface). IF0 is only
+    needed for the two control transfers below, so detach its kernel driver
+    first and reattach it afterwards — the keyboard must keep working.
+
+    Step 2: SET_IDLE (bRequest 0x0A, wValue 0) on IF0, IF1 (pixels) and IF3
+    (cmd) to suppress repeated reports when nothing is changing. EPIPE /
+    any failure here just means the interface doesn't support it and is
+    ignored (best-effort, matching warnLibusb's non-fatal handling).
+
+    Step 3: SET_REPORT (output report 3, payload {0x03, 0x01}) on IF0 to
+    enable the device's event reporting mode (verified by USB capture on
+    Windows).
+
+    Step 4: release IF0 and reattach its kernel driver. IF1 stays claimed
+    by us (already claimed by the caller) for the rest of the session.
+    """
+    if0_was_active = False
+    try:
+        if0_was_active = bool(usb_dev.is_kernel_driver_active(0))
+    except Exception:
+        pass
+    if if0_was_active:
+        try:
+            usb_dev.detach_kernel_driver(0)
+        except Exception:
+            pass
+
+    if0_claimed = False
+    try:
+        usb.util.claim_interface(usb_dev, 0)
+        if0_claimed = True
+    except Exception:
+        pass
+
+    def _set_idle(iface):
+        try:
+            usb_dev.ctrl_transfer(0x21, 0x0A, 0x0000, iface, None, timeout=500)
+        except Exception:
+            pass
+
+    if if0_claimed:
+        _set_idle(0)
+    _set_idle(1)  # IF_PIXELS
+    _set_idle(3)  # IF_CMD
+
+    if if0_claimed:
+        try:
+            usb_dev.ctrl_transfer(0x21, 0x09, 0x0203, 0x0000,
+                                   bytes([0x03, 0x01]), timeout=500)
+        except Exception:
+            pass
+        try:
+            usb.util.release_interface(usb_dev, 0)
+        except Exception:
+            pass
+        if if0_was_active:
+            try:
+                usb_dev.attach_kernel_driver(0)
+            except Exception:
+                pass
 
 
 def _close_interfaces(usb_dev, hid_dev):
@@ -170,28 +223,47 @@ def _close_interfaces(usb_dev, hid_dev):
 
 
 def _init_device(hid_dev):
-    """Bring the DisplayPad up by sending INIT and waiting for its 0x11 reply.
+    """Bring the DisplayPad up: send INIT_MSG on IF3 and wait for a matching echo
 
-    After an unplug/replug the pad frequently misses the first INIT: the old
-    code wrote INIT once and then blocked reading for up to 10s before trying
-    again, so recovery was slow and often timed out with "Connection timed out"
-    when the GUI was restarted on a replugged pad (issue #40). Windows Base Camp
-    instead re-sends INIT several times until the pad answers. We do the same —
-    short read windows between frequent re-writes make a missed INIT recover in
-    a fraction of a second instead of stalling."""
-    for attempt in range(15):
-        hid_dev.write(INIT_MSG)
-        for _ in range(10):
-            resp = hid_dev.read(64, timeout=100)
-            if resp and resp[0] == 0x11:
-                # The pad acknowledges INIT before its display engine is ready to
-                # accept pixel data; streaming immediately after a fresh
-                # enumeration timed out the first image write ("Connection timed
-                # out", issue #43). A short settle lets the firmware come up.
-                time.sleep(0.25)
-                return
-        time.sleep(0.1)
-    raise RuntimeError("DisplayPad did not respond to INIT")
+    Send INIT_MSG, then wait up to 500 ms for a reply. The reply is accepted
+    once its first 5 bytes echo what we sent. Retry up to 60 times with a
+    10 ms gap after a failed write or read — the device can be slow to come
+    up after a fresh plug-in (issue #40)."""
+    # INIT_MSG here carries a leading HID report-ID byte (0x00) that
+    # hid_dev.write() needs; the device's raw 64-byte packet — and the echo
+    # it sends back via hid_dev.read() — does not include that byte, so the
+    # comparison is offset by one to line up with init.cpp's INIT_MSG[0:5]
+    # (0x11 0x80 0x00 0x00 0x01).
+    pkt = INIT_MSG
+    echo = pkt[1:6]
+    ack_received = False
+    for _attempt in range(60):
+        try:
+            hid_dev.write(pkt)
+        except Exception:
+            time.sleep(0.01)
+            continue
+
+        try:
+            resp = hid_dev.read(64, timeout=500)
+        except Exception:
+            resp = None
+        if not resp:
+            time.sleep(0.01)
+            continue
+
+        # Accept if the first 5 bytes echo what we sent.
+        if len(resp) >= 5 and bytes(resp[:5]) == echo:
+            # The pad acknowledges INIT before its display engine is ready to
+            # accept pixel data; streaming immediately after a fresh
+            # enumeration timed out the first image write ("Connection timed
+            # out", issue #43). A short settle lets the firmware come up.
+            time.sleep(0.25)
+            ack_received = True
+            break
+
+    if not ack_received:
+        raise RuntimeError("DisplayPad did not respond to INIT")
 
 
 def _upload_button(usb_dev, hid_dev, key_index, bgr_pixels, key_events=None):
