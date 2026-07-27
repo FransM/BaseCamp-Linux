@@ -842,11 +842,18 @@ def _clear_displaypad_fullscreen():
         pass
 
 
-def _load_displaypad_actions():
-    """Return list of 12 dicts with 'type' and 'action' keys."""
+def _load_displaypad_actions(page=0):
+    """Return list of 12 dicts with 'type' and 'action' keys for the given
+    DisplayPad page (0 = main page, matching self._current_page in the
+    DisplayPad panel). Sub-page actions are stored separately (see
+    _load_displaypad_pages) so plugins that only ever asked for the main
+    page's actions used to miss anything assigned on a sub-page."""
     default = [{"type": "none", "action": ""} for _ in range(12)]
     try:
-        data = _read_json(DISPLAYPAD_ACTIONS_FILE)
+        if page:
+            data = _load_displaypad_pages().get(str(page), {}).get("actions", [])
+        else:
+            data = _read_json(DISPLAYPAD_ACTIONS_FILE)
         for i in range(12):
             if i < len(data):
                 default[i].update(data[i])

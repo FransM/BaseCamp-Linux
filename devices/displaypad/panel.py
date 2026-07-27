@@ -37,6 +37,17 @@ from shared.config import (
     _load_displaypad_page_timeouts, _save_displaypad_page_timeouts,
 )
 
+# Set BASECAMP_PAGE_DEBUG=1 in the environment to trace page-switch/upload
+# decisions (also toggles matching trace lines in shared/plugins.py and
+# page-bound widget plugins). Off by default.
+_PAGE_DEBUG = os.environ.get("BASECAMP_PAGE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dbg(msg):
+    if _PAGE_DEBUG:
+        print(msg, flush=True)
+
+
 try:
     import hid
     HID_AVAILABLE = True
@@ -2610,10 +2621,29 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._fullscreen_group:
             self._page_fullscreen.setdefault(old_page, None)  # keep existing path
 
+        _dbg(f"[DBG switch] {old_page} -> {page_num} | saved page_images[{old_page}]={self._page_images[old_page]}")
+
         self._current_page = page_num
+
+        # Start/stop page-bound service plugins using their normal start()/
+        # stop() lifecycle: a plugin whose button was on the page we're
+        # leaving gets stop()'d (it was otherwise still polling and painting
+        # over that key index on the new page, since keys are shared
+        # hardware slots across pages), and a plugin whose button is on the
+        # page we're entering gets start()'d right away.
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm:
+            try:
+                pm.sync_services_for_page(page_num)
+            except Exception as e:
+                print(f"[Plugin] sync_services_for_page failed: {e}")
+
+        _dbg(f"[DBG switch] after sync_services_for_page({page_num}): "
+              f"page_images[{page_num}]={self._page_images.get(page_num)}")
 
         # Load new page
         self._images = dict(self._page_images.get(page_num, {}))
+        _dbg(f"[DBG switch] loaded self._images for page {page_num} = {self._images}")
         self._gif_frames = {}
         self._gui_frames_sm = {}
         self._gui_fidx = {}
@@ -3184,6 +3214,7 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _start_upload(self):
         assigned = {int(k): v for k, v in self._images.items()
                     if v and os.path.exists(v)}
+        _dbg(f"[DBG upload] page={self._current_page} uploading assigned={assigned}")
         # Include gif_frames keys not in _images (fullscreen GIF loaded without individual paths)
         for k in self._gif_frames:
             if k not in assigned:
@@ -3502,6 +3533,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         """
         if not (0 <= key_index <= 11):
             return
+        _dbg(f"[DBG push_plugin_image] key={key_index} current_page={self._current_page}")
         img = pil_image.convert("RGB").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
         rot = self._rotation
         if rot:

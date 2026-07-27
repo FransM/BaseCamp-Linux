@@ -93,6 +93,25 @@ class PluginContext:
         if dp and hasattr(dp, "push_plugin_image"):
             dp.push_plugin_image(key_index, pil_image)
 
+    def get_displaypad_current_page(self):
+        """Return the DisplayPad's currently active page number (0 = main
+        page), or 0 if the DisplayPad isn't connected. Use this instead of
+        assuming page 0 so widgets/actions assigned on a sub-page are found.
+        """
+        dp = self.get_displaypad()
+        return getattr(dp, "_current_page", 0) if dp else 0
+
+    def get_displaypad_actions(self, page=None):
+        """Return the 12 button actions for a DisplayPad page. Defaults to
+        whichever page is currently on screen, so a plugin's "which button
+        am I assigned to" lookup works on sub-pages too, not just the main
+        page.
+        """
+        from shared.config import _load_displaypad_actions
+        if page is None:
+            page = self.get_displaypad_current_page()
+        return _load_displaypad_actions(page)
+
     # ── Action registration ───────────────────────────────────────────────────
 
     def register_action_type(self, type_id, label, handler, value_options=None):
@@ -110,5 +129,6 @@ class PluginContext:
         self._pm._action_types[type_id] = {
             "label": label,
             "handler": handler,
+            "owner": getattr(self._pm, "_loading_pid", None),
             "value_options": value_options,
         }
