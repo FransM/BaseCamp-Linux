@@ -35,7 +35,20 @@ from shared.config import (
     _load_displaypad_brightness, _save_displaypad_brightness,
     _load_displaypad_debounce, _save_displaypad_debounce,
     _load_displaypad_page_timeouts, _save_displaypad_page_timeouts,
+    _load_displaypad_page_names, _save_displaypad_page_names,
+    _create_displaypad_page, _rename_displaypad_page, _delete_displaypad_page,
 )
+
+# Set BASECAMP_PAGE_DEBUG=1 in the environment to trace page-switch/upload
+# decisions (also toggles matching trace lines in shared/plugins.py and
+# page-bound widget plugins). Off by default.
+_PAGE_DEBUG = os.environ.get("BASECAMP_PAGE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dbg(msg):
+    if _PAGE_DEBUG:
+        print(msg, flush=True)
+
 
 try:
     import hid
@@ -530,6 +543,19 @@ def _make_placeholder(size):
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
+def _prompt_page_name(app, prompt_key, title_key, initial=""):
+    """Modal one-line text prompt for a page name (#52), used both to create
+    a brand-new standalone page and to rename an existing one. Returns the
+    entered name, or None if cancelled / left blank."""
+    dlg = ctk.CTkInputDialog(text=app.T(prompt_key), title=app.T(title_key))
+    try:
+        val = dlg.get_input()
+    except Exception:
+        val = None
+    val = (val or "").strip()
+    return val or None
+
+
 # ── Image management dialog ───────────────────────────────────────────────────
 
 _DIALOG_TILE  = 90   # thumbnail size in dialog
@@ -597,14 +623,19 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         pages = self._panel._get_available_pages()
         page_labels = [self._panel._get_page_name(p) for p in pages]
         self._page_list = pages
+        newlbl = self._app.T("dp_new_page")
         self._page_selector = ctk.CTkOptionMenu(
-            header, values=page_labels,
+            header, values=page_labels + [newlbl],
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
             text_color=FG, font=("Helvetica", 11), width=100, height=28,
             command=self._on_page_change)
         cur = self._panel._current_page
         self._page_selector.set(self._panel._get_page_name(cur))
         self._page_selector.pack(side="right")
+        ctk.CTkButton(
+            header, text="✎", width=28, height=28,
+            fg_color=BG2, hover_color="#333a44", text_color=FG,
+            command=self._on_rename_page).pack(side="right", padx=(0, 6))
 
         # 6 × 2 grid of tiles
         grid = ctk.CTkFrame(self, fg_color="transparent")
@@ -882,7 +913,16 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
                 text=self._app.T("dp_fullscreen_static", name=os.path.basename(path)), text_color=GRN)
 
     def _on_page_change(self, label):
-        """Switch the image dialog to show a different page's images."""
+        """Switch the image dialog to show a different page's images, or
+        create a brand-new standalone page if 'New page...' was picked (#52)."""
+        if label == self._app.T("dp_new_page"):
+            name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
+            if not name:
+                self._page_selector.set(self._panel._get_page_name(self._panel._current_page))
+                return
+            pid = self._panel._create_named_page(name)
+            self._refresh_page_selector(select=pid)
+            return
         for p, lbl in zip(self._page_list,
                           [self._panel._get_page_name(x)
                            for x in self._page_list]):
@@ -900,6 +940,31 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
                 for idx in range(NUM_KEYS):
                     self._refresh_tile(idx)
                 break
+
+    def _refresh_page_selector(self, select=None):
+        """Rebuild the page dropdown's values after a page was created or
+        renamed (#52), and switch to `select` if given."""
+        pages = self._panel._get_available_pages()
+        self._page_list = pages
+        page_labels = [self._panel._get_page_name(p) for p in pages]
+        newlbl = self._app.T("dp_new_page")
+        self._page_selector.configure(values=page_labels + [newlbl])
+        target = select if select is not None else self._panel._current_page
+        self._page_selector.set(self._panel._get_page_name(target))
+        if select is not None and select != self._panel._current_page:
+            self._on_page_change(self._panel._get_page_name(select))
+
+    def _on_rename_page(self):
+        """Rename the page currently shown in this dialog (#52). Main (page
+        0) is renamable too -- it's just the page the app opens on."""
+        cur = self._panel._current_page
+        name = _prompt_page_name(
+            self._app, "dp_page_name_prompt", "dp_rename_page_title",
+            initial=self._panel._get_page_name(cur))
+        if not name:
+            return
+        self._panel._rename_page(cur, name)
+        self._refresh_page_selector()
 
     def destroy(self):
         # Auto-upload when dialog closes. Guard against the panel being
@@ -1030,8 +1095,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             act = actions[i] if i < len(actions) else {"type": "none", "action": ""}
             btype = act.get("type", "none")
             cmd   = act.get("action", "")
-            # Remember an existing 'page' target so the picker can preselect it.
-            self._page_targets[i] = act.get("target") if btype == "page" else None
+            # Remember an existing 'page' target (by name, #52) so the picker
+            # can preselect it -- resolved to an id right away so it behaves
+            # exactly like the "new"/int values the picker itself produces.
+            self._page_targets[i] = self._panel._page_target(act, i) if btype == "page" else None
 
             self._act_type[i].set(btype)
             self._act_cmd[i].set(cmd)
@@ -1189,12 +1256,17 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         # Page selector
         pages = self._panel._get_available_pages()
         page_labels = [self._panel._get_page_name(p) for p in pages]
+        newlbl = self._app.T("dp_new_page")
         self._page_selector = ctk.CTkOptionMenu(
-            header, values=page_labels,
+            header, values=page_labels + [newlbl],
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
             text_color=FG, font=("Helvetica", 11), width=100, height=28,
             command=self._on_page_change)
         self._page_selector.pack(side="right")
+        ctk.CTkButton(
+            header, text="✎", width=28, height=28,
+            fg_color=BG2, hover_color="#333a44", text_color=FG,
+            command=self._on_rename_page).pack(side="right", padx=(0, 6))
         self._page_list = pages
 
         # ── Per-page auto-timeout (issue #45) ─────────────────────────────────
@@ -1395,6 +1467,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         ).pack(fill="x", padx=12, pady=(0, 12))
 
     def _on_page_change(self, label):
+        if label == self._app.T("dp_new_page"):
+            name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
+            if not name:
+                self._page_selector.set(self._panel._get_page_name(self._page))
+                return
+            pid = self._panel._create_named_page(name)
+            self._refresh_page_selector(select=pid)
+            return
         for p, lbl in zip(self._page_list,
                           [self._panel._get_page_name(x)
                            for x in self._page_list]):
@@ -1408,6 +1488,30 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 except Exception:
                     pass
                 break
+
+    def _refresh_page_selector(self, select=None):
+        """Rebuild the page dropdown's values after a page was created or
+        renamed (#52), and switch the editor to `select` if given."""
+        pages = self._panel._get_available_pages()
+        self._page_list = pages
+        page_labels = [self._panel._get_page_name(p) for p in pages]
+        newlbl = self._app.T("dp_new_page")
+        self._page_selector.configure(values=page_labels + [newlbl])
+        target = select if select is not None else self._page
+        self._page_selector.set(self._panel._get_page_name(target))
+        if select is not None and select != self._page:
+            self._on_page_change(self._panel._get_page_name(select))
+
+    def _on_rename_page(self):
+        """Rename the page currently open in the editor (#52). Main (page 0)
+        is renamable too -- it's just the page the app opens on."""
+        name = _prompt_page_name(
+            self._app, "dp_page_name_prompt", "dp_rename_page_title",
+            initial=self._panel._get_page_name(self._page))
+        if not name:
+            return
+        self._panel._rename_page(self._page, name)
+        self._refresh_page_selector()
 
     # ── Per-page auto-timeout controls (issue #45) ────────────────────────────
     _TIMEOUT_MODES = ["off", "after", "idle"]
@@ -1444,7 +1548,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         tgt = to.get("target", "prev")
         sel = None
         for lbl, val in mapping.items():
-            if val == tgt:
+            if val == "prev":
+                match = (tgt == "prev")
+            else:
+                # tgt may be a legacy int id or (#52) a persisted page name.
+                match = (tgt == val or tgt == self._panel._get_page_name(val))
+            if match:
                 sel = lbl
                 break
         self._to_target_menu.set(sel or self._app.T("dp_timeout_prev"))
@@ -1461,7 +1570,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, TypeError):
             secs = 10
         _labels, mapping = self._timeout_target_options()
-        tgt = mapping.get(self._to_target_menu.get(), "prev")
+        picked = mapping.get(self._to_target_menu.get(), "prev")
+        # Store by name (#52), like every other page reference; "prev" is
+        # kept as-is since it's a mode, not a page.
+        tgt = picked if picked == "prev" else self._panel._get_page_name(picked)
         if mode == "off":
             self._panel._page_timeout.pop(self._page, None)
         else:
@@ -1864,11 +1976,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             step = {"type": sectype, "action": secval}
             if sectype == "page":
                 # 'also on press → go to page' (#17): the entry holds a page
-                # name; resolve it to a page id so the chain can navigate.
-                _lbls, mapping = self._page_target_options()
-                tgt = mapping.get(secval)
-                if isinstance(tgt, int):
-                    step["target"] = tgt
+                # name, stored directly (#52) -- _page_target() resolves it
+                # back to an id when the chain actually runs.
+                if self._panel._page_id_by_name(secval) is not None:
+                    step["target"] = secval
                     extra = [step]
                 # unresolved / 'New page' name → skip (nothing to jump to)
             elif secval:
@@ -1881,10 +1992,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         if dbltype and dbltype != "none":
             step = {"type": dbltype, "action": dblval}
             if dbltype == "page":
-                _l2, map2 = self._page_target_options()
-                tgt2 = map2.get(dblval)
-                if isinstance(tgt2, int):
-                    step["target"] = tgt2
+                if self._panel._page_id_by_name(dblval) is not None:
+                    step["target"] = dblval
                     double = step
             elif dblval:
                 double = step
@@ -2289,12 +2398,23 @@ class DisplayPadPanel(ctk.CTkFrame):
             return (a.get("type", "none"), a.get("action", ""))
         return ("none", "")
 
-    @staticmethod
-    def _page_target(act, idx):
-        """Resolve a 'page' action's destination page id. New configs carry an
-        explicit integer 'target'; legacy main-page actions had no target and
-        mapped to the fixed sub-page idx+1, so fall back to that (#30 migration)."""
+    def _page_target(self, act, idx):
+        """Resolve a 'page' action's destination page id. Targets are stored
+        by NAME (a string, resolved against the page-name registry) so they
+        keep working even as page ids get minted/reordered elsewhere and so
+        they match what's shown in the page picker (#52). Legacy configs
+        stored a raw integer id, which is still accepted here; very old
+        main-page-only actions had no target at all and mapped to the fixed
+        sub-page idx+1, so that fallback is kept too."""
         t = act.get("target")
+        if isinstance(t, str):
+            pid = self._page_id_by_name(t)
+            if pid is not None:
+                return pid
+            try:
+                return int(t)
+            except ValueError:
+                return idx + 1
         try:
             return int(t)
         except (TypeError, ValueError):
@@ -2302,10 +2422,12 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _all_page_ids(self):
         """Every page id that exists or is referenced: 0, any page with stored
-        actions/images, and every 'page' action target anywhere."""
+        actions/images, every 'page' action target anywhere, and every page
+        registered by name even if nothing points at it yet (#52)."""
         ids = {0}
         ids.update(self._page_actions.keys())
         ids.update(self._page_images.keys())
+        ids.update(_load_displaypad_page_names().keys())
         for page, acts in self._page_actions.items():
             for i, act in enumerate(acts):
                 if act.get("type") == "page":
@@ -2357,7 +2479,7 @@ class DisplayPadPanel(ctk.CTkFrame):
             return
         acts = [dict(a) for a in _DEFAULT_ACTIONS]
         acts[0] = {"type": "page", "action": self.T("dp_page_back"),
-                   "target": int(back_to), "icon": self._back_icon}
+                   "target": self._get_page_name(int(back_to)), "icon": self._back_icon}
         self._page_actions[page_id] = acts
         self._page_images.setdefault(page_id, {})
         self._save_sub_pages()
@@ -2365,10 +2487,27 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _gc_orphan_pages(self):
         """Drop pages that nothing navigates to and that hold no content — e.g.
         a page minted when the user picked 'New page' but then retargeted the
-        button to an existing page (#30). Conservative: never touches page 0 or
-        the current page, keeps any page with an image/fullscreen or a non-default
-        action (the auto back button on K1 doesn't count as content)."""
-        referenced = {0, self._current_page}
+        button to an existing page (#30). Conservative: never touches page 0, the
+        current page, or any page registered by name (#52 -- a person may have
+        pre-created it on purpose and not gotten around to using it yet). Also
+        keeps any page with an image/fullscreen or a non-default action (the
+        auto back button on K1 doesn't count as content)."""
+        registered = set(_load_displaypad_page_names().keys())
+        referenced = {0, self._current_page} | registered
+
+        def _resolve(tgt, idx=0):
+            if isinstance(tgt, str):
+                pid = self._page_id_by_name(tgt)
+                if pid is not None:
+                    return pid
+                try:
+                    return int(tgt)
+                except ValueError:
+                    return None
+            if isinstance(tgt, int):
+                return tgt
+            return None
+
         for page, acts in self._page_actions.items():
             for i, a in enumerate(acts):
                 if a.get("type") == "page":
@@ -2376,17 +2515,20 @@ class DisplayPadPanel(ctk.CTkFrame):
                 # A page targeted only by an 'also on press' chain step (#17) or a
                 # double-click action (#47) is still referenced — don't GC it.
                 for step in (a.get("actions") or []):
-                    if step.get("type") == "page" and isinstance(step.get("target"), int):
-                        referenced.add(step["target"])
+                    if step.get("type") == "page":
+                        pid = _resolve(step.get("target"))
+                        if pid is not None:
+                            referenced.add(pid)
                 dbl = a.get("double")
-                if (isinstance(dbl, dict) and dbl.get("type") == "page"
-                        and isinstance(dbl.get("target"), int)):
-                    referenced.add(dbl["target"])
+                if isinstance(dbl, dict) and dbl.get("type") == "page":
+                    pid = _resolve(dbl.get("target"))
+                    if pid is not None:
+                        referenced.add(pid)
         # A page reachable only as an auto-timeout destination is referenced too (#45).
         for _p, to in (self._page_timeout or {}).items():
-            tgt = (to or {}).get("target")
-            if isinstance(tgt, int):
-                referenced.add(tgt)
+            pid = _resolve((to or {}).get("target"))
+            if pid is not None:
+                referenced.add(pid)
         removed = False
         for p in list(self._page_actions.keys()):
             if p in referenced or p == 0:
@@ -2456,15 +2598,15 @@ class DisplayPadPanel(ctk.CTkFrame):
         # ── 'page' action: resolve/allocate target + custom icon ──────────────
         if btype == "page":
             if target in (None, "", "new"):
-                target = (old.get("target")
-                          if old.get("type") == "page" and isinstance(old.get("target"), int)
+                target = (self._page_target(old, idx)
+                          if old.get("type") == "page" and old.get("target") not in (None, "")
                           else self._mint_page_id())
             target = int(target)
-            entry["target"] = target
+            self._ensure_page(target, back_to=page)
+            entry["target"] = self._get_page_name(target)
             keep_icon = icon or (old.get("icon") if old.get("type") == "page" else None)
             if keep_icon:
                 entry["icon"] = keep_icon
-            self._ensure_page(target, back_to=page)
 
         actions[idx] = entry
         self._page_images.setdefault(page, {})
@@ -2610,10 +2752,29 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._fullscreen_group:
             self._page_fullscreen.setdefault(old_page, None)  # keep existing path
 
+        _dbg(f"[DBG switch] {old_page} -> {page_num} | saved page_images[{old_page}]={self._page_images[old_page]}")
+
         self._current_page = page_num
+
+        # Start/stop page-bound service plugins using their normal start()/
+        # stop() lifecycle: a plugin whose button was on the page we're
+        # leaving gets stop()'d (it was otherwise still polling and painting
+        # over that key index on the new page, since keys are shared
+        # hardware slots across pages), and a plugin whose button is on the
+        # page we're entering gets start()'d right away.
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm:
+            try:
+                pm.sync_services_for_page(page_num)
+            except Exception as e:
+                print(f"[Plugin] sync_services_for_page failed: {e}")
+
+        _dbg(f"[DBG switch] after sync_services_for_page({page_num}): "
+              f"page_images[{page_num}]={self._page_images.get(page_num)}")
 
         # Load new page
         self._images = dict(self._page_images.get(page_num, {}))
+        _dbg(f"[DBG switch] loaded self._images for page {page_num} = {self._images}")
         self._gif_frames = {}
         self._gui_frames_sm = {}
         self._gui_fidx = {}
@@ -2677,18 +2838,100 @@ class DisplayPadPanel(ctk.CTkFrame):
         return sorted(self._all_page_ids())
 
     def _get_page_name(self, p):
-        """Return the user-defined name for a page, falling back to 'Page N'.
-        The name is taken from the label of any 'page' action that targets it
-        (searched across all pages, not just the main page)."""
+        """Return the persisted name for a page. Page 0 is just another
+        entry in the same registry -- it only happens to be the page the
+        app opens on -- defaulting to a translated 'Main' the first time
+        (after which it's stored data like any other page and can be
+        renamed). A page with no registry entry yet but that's targeted by
+        an existing 'page' action (pre-#52 configs) has its button-derived
+        label adopted into the registry once, so the name becomes durable
+        instead of being re-derived (and able to disappear) every time."""
+        names = _load_displaypad_page_names()
+        if p in names:
+            return names[p]
         if p == 0:
-            return self.T("dp_page_main")
+            default = self.T("dp_page_main")
+            names[0] = default
+            _save_displaypad_page_names(names)
+            return default
         for page, acts in self._page_actions.items():
             for i, act in enumerate(acts):
                 if act.get("type") == "page" and self._page_target(act, i) == p:
                     name = (act.get("action") or "").strip()
                     if name:
+                        names[p] = name
+                        _save_displaypad_page_names(names)
                         return name
-        return f"Page {p}"
+        fallback = f"Page {p}"
+        names[p] = fallback
+        _save_displaypad_page_names(names)
+        return fallback
+
+    def _page_id_by_name(self, name):
+        """Resolve a page name back to its id, or None if no page has that
+        name right now (e.g. it was renamed or deleted elsewhere)."""
+        for pid, nm in _load_displaypad_page_names().items():
+            if nm == name:
+                return pid
+        return None
+
+    def _create_named_page(self, name):
+        """Register a brand-new page that isn't targeted by any button yet
+        (#52) -- it exists purely because it's in the name registry, and
+        _gc_orphan_pages() knows to leave it alone."""
+        name = (name or "").strip() or f"Page {self._mint_page_id()}"
+        pid = _create_displaypad_page(name, existing_ids=self._all_page_ids())
+        self._page_actions.setdefault(pid, [dict(a) for a in _DEFAULT_ACTIONS])
+        self._page_images.setdefault(pid, {})
+        self._save_sub_pages()
+        return pid
+
+    def _rename_page(self, page_id, name):
+        """Rename a page and update every stored reference to it (#52).
+        References are stored by name, so without this cascade a button
+        that pointed at the old name would silently stop resolving the
+        moment the page got renamed -- that would make name-based
+        references *less* durable than plain ids, not more."""
+        page_id = int(page_id)
+        name = (name or "").strip()
+        if not name:
+            return
+        old_name = self._get_page_name(page_id)
+        _rename_displaypad_page(page_id, name)
+        if old_name == name:
+            return
+
+        def _retarget(step):
+            if isinstance(step, dict) and step.get("target") == old_name:
+                step["target"] = name
+                return True
+            return False
+
+        changed_actions = False
+        for page, acts in self._page_actions.items():
+            for act in acts:
+                if not isinstance(act, dict):
+                    continue
+                if act.get("type") == "page" and _retarget(act):
+                    changed_actions = True
+                for step in (act.get("actions") or []):
+                    if step.get("type") == "page" and _retarget(step):
+                        changed_actions = True
+                dbl = act.get("double")
+                if isinstance(dbl, dict) and dbl.get("type") == "page" and _retarget(dbl):
+                    changed_actions = True
+        if changed_actions:
+            if 0 in self._page_actions:
+                _save_displaypad_actions(self._page_actions[0])
+            self._save_sub_pages()
+
+        changed_timeout = False
+        for _p, to in (self._page_timeout or {}).items():
+            if isinstance(to, dict) and to.get("target") == old_name:
+                to["target"] = name
+                changed_timeout = True
+        if changed_timeout:
+            _save_displaypad_page_timeouts(self._page_timeout)
 
     def _get_extra_actions(self, idx):
         """Extra action steps for button idx (issue #17). Stored as an `actions`
@@ -2787,6 +3030,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         tgt = to.get("target", 0)
         if tgt == "prev":
             tgt = self._prev_page
+        elif isinstance(tgt, str):
+            pid = self._page_id_by_name(tgt)
+            tgt = pid if pid is not None else 0
         try:
             tgt = int(tgt)
         except (TypeError, ValueError):
@@ -3184,6 +3430,7 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _start_upload(self):
         assigned = {int(k): v for k, v in self._images.items()
                     if v and os.path.exists(v)}
+        _dbg(f"[DBG upload] page={self._current_page} uploading assigned={assigned}")
         # Include gif_frames keys not in _images (fullscreen GIF loaded without individual paths)
         for k in self._gif_frames:
             if k not in assigned:
@@ -3502,6 +3749,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         """
         if not (0 <= key_index <= 11):
             return
+        _dbg(f"[DBG push_plugin_image] key={key_index} current_page={self._current_page}")
         img = pil_image.convert("RGB").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
         rot = self._rotation
         if rot:
