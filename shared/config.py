@@ -1,5 +1,6 @@
 """Shared configuration paths and load/save helpers for BaseCamp Linux."""
 import os
+import re
 import sys
 import json
 import pwd as _pwd
@@ -75,6 +76,8 @@ DISPLAYPAD_BTN_FILE        = os.path.join(CONFIG_DIR, "displaypad_buttons.json")
 DISPLAYPAD_FULLSCREEN_FILE = os.path.join(CONFIG_DIR, "displaypad_fullscreen.json")
 DISPLAYPAD_ACTIONS_FILE    = os.path.join(CONFIG_DIR, "displaypad_actions.json")
 DISPLAYPAD_PAGES_FILE      = os.path.join(CONFIG_DIR, "displaypad_pages.json")
+DISPLAYPAD_PAGE_NAMES_FILE = os.path.join(CONFIG_DIR, "displaypad_page_names.json")
+DISPLAYPAD_PAGES_DIR       = os.path.join(CONFIG_DIR, "displaypad_pages")
 DISPLAYPAD_TIMEOUTS_FILE   = os.path.join(CONFIG_DIR, "displaypad_page_timeouts.json")
 DISPLAYPAD_ROTATION_FILE    = os.path.join(CONFIG_DIR, "displaypad_rotation")
 DISPLAYPAD_BRIGHTNESS_FILE  = os.path.join(CONFIG_DIR, "displaypad_brightness")
@@ -810,36 +813,226 @@ def _save_makalu_remap(assignments):
 
 # ── DisplayPad config ────────────────────────────────────────────────────────
 
-def _load_displaypad_buttons():
-    """Return dict {str(key_idx): image_path} for DisplayPad button images."""
+# ── DisplayPad config ────────────────────────────────────────────────────────
+#
+# Every page (including page 0 / Main) lives in its own file under
+# DISPLAYPAD_PAGES_DIR, named after the page (#53) -- e.g.
+# "displaypad_pages/Monitoring__3.json". The numeric id is kept as a
+# filename suffix purely as a collision guard (two pages could otherwise be
+# renamed to the same thing); it is NOT used as the primary reference
+# anywhere in the app anymore -- actions, chain steps, and timeouts all
+# refer to a page by its name (see panel.py's _page_target()). The
+# functions below keep their historical signatures so callers don't need to
+# change; only the on-disk representation changed.
+
+_PAGE_FILENAME_UNSAFE = re.compile(r'[^A-Za-z0-9 _.\-]+')
+
+_EMPTY_ACTIONS = [{"type": "none", "action": ""} for _ in range(12)]
+
+
+def _page_dir():
+    os.makedirs(DISPLAYPAD_PAGES_DIR, exist_ok=True)
+    return DISPLAYPAD_PAGES_DIR
+
+
+def _page_filename(page_id, name):
+    safe = _PAGE_FILENAME_UNSAFE.sub("_", (name or "").strip()) or "page"
+    safe = safe.strip("_.") or "page"
+    return f"{safe}__{int(page_id)}.json"
+
+
+def _find_page_file(page_id):
+    """Locate an existing page's file by id -- its name (and therefore
+    filename) may have changed since it was last written, so this scans
+    rather than guessing the current filename."""
+    page_id = int(page_id)
+    suffix = f"__{page_id}.json"
     try:
-        return _read_json(DISPLAYPAD_BTN_FILE)
+        entries = os.listdir(_page_dir())
+    except OSError:
+        return None
+    for fn in entries:
+        if fn.endswith(suffix):
+            return os.path.join(_page_dir(), fn)
+    return None
+
+
+def _load_all_displaypad_pages():
+    """Return {page_id: {"id","name","v","actions","buttons","fullscreen",
+    "timeout"}} by reading every page's own file. Migrates the old combined
+    files into this layout the first time it's called on an existing
+    install (see _migrate_legacy_displaypad_pages)."""
+    _migrate_legacy_displaypad_pages()
+    out = {}
+    try:
+        entries = os.listdir(_page_dir())
+    except OSError:
+        entries = []
+    for fn in entries:
+        if not fn.endswith(".json"):
+            continue
+        try:
+            data = _read_json(os.path.join(_page_dir(), fn))
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        try:
+            pid = int(data.get("id"))
+        except (TypeError, ValueError):
+            continue
+        out[pid] = data
+    return out
+
+
+def _save_displaypad_page_record(page_id, record):
+    """Write one page's complete record to its own file, renaming the file
+    if the page's name changed since it was last saved."""
+    page_id = int(page_id)
+    record = dict(record)
+    record["id"] = page_id
+    record.setdefault("name", "Main" if page_id == 0 else f"Page {page_id}")
+    old_path = _find_page_file(page_id)
+    new_path = os.path.join(_page_dir(), _page_filename(page_id, record["name"]))
+    if old_path and old_path != new_path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    with open(new_path, "w") as f:
+        json.dump(record, f, indent=2)
+
+
+def _delete_displaypad_page_record(page_id):
+    path = _find_page_file(page_id)
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _migrate_legacy_displaypad_pages():
+    """One-time upgrade (#53): fold the old separate files (displaypad_
+    actions.json, displaypad_buttons.json, displaypad_fullscreen.json,
+    displaypad_pages.json, displaypad_page_timeouts.json, displaypad_
+    page_names.json) into one file per page. Skipped once the per-page
+    directory has anything in it -- the old files are left on disk
+    untouched (unused, but nothing is deleted)."""
+    try:
+        if os.listdir(_page_dir()):
+            return
+    except OSError:
+        pass
+
+    names = {}
+    try:
+        raw = _read_json(DISPLAYPAD_PAGE_NAMES_FILE)
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                try:
+                    names[int(k)] = str(v)
+                except (TypeError, ValueError):
+                    pass
     except Exception:
-        return {}
+        pass
+
+    timeouts = {}
+    try:
+        raw = _read_json(DISPLAYPAD_TIMEOUTS_FILE)
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                try:
+                    timeouts[int(k)] = v
+                except (TypeError, ValueError):
+                    pass
+    except Exception:
+        pass
+
+    records = {}
+
+    try:
+        main_actions = _read_json(DISPLAYPAD_ACTIONS_FILE)
+    except Exception:
+        main_actions = list(_EMPTY_ACTIONS)
+    try:
+        main_buttons = _read_json(DISPLAYPAD_BTN_FILE)
+    except Exception:
+        main_buttons = {}
+    try:
+        main_fullscreen = _read_json(DISPLAYPAD_FULLSCREEN_FILE).get("gif_path")
+    except Exception:
+        main_fullscreen = None
+    records[0] = {
+        "id": 0, "name": names.get(0, "Main"), "v": 2,
+        "actions": main_actions, "buttons": main_buttons,
+        "fullscreen": main_fullscreen, "timeout": timeouts.get(0),
+    }
+
+    try:
+        raw_pages = _read_json(DISPLAYPAD_PAGES_FILE)
+    except Exception:
+        raw_pages = {}
+    if isinstance(raw_pages, dict):
+        for ps, pdata in raw_pages.items():
+            try:
+                pid = int(ps)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(pdata, dict):
+                continue
+            records[pid] = {
+                "id": pid, "name": names.get(pid, f"Page {pid}"),
+                "v": pdata.get("v", 1),
+                "actions": pdata.get("actions", list(_EMPTY_ACTIONS)),
+                "buttons": pdata.get("buttons", {}),
+                "fullscreen": pdata.get("fullscreen"),
+                "timeout": timeouts.get(pid),
+            }
+
+    # A page that only ever got a *name* registered (created ahead of time,
+    # #52) but never made it into the old combined-pages file.
+    for pid, nm in names.items():
+        if pid not in records:
+            records[pid] = {
+                "id": pid, "name": nm, "v": 2,
+                "actions": list(_EMPTY_ACTIONS), "buttons": {},
+                "fullscreen": None, "timeout": timeouts.get(pid),
+            }
+
+    for pid, record in records.items():
+        _save_displaypad_page_record(pid, record)
+
+
+def _load_displaypad_buttons():
+    """Return dict {str(key_idx): image_path} for Main's button images."""
+    rec = _load_all_displaypad_pages().get(0)
+    return (rec or {}).get("buttons") or {}
 
 
 def _save_displaypad_buttons(data):
-    with open(DISPLAYPAD_BTN_FILE, "w") as f:
-        f.write(json.dumps(data))
+    recs = _load_all_displaypad_pages()
+    rec = recs.get(0, {"id": 0, "name": "Main", "v": 2, "actions": list(_EMPTY_ACTIONS),
+                        "fullscreen": None, "timeout": None})
+    rec["buttons"] = data
+    _save_displaypad_page_record(0, rec)
 
 
 def _load_displaypad_fullscreen():
-    try:
-        return _read_json(DISPLAYPAD_FULLSCREEN_FILE).get("gif_path")
-    except Exception:
-        return None
+    rec = _load_all_displaypad_pages().get(0)
+    return (rec or {}).get("fullscreen")
 
 
 def _save_displaypad_fullscreen(path):
-    with open(DISPLAYPAD_FULLSCREEN_FILE, "w") as f:
-        f.write(json.dumps({"gif_path": path}))
+    recs = _load_all_displaypad_pages()
+    rec = recs.get(0, {"id": 0, "name": "Main", "v": 2, "actions": list(_EMPTY_ACTIONS),
+                        "buttons": {}, "timeout": None})
+    rec["fullscreen"] = path
+    _save_displaypad_page_record(0, rec)
 
 
 def _clear_displaypad_fullscreen():
-    try:
-        os.remove(DISPLAYPAD_FULLSCREEN_FILE)
-    except Exception:
-        pass
+    _save_displaypad_fullscreen(None)
 
 
 def _load_displaypad_actions(page=0):
@@ -863,59 +1056,176 @@ def _load_displaypad_actions(page=0):
 
 
 def _save_displaypad_actions(actions):
-    with open(DISPLAYPAD_ACTIONS_FILE, "w") as f:
-        json.dump(actions, f, indent=2)
+    """Save Main's (page 0's) actions."""
+    recs = _load_all_displaypad_pages()
+    rec = recs.get(0, {"id": 0, "name": "Main", "v": 2, "buttons": {},
+                        "fullscreen": None, "timeout": None})
+    rec["actions"] = actions
+    _save_displaypad_page_record(0, rec)
 
 
 def _load_displaypad_pages():
-    """Return dict {str(page_num): {buttons: {}, actions: [...], fullscreen: None}}."""
-    try:
-        return _read_json(DISPLAYPAD_PAGES_FILE)
-    except Exception:
-        return {}
+    """Return {str(page_id): {"v","buttons","actions","fullscreen"}} for
+    every page EXCEPT page 0/Main (which has its own _load/_save_displaypad_
+    actions/buttons/fullscreen functions) -- matches the historical
+    contract used by panel.py's page-loading and _save_sub_pages()."""
+    out = {}
+    for pid, rec in _load_all_displaypad_pages().items():
+        if pid == 0:
+            continue
+        out[str(pid)] = {
+            "v": rec.get("v", 2),
+            "buttons": rec.get("buttons", {}),
+            "actions": rec.get("actions", list(_EMPTY_ACTIONS)),
+            "fullscreen": rec.get("fullscreen"),
+        }
+    return out
 
 
 def _save_displaypad_pages(data):
-    with open(DISPLAYPAD_PAGES_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    """data: {str(page_id): {"v","buttons","actions","fullscreen"}} for
+    every non-main page (the exact shape panel.py's _save_sub_pages()
+    builds). Each page is written to its own file; a page that was on disk
+    before but is missing from `data` now (e.g. deleted) has its file
+    removed too -- the same "whole state overwrite" semantics the old
+    single combined-file format had."""
+    recs = _load_all_displaypad_pages()
+    seen = set()
+    for ps, pdata in (data or {}).items():
+        try:
+            pid = int(ps)
+        except (TypeError, ValueError):
+            continue
+        if pid == 0:
+            continue
+        seen.add(pid)
+        rec = recs.get(pid, {})
+        rec.update({
+            "id": pid,
+            "name": rec.get("name") or f"Page {pid}",
+            "v": pdata.get("v", 2),
+            "buttons": pdata.get("buttons", {}),
+            "actions": pdata.get("actions", list(_EMPTY_ACTIONS)),
+            "fullscreen": pdata.get("fullscreen"),
+            "timeout": rec.get("timeout"),
+        })
+        _save_displaypad_page_record(pid, rec)
+    for pid in list(recs.keys()):
+        if pid != 0 and pid not in seen:
+            _delete_displaypad_page_record(pid)
 
+
+def _load_displaypad_page_names():
+    """Return {int page_id: str name} for every page that exists. This is
+    the authoritative registry of which pages *exist* -- independent of
+    whether any button currently targets them, so a page can be created
+    ahead of time and won't vanish for being "unused". Page 0 (the page the
+    app happens to open on) is just another entry here; if it has no
+    stored name yet, the caller is responsible for filling in a translated
+    default (kept out of this low-level function since it doesn't have
+    access to translations)."""
+    return {pid: rec.get("name", f"Page {pid}")
+            for pid, rec in _load_all_displaypad_pages().items()}
+
+
+def _save_displaypad_page_names(names):
+    """names: {int page_id: str name}. Kept for callers that batch-update
+    the whole name map at once; updates just the 'name' field (and
+    therefore filename) of each affected page's own file."""
+    recs = _load_all_displaypad_pages()
+    for pid, name in (names or {}).items():
+        pid = int(pid)
+        rec = recs.get(pid, {"id": pid, "v": 2, "actions": list(_EMPTY_ACTIONS),
+                              "buttons": {}, "fullscreen": None, "timeout": None})
+        rec["name"] = name
+        _save_displaypad_page_record(pid, rec)
+
+
+def _create_displaypad_page(name, existing_ids=None):
+    """Register a brand-new, currently-unused page with the given name and
+    return its id. `existing_ids` lets a caller fold in ids it already
+    knows about from elsewhere (legacy configs where a page id was only
+    ever implied by a button's stored target) so the new id can't collide
+    with those either."""
+    known = set(_load_all_displaypad_pages().keys()) | {0}
+    if existing_ids:
+        known.update(int(i) for i in existing_ids)
+    new_id = max(known) + 1
+    record = {
+        "id": new_id, "name": name, "v": 2,
+        "actions": list(_EMPTY_ACTIONS), "buttons": {},
+        "fullscreen": None, "timeout": None,
+    }
+    _save_displaypad_page_record(new_id, record)
+    return new_id
+
+
+def _rename_displaypad_page(page_id, name):
+    page_id = int(page_id)
+    rec = _load_all_displaypad_pages().get(
+        page_id, {"id": page_id, "v": 2, "actions": list(_EMPTY_ACTIONS),
+                  "buttons": {}, "fullscreen": None, "timeout": None})
+    rec["name"] = name
+    _save_displaypad_page_record(page_id, rec)
+
+
+def _delete_displaypad_page(page_id):
+    """Remove a page entirely. Page 0 can't be deleted -- it always
+    exists, it's just the page the app happens to open on."""
+    page_id = int(page_id)
+    if page_id == 0:
+        return False
+    if page_id not in _load_all_displaypad_pages():
+        return False
+    _delete_displaypad_page_record(page_id)
+    return True
 
 
 def _load_displaypad_page_timeouts():
     """Per-page auto-timeout config (issue #45).
 
     Returns {int(page): {"mode": "off"|"after"|"idle", "seconds": int,
-    "target": int|"prev"}}. 'after' fires N seconds after the page is shown;
-    'idle' fires N seconds after the last keypress on that page."""
+    "target": str|"prev"}}. 'after' fires N seconds after the page is
+    shown; 'idle' fires N seconds after the last keypress on that page.
+    'target' is a page NAME (#52), resolved against the page registry by
+    the caller -- it is deliberately NOT int()-coerced here, since a named
+    target is a string on purpose, not a legacy numeric id."""
     out = {}
-    try:
-        raw = _read_json(DISPLAYPAD_TIMEOUTS_FILE)
-        for k, v in (raw or {}).items():
-            if not isinstance(v, dict):
-                continue
-            tgt = v.get("target", 0)
-            if tgt != "prev":
-                try:
-                    tgt = int(tgt)
-                except (TypeError, ValueError):
-                    tgt = 0
-            out[int(k)] = {
-                "mode": v.get("mode", "off"),
-                "seconds": int(v.get("seconds", 0) or 0),
-                "target": tgt,
-            }
-    except Exception:
-        pass
+    for pid, rec in _load_all_displaypad_pages().items():
+        v = rec.get("timeout")
+        if not isinstance(v, dict) or v.get("mode", "off") == "off":
+            continue
+        tgt = v.get("target", 0)
+        if tgt != "prev" and not isinstance(tgt, str):
+            try:
+                tgt = int(tgt)
+            except (TypeError, ValueError):
+                tgt = 0
+        out[pid] = {
+            "mode": v.get("mode", "off"),
+            "seconds": int(v.get("seconds", 0) or 0),
+            "target": tgt,
+        }
     return out
 
 
 def _save_displaypad_page_timeouts(data):
-    out = {}
-    for p, v in (data or {}).items():
+    """data: {page_id: {"mode","seconds","target"} or None to clear}."""
+    recs = _load_all_displaypad_pages()
+    all_ids = set(recs.keys()) | {int(k) for k in (data or {}).keys()}
+    for pid in all_ids:
+        v = (data or {}).get(pid, (data or {}).get(str(pid)))
+        to = None
         if isinstance(v, dict) and v.get("mode", "off") != "off" and int(v.get("seconds", 0) or 0) > 0:
-            out[str(p)] = v
-    with open(DISPLAYPAD_TIMEOUTS_FILE, "w") as f:
-        json.dump(out, f, indent=2)
+            to = v
+        rec = recs.get(pid)
+        if rec is None:
+            if to is None:
+                continue  # nothing to persist, and the page doesn't exist yet
+            rec = {"id": pid, "v": 2, "actions": list(_EMPTY_ACTIONS),
+                   "buttons": {}, "fullscreen": None}
+        rec["timeout"] = to
+        _save_displaypad_page_record(pid, rec)
 
 
 def _load_displaypad_rotation():
