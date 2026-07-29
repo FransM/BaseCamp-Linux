@@ -1047,7 +1047,13 @@ def _load_displaypad_actions(page=0):
         if page:
             data = _load_displaypad_pages().get(str(page), {}).get("actions", [])
         else:
-            data = _read_json(DISPLAYPAD_ACTIONS_FILE)
+            # Main (page 0) actions live in the per-page file written by
+            # _save_displaypad_actions() (issue #53's per-page-file migration).
+            # DISPLAYPAD_ACTIONS_FILE is the pre-#53 legacy location and is no
+            # longer written to, so reading it here silently dropped every
+            # save on the next restart -- both primary and any "also on
+            # press"/double-click chain riding along with it.
+            data = _load_all_displaypad_pages().get(0, {}).get("actions", [])
         for i in range(12):
             if i < len(data):
                 default[i].update(data[i])
