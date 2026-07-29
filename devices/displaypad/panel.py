@@ -877,7 +877,18 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         self._panel._gif_frames.pop(idx, None)
         self._panel._gui_frames_sm.pop(idx, None)
         self._panel._fullscreen_group.discard(idx)
-        _save_displaypad_buttons(self._panel._images)
+        # self._panel._images is the *live* map for whichever page is currently
+        # showing — it is NOT necessarily Main's. _save_displaypad_buttons()
+        # always writes to page 0's stored "buttons", so calling it unconditionally
+        # here clobbered Main's saved images whenever a slot was cleared on a
+        # sub-page. Mirror the branch already used by _save_page_action() /
+        # DisplayPadPanel._clear_all(): save Main directly, or sync the current
+        # page's live images into _page_images and persist all sub-pages.
+        if self._panel._current_page == 0:
+            _save_displaypad_buttons(self._panel._images)
+        else:
+            self._panel._page_images[self._panel._current_page] = dict(self._panel._images)
+            self._panel._save_sub_pages()
         self._dlg_frames.pop(idx, None)
         ph = _make_placeholder(_DIALOG_TILE)
         self._tile_imgs[idx] = ph
@@ -3597,7 +3608,13 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _set_button_image(self, key_index, path):
         self._images[str(key_index)] = path
-        _save_displaypad_buttons(self._images)
+        # Same page-agnostic-map issue as _clear_slot: self._images is the live
+        # map for whichever page is currently showing, not necessarily Main.
+        if self._current_page == 0:
+            _save_displaypad_buttons(self._images)
+        else:
+            self._page_images[self._current_page] = dict(self._images)
+            self._save_sub_pages()
         frames = _load_gif_frames(path) if path.lower().endswith('.gif') else None
         if frames:
             self._gif_frames[key_index] = frames
