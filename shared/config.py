@@ -82,6 +82,7 @@ DISPLAYPAD_TIMEOUTS_FILE   = os.path.join(CONFIG_DIR, "displaypad_page_timeouts.
 DISPLAYPAD_ROTATION_FILE    = os.path.join(CONFIG_DIR, "displaypad_rotation")
 DISPLAYPAD_BRIGHTNESS_FILE  = os.path.join(CONFIG_DIR, "displaypad_brightness")
 DISPLAYPAD_DEBOUNCE_FILE    = os.path.join(CONFIG_DIR, "displaypad_debounce")
+DISPLAYPAD_ACTIONS_DIALOG_SIZE_FILE = os.path.join(CONFIG_DIR, "displaypad_actions_dialog_size.json")
 MACROS_FILE                 = os.path.join(CONFIG_DIR, "macros.json")
 MOUSE_RECORDINGS_DIR        = os.path.join(CONFIG_DIR, "mouse_recordings")
 LAST_DIRS_FILE              = os.path.join(CONFIG_DIR, "last_dirs.json")
@@ -1270,6 +1271,34 @@ def _load_displaypad_debounce():
 def _save_displaypad_debounce(val):
     with open(DISPLAYPAD_DEBOUNCE_FILE, "w") as f:
         f.write(str(val))
+
+
+_ACTIONS_DIALOG_MIN_W, _ACTIONS_DIALOG_MIN_H = 400, 400
+_ACTIONS_DIALOG_MAX_W, _ACTIONS_DIALOG_MAX_H = 2000, 2000
+
+def _load_displaypad_actions_dialog_size():
+    """Return (width, height) for the 'Configure buttons' dialog, or None if
+    nothing was saved yet (let the dialog use its natural default size)."""
+    try:
+        with open(DISPLAYPAD_ACTIONS_DIALOG_SIZE_FILE) as f:
+            data = json.load(f)
+        w, h = int(data["width"]), int(data["height"])
+        if (_ACTIONS_DIALOG_MIN_W <= w <= _ACTIONS_DIALOG_MAX_W
+                and _ACTIONS_DIALOG_MIN_H <= h <= _ACTIONS_DIALOG_MAX_H):
+            return w, h
+    except Exception:
+        pass
+    return None
+
+
+def _save_displaypad_actions_dialog_size(width, height):
+    try:
+        w = max(_ACTIONS_DIALOG_MIN_W, min(_ACTIONS_DIALOG_MAX_W, int(width)))
+        h = max(_ACTIONS_DIALOG_MIN_H, min(_ACTIONS_DIALOG_MAX_H, int(height)))
+        with open(DISPLAYPAD_ACTIONS_DIALOG_SIZE_FILE, "w") as f:
+            json.dump({"width": w, "height": h}, f)
+    except Exception:
+        pass
 
 
 # ── DisplayPad library helpers ────────────────────────────────────────────────
