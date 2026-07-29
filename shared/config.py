@@ -7,9 +7,41 @@ import pwd as _pwd
 from PIL import Image
 
 
+_JSON_WARNED_MTIMES = {}
+
+def _warn_json(path, exc):
+    """Print a console warning for a JSON config file that couldn't be
+    parsed (malformed content, permission issues, etc.). A simply-missing
+    file (FileNotFoundError) is normal on first run and is NOT warned about
+    here -- callers that care about that distinction check it separately.
+
+    Some callers (e.g. _load_all_displaypad_pages) get re-invoked very
+    frequently (page-name lookups, action execution, GUI refresh, ...), so
+    without dedup a single broken file would print the same warning dozens
+    of times per second. Only warn once per distinct file content: track
+    the file's mtime and stay silent on repeat reads of the same broken
+    content, but warn again if the file changes (e.g. the user edited it,
+    or a fresh write got interrupted again)."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = None
+    if path in _JSON_WARNED_MTIMES and _JSON_WARNED_MTIMES[path] == mtime:
+        return
+    _JSON_WARNED_MTIMES[path] = mtime
+    print(f"[BaseCamp] warning: failed to parse JSON config '{path}': "
+          f"{type(exc).__name__}: {exc}", file=sys.stderr)
+
+
 def _read_json(path):
-    with open(path) as f:
-        return json.load(f)
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        _warn_json(path, e)
+        raise
 
 # ── Path setup ─────────────────────────────────────────────────────────────────
 
@@ -108,8 +140,10 @@ def _load_last_dir(kind, default=None):
         path = data.get(kind)
         if path and os.path.isdir(path):
             return path
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError:
         pass
+    except (json.JSONDecodeError, OSError) as e:
+        _warn_json(LAST_DIRS_FILE, e)
     if default and os.path.isdir(default):
         return default
     env_path = os.environ.get("ICON_PATH")
@@ -145,7 +179,10 @@ def _save_last_dir(kind, path):
     try:
         with open(LAST_DIRS_FILE) as f:
             data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError:
+        data = {}
+    except (json.JSONDecodeError, OSError) as e:
+        _warn_json(LAST_DIRS_FILE, e)
         data = {}
     data[kind] = directory
     try:
@@ -158,10 +195,14 @@ def _save_last_dir(kind, path):
 
 def _bundled_plugin_version(path):
     """Read version string from plugin.json in `path`, or '' on any error."""
+    plugin_json = os.path.join(path, "plugin.json")
     try:
-        with open(os.path.join(path, "plugin.json")) as f:
+        with open(plugin_json) as f:
             return str(json.load(f).get("version", ""))
-    except Exception:
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        _warn_json(plugin_json, e)
         return ""
 
 
@@ -451,8 +492,10 @@ def load_buttons():
         for i in range(4):
             if i < len(data):
                 default[i].update(data[i])
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         pass
+    except json.JSONDecodeError as e:
+        _warn_json(BUTTON_FILE, e)
     return default
 
 
@@ -479,8 +522,10 @@ def load_obs_config():
         for i in range(4):
             if i < len(data.get("buttons", [])):
                 default["buttons"][i].update(data["buttons"][i])
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         pass
+    except json.JSONDecodeError as e:
+        _warn_json(OBS_FILE, e)
     return default
 
 
@@ -1292,8 +1337,10 @@ def _load_displaypad_actions_dialog_size():
         if (_ACTIONS_DIALOG_MIN_W <= w <= _ACTIONS_DIALOG_MAX_W
                 and _ACTIONS_DIALOG_MIN_H <= h <= _ACTIONS_DIALOG_MAX_H):
             return w, h
-    except Exception:
+    except FileNotFoundError:
         pass
+    except Exception as e:
+        _warn_json(DISPLAYPAD_ACTIONS_DIALOG_SIZE_FILE, e)
     return None
 
 
