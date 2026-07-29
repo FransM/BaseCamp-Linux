@@ -544,6 +544,37 @@ def _make_placeholder(size):
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
+def _close_all_dropdowns(widget):
+    """Recursively close any CTkOptionMenu's popup menu found under
+    `widget`. CTkOptionMenu keeps its DropdownMenu (a tkinter.Menu) on
+    `_dropdown_menu`; closing it just calls tkinter's own unpost()."""
+    dd = getattr(widget, "_dropdown_menu", None)
+    if dd is not None:
+        try:
+            dd.close()
+        except Exception:
+            pass
+    try:
+        children = widget.winfo_children()
+    except Exception:
+        children = []
+    for c in children:
+        _close_all_dropdowns(c)
+
+
+def _bind_dropdown_autoclose(toplevel):
+    """Work around a Tk/X11 quirk: a CTkOptionMenu's popup is an
+    override-redirect window, so the window manager doesn't include it in
+    normal focus/stacking handling -- it can stay rendered on top of every
+    other application (e.g. switching to a browser) even after this window
+    itself loses focus, because nothing tells it to close. Force any open
+    dropdown in this window closed the moment the window loses focus."""
+    def _on_focus_out(event):
+        if event.widget is toplevel:
+            _close_all_dropdowns(toplevel)
+    toplevel.bind("<FocusOut>", _on_focus_out, add="+")
+
+
 def _prompt_page_name(app, prompt_key, title_key, initial=""):
     """Modal one-line text prompt for a page name (#52), used both to create
     a brand-new standalone page and to rename an existing one. Returns the
@@ -783,6 +814,8 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             font=("Helvetica", 11), height=34, corner_radius=6, width=100,
             command=self._pick_fullscreen,
         ).pack(side="left")
+
+        _bind_dropdown_autoclose(self)
 
     # ── Slot management ───────────────────────────────────────────────────────
 
@@ -1524,6 +1557,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             command=self._apply_all_and_close,
         ).pack(fill="x", padx=12, pady=(0, 12))
 
+        _bind_dropdown_autoclose(self)
+
     def _on_page_change(self, label):
         if label == self._app.T("dp_new_page"):
             name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
@@ -2254,6 +2289,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         self.bind("<Destroy>", lambda e: (self._monitor_stop.set(), self._key_stop.set()))
         # Arm the auto-timeout for the start page, if it has one (#45).
         self.after(800, lambda: self._arm_page_timeout(self._current_page))
+        _bind_dropdown_autoclose(self.winfo_toplevel())
 
     def T(self, key, **kwargs):
         return self._app.T(key, **kwargs)
@@ -2918,7 +2954,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         if p in names:
             return names[p]
         if p == 0:
-            default = self.T("dp_page_main")
+            default = self._unique_page_name(self.T("dp_page_main"), exclude_id=0)
             names[0] = default
             _save_displaypad_page_names(names)
             return default
@@ -2927,10 +2963,11 @@ class DisplayPadPanel(ctk.CTkFrame):
                 if act.get("type") == "page" and self._page_target(act, i) == p:
                     name = (act.get("action") or "").strip()
                     if name:
+                        name = self._unique_page_name(name, exclude_id=p)
                         names[p] = name
                         _save_displaypad_page_names(names)
                         return name
-        fallback = f"Page {p}"
+        fallback = self._unique_page_name(f"Page {p}", exclude_id=p)
         names[p] = fallback
         _save_displaypad_page_names(names)
         return fallback
@@ -2943,11 +2980,27 @@ class DisplayPadPanel(ctk.CTkFrame):
                 return pid
         return None
 
+    def _unique_page_name(self, name, exclude_id=None):
+        """Disambiguate `name` against every other page's name (#55) by
+        appending " (2)", " (3)", etc. Without this, two pages could end up
+        with the identical name and the page dropdown would show that name
+        twice -- looking like a duplicate entry, even though they're two
+        distinct, valid pages underneath."""
+        existing = {n for pid, n in _load_displaypad_page_names().items()
+                    if pid != exclude_id}
+        if name not in existing:
+            return name
+        i = 2
+        while f"{name} ({i})" in existing:
+            i += 1
+        return f"{name} ({i})"
+
     def _create_named_page(self, name):
         """Register a brand-new page that isn't targeted by any button yet
         (#52) -- it exists purely because it's in the name registry, and
         _gc_orphan_pages() knows to leave it alone."""
         name = (name or "").strip() or f"Page {self._mint_page_id()}"
+        name = self._unique_page_name(name)
         pid = _create_displaypad_page(name, existing_ids=self._all_page_ids())
         self._page_actions.setdefault(pid, [dict(a) for a in _DEFAULT_ACTIONS])
         self._page_images.setdefault(pid, {})
@@ -2964,6 +3017,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         name = (name or "").strip()
         if not name:
             return
+        name = self._unique_page_name(name, exclude_id=page_id)
         old_name = self._get_page_name(page_id)
         _rename_displaypad_page(page_id, name)
         if old_name == name:
