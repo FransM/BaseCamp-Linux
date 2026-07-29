@@ -903,11 +903,30 @@ def _find_page_file(page_id):
     return None
 
 
+_PAGES_CACHE = None  # dict[page_id -> record], or None when not (yet) loaded
+
+def _invalidate_pages_cache():
+    global _PAGES_CACHE
+    _PAGES_CACHE = None
+
 def _load_all_displaypad_pages():
     """Return {page_id: {"id","name","v","actions","buttons","fullscreen",
     "timeout"}} by reading every page's own file. Migrates the old combined
     files into this layout the first time it's called on an existing
-    install (see _migrate_legacy_displaypad_pages)."""
+    install (see _migrate_legacy_displaypad_pages).
+
+    This is called very frequently (page-name lookups, action execution on
+    every button press, GUI refreshes, ...), so the parsed result is cached
+    in memory and only rebuilt when something actually changed. The only
+    writer of these files is this same process (the tray helper is a
+    separate, much smaller process that only talks to the GUI over Unix
+    signals and never touches DisplayPad page files), so it's enough to
+    invalidate the cache from the handful of functions that write here --
+    no need to re-stat the directory on every call."""
+    global _PAGES_CACHE
+    if _PAGES_CACHE is not None:
+        return dict(_PAGES_CACHE)
+
     _migrate_legacy_displaypad_pages()
     out = {}
     try:
@@ -928,7 +947,9 @@ def _load_all_displaypad_pages():
         except (TypeError, ValueError):
             continue
         out[pid] = data
-    return out
+
+    _PAGES_CACHE = out
+    return dict(out)
 
 
 def _save_displaypad_page_record(page_id, record):
@@ -947,6 +968,7 @@ def _save_displaypad_page_record(page_id, record):
             pass
     with open(new_path, "w") as f:
         json.dump(record, f, indent=2)
+    _invalidate_pages_cache()
 
 
 def _delete_displaypad_page_record(page_id):
@@ -956,6 +978,7 @@ def _delete_displaypad_page_record(page_id):
             os.remove(path)
         except OSError:
             pass
+    _invalidate_pages_cache()
 
 
 def _migrate_legacy_displaypad_pages():
