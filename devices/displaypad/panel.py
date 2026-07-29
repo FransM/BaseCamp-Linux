@@ -38,6 +38,7 @@ from shared.config import (
     _load_displaypad_page_timeouts, _save_displaypad_page_timeouts,
     _load_displaypad_page_names, _save_displaypad_page_names,
     _create_displaypad_page, _rename_displaypad_page, _delete_displaypad_page,
+    _load_displaypad_actions_dialog_size, _save_displaypad_actions_dialog_size,
 )
 
 # Set BASECAMP_PAGE_DEBUG=1 in the environment to trace page-switch/upload
@@ -1080,8 +1081,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._page  = panel._current_page
         self.title(panel._app.T("dp_actions_title"))
         self.configure(fg_color=BG)
-        self.resizable(False, False)
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.resizable(True, True)
+        self.minsize(420, 420)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._resize_save_after_id = None
+        self.bind("<Configure>", self._on_configure)
 
         _folder_pil = Image.open(
             os.path.join(panel._res_path, "resources", "foldericon.png")).convert("RGBA")
@@ -1124,10 +1128,45 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._load_page(self._page)
 
         self.update_idletasks()
+        saved_size = _load_displaypad_actions_dialog_size()
         pw = self._app.winfo_rootx() + self._app.winfo_width() // 2
         ph = self._app.winfo_rooty() + self._app.winfo_height() // 2
-        w, h = self.winfo_width(), self.winfo_height()
-        self.geometry(f"+{pw - w//2}+{ph - h//2}")
+        if saved_size:
+            w, h = saved_size
+        else:
+            w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"{w}x{h}+{pw - w // 2}+{ph - h // 2}")
+
+    def _on_configure(self, event):
+        """Debounce <Configure> events (fired continuously while dragging the
+        window edge) so we only persist the size ~400ms after resizing stops."""
+        if event.widget is not self:
+            return
+        if self._resize_save_after_id is not None:
+            try:
+                self.after_cancel(self._resize_save_after_id)
+            except Exception:
+                pass
+        self._resize_save_after_id = self.after(400, self._save_current_size)
+
+    def _save_current_size(self):
+        self._resize_save_after_id = None
+        try:
+            _save_displaypad_actions_dialog_size(self.winfo_width(), self.winfo_height())
+        except Exception:
+            pass
+
+    def _on_close(self):
+        """Persist the current size immediately (in case the debounced
+        <Configure> save hasn't fired yet) before closing the dialog."""
+        if self._resize_save_after_id is not None:
+            try:
+                self.after_cancel(self._resize_save_after_id)
+            except Exception:
+                pass
+            self._resize_save_after_id = None
+        self._save_current_size()
+        self.destroy()
 
     def _get_action_types(self, include_page=True):
         """Return list of internal action type IDs, including plugin types."""
@@ -2219,6 +2258,13 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             pass
         for i in range(12):
             self._apply(i)
+        if self._resize_save_after_id is not None:
+            try:
+                self.after_cancel(self._resize_save_after_id)
+            except Exception:
+                pass
+            self._resize_save_after_id = None
+        self._save_current_size()
         self.destroy()
 
 
