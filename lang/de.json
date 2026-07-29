@@ -422,5 +422,17 @@
   "rgb_cmode_rainbow": "Regenbogen",
   "rgb_build_label": "BaseCamp Linux v{ver}",
   "dp_page_target": "Zu Seite:",
-  "dp_new_page": "＋ Neue Seite"
+  "dp_new_page": "＋ Neue Seite",
+  "dp_page_name_prompt": "Seitenname:",
+  "dp_page_name_title": "Neue Seite",
+  "dp_rename_page_title": "Seite umbenennen",
+  "dp_delete_page_title": "Seite löschen",
+  "dp_delete_page_main_error": "Die Hauptseite kann nicht gelöscht werden — die App startet nun mal darauf.",
+  "dp_delete_page_confirm": "\"{name}\" löschen? Dies kann nicht rückgängig gemacht werden.",
+  "dp_delete_page_referenced_warning": "\"{name}\" wird noch von {count} Taste(n)/Timeout(s) angesteuert. Beim Löschen zeigen diese ins Leere:",
+  "dp_delete_page_more": "…und {count} weitere",
+  "dp_ref_kind_action": "Seitenwechsel-Aktion",
+  "dp_ref_kind_also_on_press": "Auch beim Drücken",
+  "dp_ref_kind_double_click": "Doppelklick-Aktion",
+  "dp_ref_kind_timeout": "Auto-Timeout-Ziel"
 }

@@ -16,6 +16,7 @@ import queue
 import threading
 import subprocess
 import tkinter as tk
+from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
@@ -556,6 +557,46 @@ def _prompt_page_name(app, prompt_key, title_key, initial=""):
     return val or None
 
 
+_REF_KIND_LABELS = {
+    "action": "dp_ref_kind_action",
+    "also_on_press": "dp_ref_kind_also_on_press",
+    "double_click": "dp_ref_kind_double_click",
+    "timeout": "dp_ref_kind_timeout",
+}
+
+
+def _confirm_delete_page(app, panel, page_id):
+    """Ask for confirmation before deleting a page (#54). If anything still
+    targets it by name, list exactly what and where so the person can
+    decide whether to fix those first or delete anyway. Returns True if the
+    person confirmed the delete."""
+    if page_id == 0:
+        messagebox.showerror(app.T("dp_delete_page_title"), app.T("dp_delete_page_main_error"))
+        return False
+
+    page_name = panel._get_page_name(page_id)
+    refs = panel._find_page_references(page_id)
+    if not refs:
+        return messagebox.askyesno(
+            app.T("dp_delete_page_title"),
+            app.T("dp_delete_page_confirm", name=page_name))
+
+    lines = []
+    for r in refs[:10]:
+        from_name = panel._get_page_name(r["from_page"])
+        kind = app.T(_REF_KIND_LABELS.get(r["kind"], r["kind"]))
+        if r["key"] is None:
+            lines.append(f"\u2022 {from_name} \u2014 {kind}")
+        else:
+            lines.append(f"\u2022 {from_name}, K{r['key'] + 1} \u2014 {kind}")
+    extra = len(refs) - len(lines)
+    if extra > 0:
+        lines.append(app.T("dp_delete_page_more", count=extra))
+    msg = app.T("dp_delete_page_referenced_warning", name=page_name, count=len(refs)) \
+        + "\n\n" + "\n".join(lines)
+    return messagebox.askyesno(app.T("dp_delete_page_title"), msg, icon="warning")
+
+
 # ── Image management dialog ───────────────────────────────────────────────────
 
 _DIALOG_TILE  = 90   # thumbnail size in dialog
@@ -636,6 +677,10 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             header, text="✎", width=28, height=28,
             fg_color=BG2, hover_color="#333a44", text_color=FG,
             command=self._on_rename_page).pack(side="right", padx=(0, 6))
+        ctk.CTkButton(
+            header, text="🗑", width=28, height=28,
+            fg_color=BG2, hover_color="#4a2222", text_color=FG,
+            command=self._on_delete_page).pack(side="right", padx=(0, 6))
 
         # 6 × 2 grid of tiles
         grid = ctk.CTkFrame(self, fg_color="transparent")
@@ -966,6 +1011,15 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         self._panel._rename_page(cur, name)
         self._refresh_page_selector()
 
+    def _on_delete_page(self):
+        """Delete the page currently shown in this dialog (#54), after
+        warning if anything still points at it by name."""
+        cur = self._panel._current_page
+        if not _confirm_delete_page(self._app, self._panel, cur):
+            return
+        self._panel._delete_page(cur)
+        self._refresh_page_selector()
+
     def destroy(self):
         # Auto-upload when dialog closes. Guard against the panel being
         # destroyed first during an app shutdown, which would raise TclError.
@@ -1267,6 +1321,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             header, text="✎", width=28, height=28,
             fg_color=BG2, hover_color="#333a44", text_color=FG,
             command=self._on_rename_page).pack(side="right", padx=(0, 6))
+        ctk.CTkButton(
+            header, text="🗑", width=28, height=28,
+            fg_color=BG2, hover_color="#4a2222", text_color=FG,
+            command=self._on_delete_page).pack(side="right", padx=(0, 6))
         self._page_list = pages
 
         # ── Per-page auto-timeout (issue #45) ─────────────────────────────────
@@ -1512,6 +1570,16 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             return
         self._panel._rename_page(self._page, name)
         self._refresh_page_selector()
+
+    def _on_delete_page(self):
+        """Delete the page currently open in the editor (#54), after
+        warning if anything still points at it by name. Always falls back
+        to showing Main afterward, since the page being edited is gone."""
+        page_id = self._page
+        if not _confirm_delete_page(self._app, self._panel, page_id):
+            return
+        self._panel._delete_page(page_id)
+        self._refresh_page_selector(select=0)
 
     # ── Per-page auto-timeout controls (issue #45) ────────────────────────────
     _TIMEOUT_MODES = ["off", "after", "idle"]
@@ -2932,6 +3000,53 @@ class DisplayPadPanel(ctk.CTkFrame):
                 changed_timeout = True
         if changed_timeout:
             _save_displaypad_page_timeouts(self._page_timeout)
+
+    def _find_page_references(self, page_id):
+        """Return every place that targets this page by name: a primary
+        'page' action, an 'also on press' step, a double-click action, or a
+        page-timeout target -- on ANY page, including this one. Used to
+        warn before deleting a page that's still pointed at."""
+        name = self._get_page_name(page_id)
+        refs = []
+        for from_page, acts in self._page_actions.items():
+            for i, act in enumerate(acts or []):
+                if not isinstance(act, dict):
+                    continue
+                if act.get("type") == "page" and act.get("target") == name:
+                    refs.append({"from_page": from_page, "key": i, "kind": "action"})
+                for step in (act.get("actions") or []):
+                    if step.get("type") == "page" and step.get("target") == name:
+                        refs.append({"from_page": from_page, "key": i, "kind": "also_on_press"})
+                dbl = act.get("double")
+                if isinstance(dbl, dict) and dbl.get("type") == "page" and dbl.get("target") == name:
+                    refs.append({"from_page": from_page, "key": i, "kind": "double_click"})
+        for from_page, to in (self._page_timeout or {}).items():
+            if isinstance(to, dict) and to.get("target") == name:
+                refs.append({"from_page": from_page, "key": None, "kind": "timeout"})
+        return refs
+
+    def _delete_page(self, page_id):
+        """Remove a page's data, its stored file, and switch away from it
+        first if it was the one currently on screen. Does NOT clean up
+        references to it elsewhere (#54) -- those buttons are left as-is
+        and will simply fail to resolve a target next time they're used;
+        the delete-page UI is expected to have already warned about that."""
+        page_id = int(page_id)
+        if page_id == 0:
+            return False
+        if not _delete_displaypad_page(page_id):
+            return False
+        self._page_actions.pop(page_id, None)
+        self._page_images.pop(page_id, None)
+        self._page_fullscreen.pop(page_id, None)
+        self._page_timeout.pop(page_id, None)
+        self._page_gif_frames.pop(page_id, None)
+        self._page_gui_frames.pop(page_id, None)
+        self._save_sub_pages()
+        _save_displaypad_page_timeouts(self._page_timeout)
+        if self._current_page == page_id:
+            self._switch_to_page(0)
+        return True
 
     def _get_extra_actions(self, idx):
         """Extra action steps for button idx (issue #17). Stored as an `actions`
