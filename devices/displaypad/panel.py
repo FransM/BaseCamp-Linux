@@ -1397,6 +1397,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                                         width=480, height=460)
         scroll.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
+        # Fixed widths so the label + dropdown column lines up identically
+        # across all three rows of a key card (action / also-on-press / double-click).
+        _ROW_LABEL_W = 130
+        _ROW_MENU_W  = 130
+
         for i in range(12):
             card = ctk.CTkFrame(scroll, fg_color=BG3, corner_radius=4)
             card.pack(fill="x", padx=4, pady=2)
@@ -1410,12 +1415,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
             ctk.CTkLabel(row, text=self._app.T("action_label"),
                          font=("Helvetica", 10), text_color=FG2,
-                         width=50, anchor="w").pack(side="left", padx=(4, 2))
+                         width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
 
             type_menu = ctk.CTkOptionMenu(
                 row, values=self._type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=30,
+                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=30,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_type_change(val, ix))
             type_menu.pack(side="left", padx=(2, 2))
@@ -1503,11 +1508,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             sec_row.pack(fill="x", padx=4, pady=(0, 6))
             ctk.CTkLabel(sec_row, text=self._app.T("dp_also_on_press"),
                          font=("Helvetica", 10), text_color=FG2,
-                         anchor="w").pack(side="left", padx=(4, 2))
+                         width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
             sec_menu = ctk.CTkOptionMenu(
                 sec_row, values=self._sec_type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=28,
+                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=28,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_sec_type_change(val, ix))
             sec_menu.pack(side="left", padx=(2, 2))
@@ -1528,11 +1533,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             dbl_row.pack(fill="x", padx=4, pady=(0, 6))
             ctk.CTkLabel(dbl_row, text=self._app.T("dp_on_double_click"),
                          font=("Helvetica", 10), text_color=FG2,
-                         anchor="w").pack(side="left", padx=(4, 2))
+                         width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
             dbl_menu = ctk.CTkOptionMenu(
                 dbl_row, values=self._sec_type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=28,
+                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=28,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_dbl_type_change(val, ix))
             dbl_menu.pack(side="left", padx=(2, 2))
