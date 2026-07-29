@@ -1111,11 +1111,13 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._sec_cmd     = [tk.StringVar() for _ in range(12)]
         self._sec_menus   = []
         self._sec_entries = []
+        self._sec_page_combos = []  # 'page' target picker for also-on-press (existing pages only)
         # Double-click action (issue #47)
         self._dbl_type    = [tk.StringVar() for _ in range(12)]
         self._dbl_cmd     = [tk.StringVar() for _ in range(12)]
         self._dbl_menus   = []
         self._dbl_entries = []
+        self._dbl_page_combos = []  # 'page' target picker for double-click (existing pages only)
         self._cards       = []
 
         self._build_ui()
@@ -1202,6 +1204,19 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._sec_type_labels()[_SECONDARY_TYPES.index(_sectype)])
             self._sec_menus[i].configure(state="normal")
             self._sec_entries[i].configure(state="normal")
+            self._sec_entries[i].pack_forget()
+            self._sec_page_combos[i].pack_forget()
+            if _sectype == "page":
+                _splabels, _spmap = self._existing_page_options()
+                self._sec_page_combos[i].configure(values=_splabels or [""])
+                _sel = self._sec_cmd[i].get()
+                if _sel not in _spmap:
+                    _sel = _splabels[0] if _splabels else ""
+                    self._sec_cmd[i].set(_sel)
+                self._sec_page_combos[i].set(_sel)
+                self._sec_page_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            else:
+                self._sec_entries[i].pack(side="left", padx=4, expand=True, fill="x")
 
             # Double-click action (issue #47)
             _dbl = act.get("double") if isinstance(act, dict) else None
@@ -1214,6 +1229,19 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._sec_type_labels()[_SECONDARY_TYPES.index(_dbltype)])
             self._dbl_menus[i].configure(state="normal")
             self._dbl_entries[i].configure(state="normal")
+            self._dbl_entries[i].pack_forget()
+            self._dbl_page_combos[i].pack_forget()
+            if _dbltype == "page":
+                _dplabels, _dpmap = self._existing_page_options()
+                self._dbl_page_combos[i].configure(values=_dplabels or [""])
+                _dsel = self._dbl_cmd[i].get()
+                if _dsel not in _dpmap:
+                    _dsel = _dplabels[0] if _dplabels else ""
+                    self._dbl_cmd[i].set(_dsel)
+                self._dbl_page_combos[i].set(_dsel)
+                self._dbl_page_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            else:
+                self._dbl_entries[i].pack(side="left", padx=4, expand=True, fill="x")
 
             menu = self._type_menus[i]
             menu.configure(values=labels)
@@ -1526,6 +1554,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             attach_clipboard_menu(sec_entry, self._app.T)
             self._sec_entries.append(sec_entry)
 
+            sec_page_combo = ctk.CTkOptionMenu(
+                sec_row, values=[""], width=140, height=28,
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_sec_page_select(val, ix))
+            self._sec_page_combos.append(sec_page_combo)
+            # not packed yet — shown only when 'page' type selected
+
             # Double-click action (issue #47) — a distinct action on a quick
             # second press. When set, the primary is held until the click window
             # elapses; when 'none', the key stays instant.
@@ -1550,6 +1586,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             dbl_entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
             attach_clipboard_menu(dbl_entry, self._app.T)
             self._dbl_entries.append(dbl_entry)
+
+            dbl_page_combo = ctk.CTkOptionMenu(
+                dbl_row, values=[""], width=140, height=28,
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_dbl_page_select(val, ix))
+            self._dbl_page_combos.append(dbl_page_combo)
+            # not packed yet — shown only when 'page' type selected
 
         self._info_lbl = ctk.CTkLabel(self, text="",
                                       font=("Helvetica", 11), text_color=GRN)
@@ -1691,6 +1735,17 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         # Re-arm live if the page being edited is the one on the device now.
         if self._page == self._panel._current_page:
             self._panel._arm_page_timeout(self._page)
+
+    def _existing_page_options(self):
+        """(labels, {label: page_id}) of every existing page, no 'New page'
+        entry — used by the also-on-press / double-click page pickers, which
+        can only jump to a page that already exists (issue #16/#47)."""
+        mapping, labels = {}, []
+        for p in self._panel._get_available_pages():
+            lbl = self._panel._get_page_name(p)
+            labels.append(lbl)
+            mapping[lbl] = p
+        return labels, mapping
 
     def _page_target_options(self):
         """(labels, {label: target}) for the page-target picker: every existing
@@ -1843,17 +1898,34 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, IndexError):
             internal = "none"
         self._sec_type[idx].set(internal)
-        if internal == "keypress":
-            self._sec_entries[idx].configure(
-                placeholder_text="e.g. F12, ctrl+shift+a")
-        elif internal == "text":
-            self._sec_entries[idx].configure(
-                placeholder_text=self._app.T("action_type_text_hint"))
-        elif internal == "none":
-            self._sec_cmd[idx].set("")
-            self._sec_entries[idx].configure(placeholder_text="")
+        self._sec_entries[idx].pack_forget()
+        self._sec_page_combos[idx].pack_forget()
+        if internal == "page":
+            plabels, pmap = self._existing_page_options()
+            self._sec_page_combos[idx].configure(values=plabels or [""])
+            cur = self._sec_cmd[idx].get()
+            sel = cur if cur in pmap else (plabels[0] if plabels else "")
+            self._sec_cmd[idx].set(sel)
+            self._sec_page_combos[idx].set(sel)
+            self._sec_page_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
         else:
-            self._sec_entries[idx].configure(placeholder_text="")
+            if internal == "keypress":
+                self._sec_entries[idx].configure(
+                    placeholder_text="e.g. F12, ctrl+shift+a")
+            elif internal == "text":
+                self._sec_entries[idx].configure(
+                    placeholder_text=self._app.T("action_type_text_hint"))
+            elif internal == "none":
+                self._sec_cmd[idx].set("")
+                self._sec_entries[idx].configure(placeholder_text="")
+            else:
+                self._sec_entries[idx].configure(placeholder_text="")
+            self._sec_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
+        self._apply(idx)
+
+    def _on_sec_page_select(self, val, idx):
+        """User picked a destination page for the 'also on press' action."""
+        self._sec_cmd[idx].set(val)
         self._apply(idx)
 
     def _on_dbl_type_change(self, label, idx):
@@ -1864,17 +1936,34 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, IndexError):
             internal = "none"
         self._dbl_type[idx].set(internal)
-        if internal == "keypress":
-            self._dbl_entries[idx].configure(
-                placeholder_text="e.g. F12, ctrl+shift+a")
-        elif internal == "text":
-            self._dbl_entries[idx].configure(
-                placeholder_text=self._app.T("action_type_text_hint"))
-        elif internal == "none":
-            self._dbl_cmd[idx].set("")
-            self._dbl_entries[idx].configure(placeholder_text="")
+        self._dbl_entries[idx].pack_forget()
+        self._dbl_page_combos[idx].pack_forget()
+        if internal == "page":
+            plabels, pmap = self._existing_page_options()
+            self._dbl_page_combos[idx].configure(values=plabels or [""])
+            cur = self._dbl_cmd[idx].get()
+            sel = cur if cur in pmap else (plabels[0] if plabels else "")
+            self._dbl_cmd[idx].set(sel)
+            self._dbl_page_combos[idx].set(sel)
+            self._dbl_page_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
         else:
-            self._dbl_entries[idx].configure(placeholder_text="")
+            if internal == "keypress":
+                self._dbl_entries[idx].configure(
+                    placeholder_text="e.g. F12, ctrl+shift+a")
+            elif internal == "text":
+                self._dbl_entries[idx].configure(
+                    placeholder_text=self._app.T("action_type_text_hint"))
+            elif internal == "none":
+                self._dbl_cmd[idx].set("")
+                self._dbl_entries[idx].configure(placeholder_text="")
+            else:
+                self._dbl_entries[idx].configure(placeholder_text="")
+            self._dbl_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
+        self._apply(idx)
+
+    def _on_dbl_page_select(self, val, idx):
+        """User picked a destination page for the double-click action."""
+        self._dbl_cmd[idx].set(val)
         self._apply(idx)
 
     def _on_obs_select(self, val, idx):
