@@ -1247,11 +1247,17 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._sec_page_combos[i].pack_forget()
             if _sectype == "page":
                 _splabels, _spmap = self._existing_page_options()
-                self._sec_page_combos[i].configure(values=_splabels or [""])
                 _sel = self._sec_cmd[i].get()
-                if _sel not in _spmap:
+                if _sel and _sel not in _spmap:
+                    # Stored target isn't in the "clean" list right now (e.g. it
+                    # was only ever reachable via this chain step, see
+                    # _all_page_ids) — show it anyway instead of silently
+                    # swapping in a different page and losing the setting.
+                    _splabels = _splabels + [_sel]
+                elif not _sel:
                     _sel = _splabels[0] if _splabels else ""
                     self._sec_cmd[i].set(_sel)
+                self._sec_page_combos[i].configure(values=_splabels or [""])
                 self._sec_page_combos[i].set(_sel)
                 self._sec_page_combos[i].pack(side="left", padx=4, expand=True, fill="x")
             else:
@@ -1272,11 +1278,13 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._dbl_page_combos[i].pack_forget()
             if _dbltype == "page":
                 _dplabels, _dpmap = self._existing_page_options()
-                self._dbl_page_combos[i].configure(values=_dplabels or [""])
                 _dsel = self._dbl_cmd[i].get()
-                if _dsel not in _dpmap:
+                if _dsel and _dsel not in _dpmap:
+                    _dplabels = _dplabels + [_dsel]
+                elif not _dsel:
                     _dsel = _dplabels[0] if _dplabels else ""
                     self._dbl_cmd[i].set(_dsel)
+                self._dbl_page_combos[i].configure(values=_dplabels or [""])
                 self._dbl_page_combos[i].set(_dsel)
                 self._dbl_page_combos[i].pack(side="left", padx=4, expand=True, fill="x")
             else:
@@ -1941,10 +1949,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._sec_page_combos[idx].pack_forget()
         if internal == "page":
             plabels, pmap = self._existing_page_options()
-            self._sec_page_combos[idx].configure(values=plabels or [""])
             cur = self._sec_cmd[idx].get()
-            sel = cur if cur in pmap else (plabels[0] if plabels else "")
-            self._sec_cmd[idx].set(sel)
+            if cur and cur not in pmap:
+                plabels = plabels + [cur]
+                sel = cur
+            else:
+                sel = cur if cur in pmap else (plabels[0] if plabels else "")
+                self._sec_cmd[idx].set(sel)
+            self._sec_page_combos[idx].configure(values=plabels or [""])
             self._sec_page_combos[idx].set(sel)
             self._sec_page_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
         else:
@@ -1979,10 +1991,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._dbl_page_combos[idx].pack_forget()
         if internal == "page":
             plabels, pmap = self._existing_page_options()
-            self._dbl_page_combos[idx].configure(values=plabels or [""])
             cur = self._dbl_cmd[idx].get()
-            sel = cur if cur in pmap else (plabels[0] if plabels else "")
-            self._dbl_cmd[idx].set(sel)
+            if cur and cur not in pmap:
+                plabels = plabels + [cur]
+                sel = cur
+            else:
+                sel = cur if cur in pmap else (plabels[0] if plabels else "")
+                self._dbl_cmd[idx].set(sel)
+            self._dbl_page_combos[idx].configure(values=plabels or [""])
             self._dbl_page_combos[idx].set(sel)
             self._dbl_page_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
         else:
@@ -2676,6 +2692,32 @@ class DisplayPadPanel(ctk.CTkFrame):
             for i, act in enumerate(acts):
                 if act.get("type") == "page":
                     ids.add(self._page_target(act, i))
+                # A page targeted only by an 'also on press' chain step or a
+                # double-click action was already treated as "referenced" by
+                # _gc_orphan_pages (so it never gets deleted) — but it was
+                # missing here, so it silently fell out of the page picker's
+                # option list and got clobbered on reload. Resolve those
+                # targets too so such a page always counts as existing.
+                for step in (act.get("actions") or []):
+                    if isinstance(step, dict) and step.get("type") == "page":
+                        pid = self._page_id_by_name(step.get("target") or "")
+                        if pid is None:
+                            try:
+                                pid = int(step.get("target"))
+                            except (TypeError, ValueError):
+                                pid = None
+                        if pid is not None:
+                            ids.add(pid)
+                dbl = act.get("double")
+                if isinstance(dbl, dict) and dbl.get("type") == "page":
+                    pid = self._page_id_by_name(dbl.get("target") or "")
+                    if pid is None:
+                        try:
+                            pid = int(dbl.get("target"))
+                        except (TypeError, ValueError):
+                            pid = None
+                    if pid is not None:
+                        ids.add(pid)
         return {p for p in ids if isinstance(p, int) and p >= 0}
 
     def _mint_page_id(self):
