@@ -2312,6 +2312,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._tile_lbls   = {}   # compact overview: key_index -> CTkLabel
         self._uploading        = False
         self._animating        = False
+        self._page_switch_waiting = False  # set by _switch_to_page while it
+                                            # waits for the plugin worker to
+                                            # yield the device (see there)
         self._anim_stop        = threading.Event()
         self._anim_thread      = None
         self._min_frame_ms     = 50
@@ -2361,10 +2364,13 @@ class DisplayPadPanel(ctk.CTkFrame):
         # image upload can wait for the device to be free before opening it.
         self._key_released    = threading.Event()
         self._key_released.set()
-        # Plugin live-image uploads (System Monitor, Clock, ...)
-        self._plugin_worker_lock   = threading.Lock()
-        self._plugin_worker_active = False
-        self._last_plugin_error    = None
+        # Plugin live-image uploads (System Monitor, Clock, ...) — handled by
+        # one persistent worker thread (started once, see __init__ below)
+        # instead of spawning a fresh thread and reclaiming interface 1/3
+        # for every burst of pushes.
+        self._plugin_worker_stop = threading.Event()
+        self._plugin_last_item   = 0.0
+        self._last_plugin_error  = None
         # Serialises every USB session (manual upload, animation, plugin worker)
         # so two of them can never hold interface 1/3 at once. Without this the
         # check-and-set on the _uploading/_animating bools races between the GUI
@@ -2453,7 +2459,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         # Start device presence monitor and key event listener
         threading.Thread(target=self._monitor_loop, daemon=True).start()
         threading.Thread(target=self._key_event_loop, daemon=True).start()
-        self.bind("<Destroy>", lambda e: (self._monitor_stop.set(), self._key_stop.set()))
+        threading.Thread(target=self._plugin_upload_worker, daemon=True).start()
+        self.bind("<Destroy>", lambda e: (self._monitor_stop.set(), self._key_stop.set(),
+                                           self._plugin_worker_stop.set()))
         # Arm the auto-timeout for the start page, if it has one (#45).
         self.after(800, lambda: self._arm_page_timeout(self._current_page))
         _bind_dropdown_autoclose(self.winfo_toplevel())
@@ -3025,10 +3033,30 @@ class DisplayPadPanel(ctk.CTkFrame):
         # page looked "pre-filled" with the previous page's images (issue #28).
         # Defer and retry until the short upload finishes (bounded so a stuck
         # flag can't loop forever).
+        #
+        # _page_switch_waiting tells _plugin_upload_worker to yield the device
+        # at its next loop iteration instead of only releasing it after a full
+        # LINGER (2s) idle gap between queued frames — without this, a plugin
+        # that keeps pushing more often than every 2s (e.g. a ~1/s System
+        # Monitor push) held the device indefinitely and every retry here just
+        # failed until the bound below silently gave up (this was the actual
+        # bug: page switching appeared to stop working whenever such a plugin
+        # was active on the current page).
+        self._page_switch_waiting = True
         if self._uploading:
             if _retry < 40:  # ~6s worst case at 150ms
                 self.after(150, lambda: self._switch_to_page(page_num, _retry + 1))
             return
+        # NOTE: _page_switch_waiting stays True here — it is NOT cleared yet.
+        # Clearing it as soon as this guard passes left a window (until the
+        # scheduled _start_upload -> _worker actually acquires _usb_lock,
+        # ~200ms+ below) where the plugin worker saw no reason to keep
+        # yielding and could grab the device again for its next push,
+        # blocking the page's own static-icon upload on the same lock —
+        # static icons then simply never got refreshed after a switch. It's
+        # cleared instead in _finish() (reached by every _worker() upload,
+        # including the "nothing assigned" blank-out case) or immediately
+        # below if this switch has nothing to upload at all.
         # Cancel any pending double-click timers: they belong to the page we're
         # leaving. Left armed, a stale timer would fire the primary against the
         # wrong page, or a later single press on the new page would be mistaken
@@ -3124,6 +3152,12 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._images or self._gif_frames:
             self._uploading = True
             self.after(200, self._start_upload)
+        else:
+            # Nothing to upload for this page at all -- _start_upload/_finish
+            # (which normally clear _page_switch_waiting) will never run, so
+            # clear it here or the plugin worker would keep yielding the
+            # device forever for a switch that has already fully completed.
+            self._page_switch_waiting = False
 
         # Start this page's auto-timeout countdown, if any (#45).
         self._arm_page_timeout(page_num)
@@ -3816,6 +3850,11 @@ class DisplayPadPanel(ctk.CTkFrame):
                 self._anim_thread.start()
             else:
                 self._uploading = False
+                # This path never reaches _worker()/_finish() (no device to
+                # talk to), so clear it here too -- otherwise a page switch
+                # that landed here would leave the plugin worker yielding
+                # the device forever for a switch that's already done.
+                self._page_switch_waiting = False
                 self._info_label.configure(text=self.T("dp_no_images"), text_color=YLW)
             return
         try:
@@ -4003,14 +4042,16 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _finish(self, success, err):
         self._uploading = False
         self._animating = False
+        # A page switch waiting on this upload (see _switch_to_page) can stop
+        # yielding the device to the plugin worker now that it's done.
+        self._page_switch_waiting = False
         if success:
             self._info_label.configure(text=self.T("dp_done"), text_color=GRN)
         else:
             self._info_label.configure(text=self.T("dp_error", err=err), text_color=RED)
-        # Flush any plugin images that queued up while this upload held the
-        # device (a one-shot upload doesn't drain the queue itself).
-        if not self._upload_queue.empty() and self._device_present:
-            self._maybe_start_plugin_worker()
+        # Any plugin images that queued up while this upload held the device
+        # get picked up by the persistent plugin worker on its next poll
+        # (at most 0.2s later) — nothing to kick off explicitly here anymore.
 
     def _monitor_loop(self):
         """Background thread: detect device connect/disconnect and auto-reupload."""
@@ -4110,10 +4151,11 @@ class DisplayPadPanel(ctk.CTkFrame):
         pil_image: PIL Image (any size, will be resized to 102x102).
         key_index: 0-11 (K1-K12).
 
-        Images are always queued. If a GIF animation or a regular upload is
-        running, that worker drains the queue. Otherwise a single short-lived
-        plugin worker is started that pauses the key listener, drains the queue
-        in one device session, and releases the device again.
+        Images are always queued. A persistent worker thread (started once
+        for the panel's lifetime, see _plugin_upload_worker) drains the
+        queue — no new thread is spawned per push, and interface 1/3 stay
+        claimed across a run of pushes instead of being released and
+        reclaimed for every single image.
         """
         if not (0 <= key_index <= 11):
             return
@@ -4126,85 +4168,120 @@ class DisplayPadPanel(ctk.CTkFrame):
         bgr_bytes = Image.merge("RGB", (b, g, r)).tobytes()
 
         # Don't accumulate frames for a device that nobody will drain (absent
-        # and no worker running) — that would grow the queue without bound.
+        # and no session running) — that would grow the queue without bound.
         busy = self._animating or self._uploading
         if not (self._device_present or busy):
             return
         self._upload_queue.put((key_index, bgr_bytes, None))
 
-        # An animation/upload worker already owns the device and drains the
-        # queue; don't open a competing connection (that races the key-event
-        # listener on interface 3 and causes "Connection timed out").
-        if busy:
-            return
-        # Hold off until the pad has been INIT'd on this connection. The primary
-        # connect upload sets _pad_ready and then flushes the queue via _finish,
-        # so nothing is lost — this only stops a plugin from streaming pixels to
-        # a pad that enumerated but hasn't finished booting (issue #43).
-        if not self._pad_ready:
-            return
-        self._maybe_start_plugin_worker()
-
-    def _maybe_start_plugin_worker(self):
-        """Start the plugin upload worker unless one is already running."""
-        with self._plugin_worker_lock:
-            if self._plugin_worker_active:
-                return
-            self._plugin_worker_active = True
-        threading.Thread(target=self._plugin_upload_worker, daemon=True).start()
-
     def _plugin_upload_worker(self):
-        """Open the device once, drain all queued plugin images, then close.
+        """Persistent thread (started once at panel init, alive for the
+        whole app session) that owns plugin image uploads.
 
-        Takes exclusive access to interface 3 by raising the `_uploading` flag
-        (which makes the key-event listener release the device) and waiting for
-        the listener to actually let go before opening. This serialises with
-        the key listener so concurrent access no longer times out.
+        Previously a fresh thread was spawned per burst, claiming interface
+        1 and opening interface 3 from scratch (full USB handshake) every
+        time — even though plugins like System Monitor or a live Clock push
+        roughly once a second, which meant tearing down and rebuilding the
+        whole USB session that often. This thread instead blocks on the
+        queue when there's nothing to do (no thread spawn, no wakeup cost),
+        and once it has work, keeps the device open across a run of pushes
+        — releasing it again only after a short quiet period (LINGER) so
+        the key-event listener can take interface 3 back, exactly as
+        before, just without the ceremony on every individual frame.
         """
-        try:
-            if self._animating:
-                return  # animation worker owns the device and drains the queue
-            self._uploading = True
-            # Wait for the key-event listener to release interface 3.
-            self._key_released.wait(timeout=1.5)
-            # Serialise with the manual upload/animation worker so the two can
-            # never open the device at the same time (issue #26).
-            with self._usb_lock:
+        LINGER = 2.0  # keep the device open this long after the last item,
+                      # in case another plugin frame is about to follow
+        usb_dev = hid_dev = None
+        holding = False  # True while we hold _usb_lock (and _uploading)
+
+        def _release():
+            nonlocal usb_dev, hid_dev, holding
+            if usb_dev is not None:
+                try:
+                    _close_interfaces(usb_dev, hid_dev)
+                except Exception:
+                    pass
+                usb_dev = hid_dev = None
+            if holding:
+                self._uploading = False
+                try:
+                    self._usb_lock.release()
+                except RuntimeError:
+                    pass
+                holding = False
+
+        while not self._plugin_worker_stop.is_set():
+            # Yield the device immediately once a manual upload/animation
+            # wants it — don't wait out the linger window first. A pending
+            # page switch gets the same priority: without this, a plugin
+            # pushing more often than every LINGER seconds (e.g. a ~1/s
+            # System Monitor push) held the device indefinitely and page
+            # switching appeared to silently stop working (see
+            # _switch_to_page's _page_switch_waiting comment).
+            if holding and (self._animating or self._page_switch_waiting):
+                _release()
+
+            try:
+                item = self._upload_queue.get(timeout=0.2)
+            except queue.Empty:
+                if holding and (time.monotonic() - self._plugin_last_item) > LINGER:
+                    _release()
+                continue
+
+            if self._animating or self._page_switch_waiting:
+                # Someone else owns (or is waiting for) the device right now
+                # — hand the item back for them, or for us, to pick up later.
+                self._upload_queue.put(item)
+                time.sleep(0.05)
+                continue
+
+            if not self._device_present or not self._pad_ready:
+                continue  # nobody to drain to right now — drop, as before
+
+            if not holding:
+                self._uploading = True
+                # Wait for the key-event listener to release interface 3.
+                self._key_released.wait(timeout=1.5)
+                # Serialise with the manual upload/animation worker so the
+                # two can never open the device at the same time (#26).
+                self._usb_lock.acquire()
+                holding = True
                 try:
                     usb_dev, hid_dev = _open_interfaces()
-                except Exception as e:
-                    # Device busy/unplugged -- leave images queued and retry on
-                    # the next push instead of spinning.
-                    self._log_plugin_error(e)
-                    return
-                try:
                     _init_device(hid_dev)
                     self._pad_ready = True
-                    self._drain_plugin_queue(usb_dev, hid_dev)
                     self._last_plugin_error = None
                 except Exception as e:
                     self._log_plugin_error(e)
-                finally:
-                    _close_interfaces(usb_dev, hid_dev)
-        finally:
-            self._uploading = False
-            with self._plugin_worker_lock:
-                self._plugin_worker_active = False
-            # New images may have arrived while we were finishing up.
-            if (not self._upload_queue.empty()
-                    and not self._animating and self._device_present):
-                self.after(0, self._maybe_start_plugin_worker)
+                    self._upload_queue.put(item)  # don't lose this frame
+                    _release()
+                    continue
 
-    def _drain_plugin_queue(self, usb_dev, hid_dev):
-        """Upload every queued plugin image in this session, keeping only the
-        latest frame per key. Key presses seen during the upload are dispatched
-        so the keys stay responsive while the listener is paused."""
-        latest = {}
-        while True:
             try:
-                ki, bgr, frames = self._upload_queue.get_nowait()
-            except queue.Empty:
-                break
+                self._drain_plugin_queue(usb_dev, hid_dev, first=item)
+                self._plugin_last_item = time.monotonic()
+            except Exception as e:
+                self._log_plugin_error(e)
+                _release()
+
+        _release()
+
+    def _drain_plugin_queue(self, usb_dev, hid_dev, first=None):
+        """Upload every queued plugin image in this session — plus `first`,
+        if given (an item the caller already popped off the queue) — keeping
+        only the latest frame per key. Key presses seen during the upload
+        are dispatched so the keys stay responsive while the listener is
+        paused."""
+        latest = {}
+        pending = [first] if first is not None else []
+        while True:
+            if pending:
+                ki, bgr, frames = pending.pop()
+            else:
+                try:
+                    ki, bgr, frames = self._upload_queue.get_nowait()
+                except queue.Empty:
+                    break
             if frames:
                 # A GIF arrived -- hand it back and let _start_upload handle it.
                 self._upload_queue.put((ki, bgr, frames))
