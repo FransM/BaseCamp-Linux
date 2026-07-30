@@ -2315,6 +2315,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._page_switch_waiting = False  # set by _switch_to_page while it
                                             # waits for the plugin worker to
                                             # yield the device (see there)
+        self._deleted_page_ids = set()     # ids _delete_page() has removed —
+                                            # _switch_to_page() must never
+                                            # write outgoing-page state back
+                                            # for one of these (see there)
         self._anim_stop        = threading.Event()
         self._anim_thread      = None
         self._min_frame_ms     = 50
@@ -3068,16 +3072,28 @@ class DisplayPadPanel(ctk.CTkFrame):
                 pass
         self._dc_timers.clear()
 
-        # Save current page state
+        # Save current page state -- unless old_page was just deleted via
+        # _delete_page(). That function tries to clean up the entries this
+        # writes right after calling us, but _switch_to_page() isn't always
+        # synchronous: if _uploading/_animating was true at the time,
+        # this whole call was just a scheduled retry (see the guards above)
+        # and the real switch — and this save — happens later, *after*
+        # _delete_page() already returned and did its cleanup. That silently
+        # resurrected the deleted page in memory, invisible until the next
+        # unrelated _save_sub_pages() call (e.g. deleting another page
+        # afterward) wrote its file back to disk. Guarding it here, at the
+        # point the write actually happens, is correct regardless of timing.
         old_page = self._current_page
-        self._prev_page = old_page   # 'previous page' timeout target (#45)
-        self._page_images[old_page] = dict(self._images)
-        self._page_gif_frames[old_page] = dict(self._gif_frames)
-        self._page_gui_frames[old_page] = dict(self._gui_frames_sm)
-        if self._fullscreen_group:
-            self._page_fullscreen.setdefault(old_page, None)  # keep existing path
-
-        _dbg(f"[DBG switch] {old_page} -> {page_num} | saved page_images[{old_page}]={self._page_images[old_page]}")
+        if old_page in self._deleted_page_ids:
+            _dbg(f"[DBG switch] {old_page} -> {page_num} | old_page was deleted, not saving its state")
+        else:
+            self._prev_page = old_page   # 'previous page' timeout target (#45)
+            self._page_images[old_page] = dict(self._images)
+            self._page_gif_frames[old_page] = dict(self._gif_frames)
+            self._page_gui_frames[old_page] = dict(self._gui_frames_sm)
+            if self._fullscreen_group:
+                self._page_fullscreen.setdefault(old_page, None)  # keep existing path
+            _dbg(f"[DBG switch] {old_page} -> {page_num} | saved page_images[{old_page}]={self._page_images[old_page]}")
 
         self._current_page = page_num
 
@@ -3317,16 +3333,36 @@ class DisplayPadPanel(ctk.CTkFrame):
             return False
         if not _delete_displaypad_page(page_id):
             return False
+        # Marks this id so _switch_to_page() will never write outgoing-page
+        # state back for it — needed because _switch_to_page() isn't always
+        # synchronous (it can defer itself via a scheduled retry while
+        # _uploading/_animating is true), so cleanup done only *after*
+        # calling it below isn't reliable; see the guard inside
+        # _switch_to_page() itself for the actual fix.
+        self._deleted_page_ids.add(page_id)
         self._page_actions.pop(page_id, None)
         self._page_images.pop(page_id, None)
         self._page_fullscreen.pop(page_id, None)
         self._page_timeout.pop(page_id, None)
         self._page_gif_frames.pop(page_id, None)
         self._page_gui_frames.pop(page_id, None)
-        self._save_sub_pages()
-        _save_displaypad_page_timeouts(self._page_timeout)
         if self._current_page == page_id:
             self._switch_to_page(0)
+            # Belt-and-suspenders: _switch_to_page() itself now refuses to
+            # write outgoing-page state for anything in _deleted_page_ids
+            # (see the guard there), which is what actually prevents the
+            # resurrection regardless of whether the switch above ran
+            # synchronously or was deferred. These pops just keep the
+            # in-memory dicts tidy for the (now-harmless) synchronous case.
+            self._page_actions.pop(page_id, None)
+            self._page_images.pop(page_id, None)
+            self._page_fullscreen.pop(page_id, None)
+            self._page_gif_frames.pop(page_id, None)
+            self._page_gui_frames.pop(page_id, None)
+            if self._prev_page == page_id:
+                self._prev_page = 0
+        self._save_sub_pages()
+        _save_displaypad_page_timeouts(self._page_timeout)
         return True
 
     def _get_extra_actions(self, idx):
