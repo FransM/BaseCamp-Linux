@@ -2448,7 +2448,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._gui_frames_sm:
             self.after(200, self._gui_tick)
         if self._images or self._gif_frames:
-            self.after(1500, self._start_upload)
+            self.after(200, self._start_upload)
 
         # Start device presence monitor and key event listener
         threading.Thread(target=self._monitor_loop, daemon=True).start()
