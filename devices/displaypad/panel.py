@@ -2361,19 +2361,17 @@ class DisplayPadPanel(ctk.CTkFrame):
         # interface (3) never enumerates — the usbhid interface-order quirk
         # FransM hit on Ubuntu/Mint (issue #36).
         self._warned_quirk    = False
-        # Key event listener
-        self._key_stop        = threading.Event()
-        self._key_thread      = None
-        # Set whenever the key listener is NOT holding interface 3, so a plugin
-        # image upload can wait for the device to be free before opening it.
+        # Set whenever the device worker is NOT holding interface 3, so a
+        # manual upload/animation can wait for it to free up before opening.
         self._key_released    = threading.Event()
         self._key_released.set()
-        # Plugin live-image uploads (System Monitor, Clock, ...) — handled by
-        # one persistent worker thread (started once, see __init__ below)
-        # instead of spawning a fresh thread and reclaiming interface 1/3
-        # for every burst of pushes.
+        # Plugin live-image uploads (System Monitor, Clock, ...) AND key-event
+        # listening — both handled by one persistent worker thread (started
+        # once, see __init__ below) that owns interface 1/3 for as long as
+        # nothing else needs them, instead of a separate key-event listener
+        # and per-burst upload sessions constantly trading the device back
+        # and forth.
         self._plugin_worker_stop = threading.Event()
-        self._plugin_last_item   = 0.0
         self._last_plugin_error  = None
         # Serialises every USB session (manual upload, animation, plugin worker)
         # so two of them can never hold interface 1/3 at once. Without this the
@@ -2460,11 +2458,11 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._images or self._gif_frames:
             self.after(200, self._start_upload)
 
-        # Start device presence monitor and key event listener
+        # Start device presence monitor and the persistent device worker
+        # (owns interface 1/3: plugin uploads AND key-event listening).
         threading.Thread(target=self._monitor_loop, daemon=True).start()
-        threading.Thread(target=self._key_event_loop, daemon=True).start()
         threading.Thread(target=self._plugin_upload_worker, daemon=True).start()
-        self.bind("<Destroy>", lambda e: (self._monitor_stop.set(), self._key_stop.set(),
+        self.bind("<Destroy>", lambda e: (self._monitor_stop.set(),
                                            self._plugin_worker_stop.set()))
         # Arm the auto-timeout for the start page, if it has one (#45).
         self.after(800, lambda: self._arm_page_timeout(self._current_page))
@@ -3579,79 +3577,13 @@ class DisplayPadPanel(ctk.CTkFrame):
             except Exception:
                 pass
 
-    def _key_event_loop(self):
-        """Persistent key-event listener. Runs for the lifetime of the panel,
-        pauses while upload/animation is active, retries on device errors."""
-        last_fire = {}  # key_index -> monotonic time of last action
-
-        while not self._key_stop.is_set():
-            # Wait while upload or animation holds the HID device. Signal that
-            # interface 3 is free so a pending image upload can grab it.
-            if self._uploading or self._animating:
-                self._key_released.set()
-                # Poll the flag often so we re-grab interface 3 promptly once an
-                # upload finishes. Plugins (System Monitor, Clock) push roughly
-                # once a second; a slow re-attach here left a blind window where
-                # key presses were silently dropped (issue #27).
-                self._key_stop.wait(timeout=0.1)
-                continue
-
-            # Try to open the HID device
-            hid_dev = None
-            try:
-                for d in hid.enumerate(VID, PID):
-                    if d['interface_number'] == 3:
-                        hid_dev = hid.Device(path=d['path'])
-                        break
-            except Exception:
-                pass
-
-            if hid_dev is None:
-                self._key_released.set()
-                self._key_stop.wait(timeout=1.0)
-                continue
-
-            # We now own interface 3.
-            self._key_released.clear()
-
-            # Read events until stop / upload starts / device error.
-            # Only packets with data[0] == 0x01 are key-event packets.
-            # All other packets (0x11 init, 0x21 image responses, etc.) are ignored.
-            prev = [0] * 64
-            try:
-                hid_dev.nonblocking = False
-                while not self._key_stop.is_set() and not self._uploading and not self._animating:
-                    try:
-                        data = hid_dev.read(64, timeout=300)
-                    except Exception:
-                        break
-                    if not data or len(data) < 48:
-                        continue
-                    data = list(data)
-                    if data[0] != 0x01:
-                        continue
-                    now = time.monotonic()
-                    for k, (bi, mask) in enumerate(_KEY_MAP):
-                        if bi < len(data):
-                            if (data[bi] & mask) and not (prev[bi] & mask):
-                                # A double-click key uses a short anti-bounce so a
-                                # deliberate second tap gets through; every other
-                                # key keeps the user's debounce (issue #47).
-                                deb = (self._dc_antibounce if self._is_double_key(k)
-                                       else self._debounce)
-                                if now - last_fire.get(k, 0) >= deb:
-                                    last_fire[k] = now
-                                    self.after(0, lambda k=k: self._execute_action_k(k))
-                    prev = data
-            finally:
-                try:
-                    hid_dev.close()
-                except Exception:
-                    pass
-                self._key_released.set()
-            # Brief pause before reconnecting (kept short so presses right after
-            # an upload aren't missed, issue #27).
-            self._key_stop.wait(timeout=0.15)
+    # NOTE: key-event listening used to be a separate persistent thread here
+    # (_key_event_loop) that opened and closed interface 3 every time it
+    # traded places with an upload/animation/plugin session. That's now
+    # folded into _plugin_upload_worker below: reading key events is just
+    # what that thread does while idle, inside the same open session as
+    # plugin pushes, so interface 3 no longer gets closed and reopened for
+    # the handoff between "listening" and "pushing a plugin frame".
 
     def apply_lang(self):
         """Called by App when language changes."""
@@ -4212,23 +4144,33 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _plugin_upload_worker(self):
         """Persistent thread (started once at panel init, alive for the
-        whole app session) that owns plugin image uploads.
+        whole app session) that owns interface 1 (pixels) + interface 3
+        (commands/keys) for as long as nothing else needs them: plugin image
+        uploads AND key-event listening both happen from this one thread now.
 
-        Previously a fresh thread was spawned per burst, claiming interface
-        1 and opening interface 3 from scratch (full USB handshake) every
-        time — even though plugins like System Monitor or a live Clock push
-        roughly once a second, which meant tearing down and rebuilding the
-        whole USB session that often. This thread instead blocks on the
-        queue when there's nothing to do (no thread spawn, no wakeup cost),
-        and once it has work, keeps the device open across a run of pushes
-        — releasing it again only after a short quiet period (LINGER) so
-        the key-event listener can take interface 3 back, exactly as
-        before, just without the ceremony on every individual frame.
+        Previously these were two separate concerns that kept trading the
+        device back and forth — a standalone key-event listener that closed
+        and reopened interface 3 every time a plugin (or a manual upload)
+        wanted it, and a plugin worker that itself claimed/released interface
+        1+3 around every burst of pushes. Since both ultimately want the same
+        session, and reading key events is cheap to do "while idle" between
+        pushes, they're now one thread: it opens the device once and simply
+        never closes it again on its own — listening for a key IS this
+        thread's idle-time job, not a reason to give the device back. It only
+        yields (closes + releases the lock) the moment a manual upload,
+        GIF animation, or a page switch that's waiting on one of those
+        (_page_switch_waiting) explicitly needs exclusive access — that code
+        (_worker, below) still runs its own separate, more involved session
+        exactly as before; this thread just resumes once it's done.
         """
-        LINGER = 2.0  # keep the device open this long after the last item,
-                      # in case another plugin frame is about to follow
         usb_dev = hid_dev = None
-        holding = False  # True while we hold _usb_lock (and _uploading)
+        holding = False  # True while we hold _usb_lock + interface 1/3
+        last_evt = [0] * 64
+        last_fire = {}  # key_index -> monotonic time of last action
+
+        def _wants_device():
+            # Anything that isn't us, wanting exclusive access right now.
+            return self._uploading or self._animating or self._page_switch_waiting
 
         def _release():
             nonlocal usb_dev, hid_dev, holding
@@ -4239,7 +4181,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                     pass
                 usb_dev = hid_dev = None
             if holding:
-                self._uploading = False
+                self._key_released.set()
                 try:
                     self._usb_lock.release()
                 except RuntimeError:
@@ -4247,58 +4189,97 @@ class DisplayPadPanel(ctk.CTkFrame):
                 holding = False
 
         while not self._plugin_worker_stop.is_set():
-            # Yield the device immediately once a manual upload/animation
-            # wants it — don't wait out the linger window first. A pending
-            # page switch gets the same priority: without this, a plugin
-            # pushing more often than every LINGER seconds (e.g. a ~1/s
-            # System Monitor push) held the device indefinitely and page
-            # switching appeared to silently stop working (see
-            # _switch_to_page's _page_switch_waiting comment).
-            if holding and (self._animating or self._page_switch_waiting):
+            # Yield the device immediately the moment anything else wants
+            # it — don't linger. A plugin pushing frequently, or a steady
+            # stream of key reads, must never starve a manual upload or a
+            # pending page switch of the device (see _switch_to_page's
+            # _page_switch_waiting comment for the bug this avoids).
+            if holding and _wants_device():
                 _release()
 
+            # --- Is there a plugin image waiting? Grab at most one without
+            # blocking long, so this loop stays responsive to key events
+            # and to _wants_device() in between. ---
             try:
-                item = self._upload_queue.get(timeout=0.2)
+                item = self._upload_queue.get(timeout=0.05)
             except queue.Empty:
-                if holding and (time.monotonic() - self._plugin_last_item) > LINGER:
-                    _release()
-                continue
+                item = None
 
-            if self._animating or self._page_switch_waiting:
-                # Someone else owns (or is waiting for) the device right now
-                # — hand the item back for them, or for us, to pick up later.
-                self._upload_queue.put(item)
+            if _wants_device():
+                if item is not None:
+                    self._upload_queue.put(item)
                 time.sleep(0.05)
                 continue
 
-            if not self._device_present or not self._pad_ready:
-                continue  # nobody to drain to right now — drop, as before
+            if not self._device_present:
+                if item is not None:
+                    self._upload_queue.put(item)  # don't lose it, drain later
+                if holding:
+                    _release()
+                time.sleep(0.2)
+                continue
+
+            if not self._pad_ready:
+                if item is not None:
+                    self._upload_queue.put(item)
+                time.sleep(0.1)
+                continue
 
             if not holding:
-                self._uploading = True
-                # Wait for the key-event listener to release interface 3.
+                # Wait for any previous session to actually let go before we
+                # try to open (mirrors the old key-event listener's own wait).
                 self._key_released.wait(timeout=1.5)
                 # Serialise with the manual upload/animation worker so the
                 # two can never open the device at the same time (#26).
                 self._usb_lock.acquire()
                 holding = True
+                self._key_released.clear()
                 try:
                     usb_dev, hid_dev = _open_interfaces()
                     _init_device(hid_dev)
                     self._pad_ready = True
                     self._last_plugin_error = None
+                    last_evt = [0] * 64  # fresh session -- no stale key state
                 except Exception as e:
                     self._log_plugin_error(e)
-                    self._upload_queue.put(item)  # don't lose this frame
+                    if item is not None:
+                        self._upload_queue.put(item)  # don't lose this frame
                     _release()
+                    time.sleep(0.5)
                     continue
 
+            if item is not None:
+                try:
+                    self._drain_plugin_queue(usb_dev, hid_dev, first=item)
+                except Exception as e:
+                    self._log_plugin_error(e)
+                    _release()
+                continue
+
+            # --- Nothing to push right now: this is what used to be the
+            # separate key-event listener's job. Only packets with
+            # data[0] == 0x01 are key-event packets; everything else
+            # (0x11 init, 0x21 image responses, etc.) is ignored. ---
             try:
-                self._drain_plugin_queue(usb_dev, hid_dev, first=item)
-                self._plugin_last_item = time.monotonic()
+                data = hid_dev.read(64, timeout=150)
             except Exception as e:
                 self._log_plugin_error(e)
                 _release()
+                continue
+            if not data or len(data) < 48 or data[0] != 0x01:
+                continue
+            data = list(data)
+            now = time.monotonic()
+            for k, (bi, mask) in enumerate(_KEY_MAP):
+                if bi < len(data) and (data[bi] & mask) and not (last_evt[bi] & mask):
+                    # A double-click key uses a short anti-bounce so a
+                    # deliberate second tap gets through; every other key
+                    # keeps the user's debounce (issue #47).
+                    deb = (self._dc_antibounce if self._is_double_key(k) else self._debounce)
+                    if now - last_fire.get(k, 0) >= deb:
+                        last_fire[k] = now
+                        self.after(0, lambda k=k: self._execute_action_k(k))
+            last_evt = data
 
         _release()
 
