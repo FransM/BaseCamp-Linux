@@ -17,7 +17,7 @@
   "monitor_stopped": "Monitor mode stopped",
   "numpad_title": "Numpad Keys",
   "numpad_subtitle": "Assign action + upload image",
-  "action_label": "Action:",
+  "action_label": "On press:",
   "action_type_none": "None",
   "action_type_shell": "Shell",
   "action_type_url": "URL",
@@ -421,17 +421,5 @@
   "rgb_cmode_rainbow": "Rainbow",
   "rgb_build_label": "BaseCamp Linux v{ver}",
   "dp_page_target": "Go to page:",
-  "dp_new_page": "＋ New page",
-  "dp_page_name_prompt": "Page name:",
-  "dp_page_name_title": "New page",
-  "dp_rename_page_title": "Rename page",
-  "dp_delete_page_title": "Delete page",
-  "dp_delete_page_main_error": "The Main page can't be deleted — it's just the page the app opens on.",
-  "dp_delete_page_confirm": "Delete \"{name}\"? This can't be undone.",
-  "dp_delete_page_referenced_warning": "\"{name}\" is still targeted by {count} button(s)/timeout(s). Deleting it will leave those pointing at a page that no longer exists:",
-  "dp_delete_page_more": "…and {count} more",
-  "dp_ref_kind_action": "Switch page action",
-  "dp_ref_kind_also_on_press": "Also on press",
-  "dp_ref_kind_double_click": "Double-click action",
-  "dp_ref_kind_timeout": "Auto-timeout target"
+  "dp_new_page": "＋ New page"
 }
