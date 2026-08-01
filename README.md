@@ -48,19 +48,24 @@ Upload a single image or animated GIF that is **automatically split across all 1
 
 ### Multi-Page System
 
-- Create up to **12 sub-pages** — assign any button as a page folder with a customisable text label
-- Pressing a folder button navigates to its sub-page, where all 12 buttons can be independently configured
-- **K1 on sub-pages is always "Back"** — returns to the main page
-- Fullscreen GIFs work on sub-pages with page navigation still functional underneath
-- Page switching re-uploads all 12 button images to the device automatically
+- **Name your pages.** Every page, including the one the app opens on, has a name you choose and can rename at any time. Buttons, chain steps and timeouts all point at a page by that name, so a rename follows through everywhere
+- **Any key can go to any page.** There are no fixed folder slots and no page limit: build a carousel (A to B to C to A), a hub with a back key on every page, or anything in between
+- **A "Back" key is just a page action** pointing at the page you came from. New pages get one on K1 for convenience, and you can move, retarget or delete it
+- **Create, rename and delete pages** from the page dropdown in the image dialog and the action editor. Deleting warns you first, listing every button and timeout that still points at that page
+- **Per-page auto-timeout:** a page can return to another page (or the previous one) a number of seconds after it is shown, or after the last key press on it
+- Each page is stored in its own file under `~/.config/mountain-time-sync/displaypad_pages/`, named after the page
+- Fullscreen GIFs work on any page with page navigation still functional underneath
+- Page switching re-uploads all 12 button images to the device automatically, and plugin widgets bound to a key follow the page they belong to
 
 ### Button Actions (K1–K12)
 
 - **Action types:** Shell command, URL, Folder, App, Page navigation, OBS (Scene/Record/Stream), Macro, Keypress, Text
+- **Three slots per key:** the action itself, an optional second action that runs with it ("also on press"), and an optional **double-click** action on a quick second press
 - The **Text** action types out any string when you press the button (great for Everest 60 owners who miss F-keys, or for snippets you find yourself typing all the time)
-- Keypress and Text both work on X11 and Wayland (the app picks `xdotool` or `ydotool` automatically)
+- Keypress and Text both work on X11 and Wayland (the app picks `xdotool` or `ydotool` automatically), including F13-F24 for shortcuts no physical key can trigger
 - Actions save immediately on change, no confirmation button needed
 - Key events detected via HID with debounce, actions execute even during GIF animation
+- Shell and App actions start in their own systemd scope with a clean environment, so a launched program behaves exactly as if you had started it from your desktop launcher
 
 ### Drag & Drop
 

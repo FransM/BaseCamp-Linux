@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.1.7] - 2026-08-01
+
+Source-overlay patch built around @FransM's combined contribution (PR #62), which reworks how DisplayPad pages are stored and referenced, rewrites the pad's init sequence, and merges the key listener into the upload worker. Plus a launch-environment fix for applications started from a key.
+
+### Fixes
+
+- **DisplayPad did not initialise reliably on start or replug (#43, #44, @FransM).** The init handshake now claims interface 0 briefly for SET_IDLE on all three interfaces plus the SET_REPORT that enables event reporting, exactly as the Windows capture shows, and it accepts the pad's reply by matching the echo rather than a single byte. @FransM confirmed both the startup timeout and the replug re-init on hardware.
+- **Sub-page keys did not match what was on screen, and actions did not fire (#52, #54, @FransM).** Pages are stored one file per page now, and every reference to a page (button action, "also on press" step, double-click, timeout target) is by page name instead of a positional id, so a page keeps its identity as other pages are created and removed. Clearing or setting an image on a sub-page no longer writes into the main page's images.
+- **Page switching stopped working while a plugin was pushing (#54, @FransM).** A plugin pushing more often than the worker's idle gap held the device indefinitely and every page-switch retry failed. A pending switch now makes the worker yield immediately, and the flag is cleared only once the page's own upload is done.
+- **Plugins kept painting keys of a page that was no longer shown (#54, @FransM).** A service plugin bound to a button is started and stopped with its page through its normal `start()`/`stop()` lifecycle. Plugins with no button binding keep running for the whole session as before.
+- **Page dropdown showed duplicate names and pages that vanished (#50, @FransM).** Page names are unique (a duplicate gets " (2)" appended), a page created but not yet targeted by any button is kept instead of being garbage collected, and a deleted page can no longer be resurrected by a deferred page switch.
+- **Applications launched from a key behaved differently than from the desktop launcher (#49, @rebell218).** They inherited BaseCamp's own environment: the AppImage identity vars, the PyInstaller bookkeeping vars, and the systemd unit vars of our autostart service, which made a launched app log into our journal stream and watch our cgroup. All of these are stripped now, and shell/app actions run in their own `app.slice` scope via `systemd-run --user --scope` when a user systemd manager is available, so quitting BaseCamp no longer takes them with it.
+- **README described the old page model (#51, @FransM).** Rewritten for named pages, unrestricted navigation, page delete/rename and the per-page timeout.
+
+### Features / Improvements
+
+- **Page management in the UI (#50, #52, @FransM).** Create, rename and delete pages straight from the page dropdown in both the image dialog and the action editor. Deleting warns first and lists every button and timeout still pointing at that page.
+- **"Also on press" and double-click can pick a page from a dropdown (#48, @FransM).** Both rows now show the same page picker as the primary action instead of a free-text field, and the three rows of a key card line up in one column.
+- **The action editor window is resizable and remembers its size (#48, @FransM).**
+- **Faster startup and uploads (#57, @FransM).** Image conversion is vectorised, the key listener and the plugin upload worker are one thread holding one device session instead of two that constantly traded the device back and forth, and the page files are cached in memory.
+- **F13-F24 available for Keypress actions and macros (@FransM).** Useful for shortcuts that must not collide with a key that physically exists.
+- **Malformed config files are reported.** A JSON file that fails to parse prints a warning naming the file instead of silently falling back to defaults.
+
+### Plugins
+
+- **DisplayPad Pipe Text 1.1 (basecamp-plugins #12, @FransM).** Renders text written to a named pipe onto a key, with per-line colour, size, boldness and alignment, plus an optional producer command started with the pipe.
+- **DisplayPad Video 1.0 (basecamp-plugins #11, @FransM).** Plays a video file on a key, started by writing its path to a named pipe. Needs `opencv-python` and therefore a source install.
+
 ## [2.1.6] - 2026-07-09
 
 Source-overlay patch: a one-fix follow-up on the Everest 60 ESC key.
