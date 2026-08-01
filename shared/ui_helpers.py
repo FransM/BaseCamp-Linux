@@ -245,12 +245,21 @@ def _install_ctk_wheel_fix(units_per_notch=2):
         return
     if getattr(ctk.CTkScrollableFrame, "_basecamp_wheel_fix", False):
         return
-    original = ctk.CTkScrollableFrame._mouse_wheel_all
+    # Reaching into a CustomTkinter internal: if a future version renames it,
+    # scrolling goes back to feeling wrong, which must never be a reason for
+    # the app not to start.
+    try:
+        original = ctk.CTkScrollableFrame._mouse_wheel_all
+    except AttributeError:
+        return
 
     def normalised(self, event):
         delta = getattr(event, "delta", 0)
         if delta:
-            event.delta = units_per_notch if delta > 0 else -units_per_notch
+            try:
+                event.delta = units_per_notch if delta > 0 else -units_per_notch
+            except Exception:
+                pass
         return original(self, event)
 
     ctk.CTkScrollableFrame._mouse_wheel_all = normalised

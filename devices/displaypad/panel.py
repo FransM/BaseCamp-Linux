@@ -2483,7 +2483,6 @@ class DisplayPadPanel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, pady=(4, 0))
         self._scroll = scroll
 
-        from shared.ui_helpers import cap_scroll_speed
         cap_scroll_speed(scroll)
 
         content = scroll
@@ -4219,6 +4218,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                     self._upload_queue.put(item)  # don't lose it, drain later
                 if holding:
                     _release()
+                not_ready_since = None  # the grace period below is per connection
                 time.sleep(0.2)
                 continue
 
