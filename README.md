@@ -578,11 +578,9 @@ The udev rule is installed automatically. Just unplug and replug the keyboard af
 ```bash
 git clone https://github.com/ramisotti13-eng/BaseCamp-Linux.git
 cd BaseCamp-Linux
-pip install customtkinter pillow psutil obsws-python pystray hid pyusb numpy
+pip install customtkinter pillow psutil obsws-python pystray hid pyusb
 python3 gui.py
 ```
-
-> `numpy` is optional. It only speeds up image conversion for the key displays; without it the app falls back to a slower pure-Python path.
 
 > **GPU monitoring** requires `nvidia-smi` (NVIDIA only).
 

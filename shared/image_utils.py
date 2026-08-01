@@ -1,11 +1,15 @@
 """Shared image utility functions for BaseCamp Linux."""
-import struct
 from PIL import Image
 
-try:
-    import numpy as np
-except ImportError:  # optional: only speeds the conversion up, see below
-    np = None
+# Per-channel lookup tables for the RGB565 packing, applied with bytes.translate
+# so the work happens in C instead of per pixel in Python. Splitting the 16-bit
+# value into its two output bytes up front is what makes that possible:
+#   high byte = (r & 0xF8) | (g >> 5)
+#   low  byte = ((g << 3) & 0xE0) | (b >> 3)
+_HI_R = bytes((v & 0xF8) for v in range(256))
+_HI_G = bytes((v >> 5) for v in range(256))
+_LO_G = bytes(((v << 3) & 0xE0) for v in range(256))
+_LO_B = bytes((v >> 3) for v in range(256))
 
 
 def image_to_rgb565(image_path, size=(72, 72), frame=0):
@@ -16,31 +20,30 @@ def image_to_rgb565(image_path, size=(72, 72), frame=0):
 
     For animated GIFs, ``frame`` selects which frame to use (0-based).
 
-    Vectorized with NumPy when it is available: identical output to the
-    pixel-by-pixel fallback below, but without the per-pixel Python call
-    overhead (getpixel/struct.pack) that dominates larger sizes and animated
-    GIFs. NumPy ships inside the AppImage; a source install without it simply
-    takes the slower path instead of failing to import.
+    The conversion runs on whole byte strings rather than pixel by pixel: the
+    channels are sliced out of the raw RGB buffer, mapped through the tables
+    above, combined with one big-integer OR and interleaved with a bytearray
+    slice assignment. Every step is a C-level operation, which is what the
+    per-pixel getpixel/struct.pack loop cost us on larger sizes and animated
+    GIFs. NumPy would do the same job, but importing it inside the AppImage
+    aborts the process: the bundled libflexiblas cannot find a BLAS backend
+    there and calls abort(), which no try/except can catch.
     """
     img = Image.open(image_path)
     if frame > 0 and getattr(img, 'n_frames', 1) > 1:
         img.seek(min(frame, img.n_frames - 1))
     img = img.resize(size, Image.LANCZOS).convert('RGB')
 
-    if np is None:
-        data = bytearray()
-        for y in range(size[1]):
-            for x in range(size[0]):
-                r, g, b = img.getpixel((x, y))
-                value = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-                data += struct.pack('<H', value)  # little-endian
-        return bytes(data)
-
-    arr = np.asarray(img, dtype=np.uint16)  # shape (H, W, 3), H=size[1], W=size[0]
-    r = arr[..., 0]
-    g = arr[..., 1]
-    b = arr[..., 2]
-    value = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-    # value has shape (H, W) in row-major order == same y-then-x iteration
-    # order as the original nested loop, so tobytes() matches exactly.
-    return value.astype('<u2').tobytes()
+    raw = img.tobytes()
+    n = len(raw) // 3
+    if n == 0:
+        return b""
+    r, g, b = raw[0::3], raw[1::3], raw[2::3]
+    hi = (int.from_bytes(r.translate(_HI_R), 'big')
+          | int.from_bytes(g.translate(_HI_G), 'big')).to_bytes(n, 'big')
+    lo = (int.from_bytes(g.translate(_LO_G), 'big')
+          | int.from_bytes(b.translate(_LO_B), 'big')).to_bytes(n, 'big')
+    out = bytearray(2 * n)
+    out[0::2] = lo   # little-endian: low byte first
+    out[1::2] = hi
+    return bytes(out)
