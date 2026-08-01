@@ -17,7 +17,7 @@
   "monitor_stopped": "Monitor mode stopped",
   "numpad_title": "Numpad Keys",
   "numpad_subtitle": "Assign action + upload image",
-  "action_label": "Action:",
+  "action_label": "On press:",
   "action_type_none": "None",
   "action_type_shell": "Shell",
   "action_type_url": "URL",

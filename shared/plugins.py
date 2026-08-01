@@ -6,6 +6,16 @@ import importlib.util
 
 from shared.config import CONFIG_DIR, PLUGINS_DISABLED_FILE
 
+# Set BASECAMP_PAGE_DEBUG=1 in the environment to trace page-scoped
+# start/stop decisions (also toggles matching trace lines in
+# devices/displaypad/panel.py and page-bound widget plugins). Off by default.
+_DEBUG = os.environ.get("BASECAMP_PAGE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dbg(msg):
+    if _DEBUG:
+        print(msg, flush=True)
+
 PLUGINS_DIR = os.path.join(CONFIG_DIR, "plugins")
 
 
@@ -18,6 +28,9 @@ class PluginManager:
         self._action_types = {}  # type_id -> {"label", "handler"}
         self._disabled = set()   # set of disabled plugin IDs
         self._errors = {}        # id -> error string
+        self._running = {}       # id -> bool, service plugins currently start()-ed
+        self._loading_pid = None  # set while instantiating a plugin, so
+                                   # register_action_type() can tag ownership
         self._load_disabled()
 
     def _load_disabled(self):
@@ -76,8 +89,12 @@ class PluginManager:
             spec = importlib.util.spec_from_file_location(f"plugins.{pid}", mod_path)
             mod = importlib.util.module_from_spec(spec)
             sys.modules[f"plugins.{pid}"] = mod
-            spec.loader.exec_module(mod)
-            instance = mod.Plugin(context)
+            self._loading_pid = pid  # so ctx.register_action_type can tag ownership
+            try:
+                spec.loader.exec_module(mod)
+                instance = mod.Plugin(context)
+            finally:
+                self._loading_pid = None
             self._instances[pid] = instance
             self._errors.pop(pid, None)
             print(f"[Plugin] Loaded: {info.get('name', pid)} v{info.get('version', '?')}")
@@ -118,6 +135,7 @@ class PluginManager:
                     inst.stop()
                 except Exception:
                     pass
+            self._running.pop(pid, None)
             # Remove any action types this plugin registered
             to_remove = [tid for tid, d in self._action_types.items()
                          if getattr(d.get("handler"), "__self__", None) is inst]
@@ -137,6 +155,7 @@ class PluginManager:
                     inst.stop()
                 except Exception:
                     pass
+            self._running.pop(pid, None)
             # Remove action types registered by old instance
             to_remove = [tid for tid, d in self._action_types.items()
                          if getattr(d.get("handler"), "__self__", None) is inst]
@@ -153,18 +172,26 @@ class PluginManager:
         # Re-load
         if not self._load_one(pid, info, self._context):
             return False
-        # Re-start service if applicable
+        # Re-start service if applicable (only if not bound to a button on a
+        # page that isn't currently showing)
         new_inst = self._instances.get(pid)
         if new_inst:
             ptypes = info.get("type", "")
             if isinstance(ptypes, str):
                 ptypes = [ptypes]
-            if "service" in ptypes and hasattr(new_inst, "start"):
-                try:
-                    new_inst.start()
-                except Exception as e:
-                    print(f"[Plugin] Failed to start {pid}: {e}")
+            if "service" in ptypes:
+                if self._owns_a_button(pid) and pid not in self._bound_plugins_for_page(self._current_page()):
+                    pass  # its button is on a different page -- stays off until shown
+                else:
+                    self._start_pid(pid, new_inst, info)
         return True
+
+    def _current_page(self):
+        """Best-effort lookup of the DisplayPad's active page via the stored
+        plugin context (defaults to 0 if unavailable)."""
+        ctx = getattr(self, "_context", None)
+        get_page = getattr(ctx, "get_displaypad_current_page", None)
+        return get_page() if callable(get_page) else 0
 
     def enable_plugin(self, pid):
         """Enable a plugin. Loads it immediately if possible."""
@@ -179,11 +206,11 @@ class PluginManager:
                     ptypes = info.get("type", "")
                     if isinstance(ptypes, str):
                         ptypes = [ptypes]
-                    if "service" in ptypes and hasattr(inst, "start"):
-                        try:
-                            inst.start()
-                        except Exception as e:
-                            print(f"[Plugin] Failed to start {pid}: {e}")
+                    if "service" in ptypes:
+                        if self._owns_a_button(pid) and pid not in self._bound_plugins_for_page(self._current_page()):
+                            pass
+                        else:
+                            self._start_pid(pid, inst, info)
 
     # ── Panel plugins ─────────────────────────────────────────────────────────
 
@@ -239,21 +266,95 @@ class PluginManager:
                 result.append((s, s))
         return result
 
+    # ── DisplayPad page-scoped services ───────────────────────────────────────
+    #
+    # A service plugin that also registers an action type (e.g. Now Playing,
+    # via register_action_type) is "page-bound": it only makes sense to run
+    # while a button on the currently visible DisplayPad page has that action
+    # type assigned. Such plugins are started/stopped with their normal
+    # start()/stop() lifecycle as the user switches pages — no extra hook is
+    # required in the plugin interface. A service plugin that registers no
+    # action type at all (e.g. a background socket server) is treated as
+    # global and simply runs for the whole app lifetime, as before.
+
+    def _owns_a_button(self, pid):
+        """True if this plugin registered at least one action type."""
+        return any(d.get("owner") == pid for d in self._action_types.values())
+
+    def _bound_plugins_for_page(self, page):
+        """Return the set of plugin ids whose registered action type is
+        assigned to some button on the given DisplayPad page."""
+        from shared.config import _load_displaypad_actions
+        actions = _load_displaypad_actions(page)
+        assigned = {a.get("type") for a in actions if a.get("type") not in (None, "none")}
+        bound = set()
+        for tid in assigned:
+            entry = self._action_types.get(tid)
+            if entry and entry.get("owner"):
+                bound.add(entry["owner"])
+        return bound
+
+    def _start_pid(self, pid, inst, info, reason=""):
+        if not hasattr(inst, "start"):
+            return
+        try:
+            inst.start()
+            self._running[pid] = True
+            print(f"[Plugin] Started service{reason}: {info.get('name', pid)}")
+        except Exception as e:
+            print(f"[Plugin] Failed to start {pid}: {e}")
+
+    def _stop_pid(self, pid, inst, info, reason=""):
+        if not hasattr(inst, "stop"):
+            return
+        try:
+            inst.stop()
+        except Exception:
+            pass
+        self._running[pid] = False
+        print(f"[Plugin] Stopped service{reason}: {info.get('name', pid)}")
+
+    def sync_services_for_page(self, page):
+        """Call this whenever the DisplayPad's active page changes. Stops
+        page-bound service plugins whose button isn't on the new page and
+        starts the ones whose button is — using their own start()/stop()."""
+        bound = self._bound_plugins_for_page(page)
+        _dbg(f"[DBG PluginManager] sync_services_for_page({page}): bound={bound} "
+             f"running={dict(self._running)}")
+        for pid, inst in list(self._instances.items()):
+            info = self._manifests.get(pid, {})
+            ptypes = info.get("type", "")
+            if isinstance(ptypes, str):
+                ptypes = [ptypes]
+            if "service" not in ptypes or not self._owns_a_button(pid):
+                continue  # not a service, or a global service -- leave alone
+            should_run = pid in bound
+            is_running = self._running.get(pid, False)
+            _dbg(f"[DBG PluginManager]   {pid}: should_run={should_run} is_running={is_running}")
+            if should_run and not is_running:
+                self._start_pid(pid, inst, info, f" (page {page})")
+            elif not should_run and is_running:
+                self._stop_pid(pid, inst, info, f" (button not on page {page})")
+
+
     # ── Service lifecycle ─────────────────────────────────────────────────────
 
     def start_services(self):
-        """Call start() on all service-type plugins."""
+        """Call start() on all service-type plugins. A plugin that binds to a
+        specific DisplayPad button only starts if that button is on the
+        page shown at launch (page 0); it will start later via
+        sync_services_for_page() once its page becomes active. A plugin with
+        no button binding is global and always starts with the app."""
         for pid, inst in self._instances.items():
             info = self._manifests[pid]
             ptypes = info.get("type", "")
             if isinstance(ptypes, str):
                 ptypes = [ptypes]
-            if "service" in ptypes and hasattr(inst, "start"):
-                try:
-                    inst.start()
-                    print(f"[Plugin] Started service: {info.get('name', pid)}")
-                except Exception as e:
-                    print(f"[Plugin] Failed to start {pid}: {e}")
+            if "service" not in ptypes:
+                continue
+            if self._owns_a_button(pid) and pid not in self._bound_plugins_for_page(0):
+                continue
+            self._start_pid(pid, inst, info)
 
     def shutdown(self):
         """Call stop() on all plugins that have it."""
@@ -263,3 +364,4 @@ class PluginManager:
                     inst.stop()
                 except Exception:
                     pass
+                self._running[pid] = False

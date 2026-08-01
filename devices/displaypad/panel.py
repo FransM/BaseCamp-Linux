@@ -16,6 +16,7 @@ import queue
 import threading
 import subprocess
 import tkinter as tk
+from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
@@ -35,7 +36,21 @@ from shared.config import (
     _load_displaypad_brightness, _save_displaypad_brightness,
     _load_displaypad_debounce, _save_displaypad_debounce,
     _load_displaypad_page_timeouts, _save_displaypad_page_timeouts,
+    _load_displaypad_page_names, _save_displaypad_page_names,
+    _create_displaypad_page, _rename_displaypad_page, _delete_displaypad_page,
+    _load_displaypad_actions_dialog_size, _save_displaypad_actions_dialog_size,
 )
+
+# Set BASECAMP_PAGE_DEBUG=1 in the environment to trace page-switch/upload
+# decisions (also toggles matching trace lines in shared/plugins.py and
+# page-bound widget plugins). Off by default.
+_PAGE_DEBUG = os.environ.get("BASECAMP_PAGE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dbg(msg):
+    if _PAGE_DEBUG:
+        print(msg, flush=True)
+
 
 try:
     import hid
@@ -130,18 +145,7 @@ def _open_interfaces():
                 hid_dev.close()
                 raise RuntimeError("DisplayPad not found via PyUSB")
             usb.util.claim_interface(usb_dev, 1)
-            # Quiesce the display interface with SET_IDLE(0) before streaming
-            # image data. Windows Base Camp issues SET_IDLE for interfaces 0, 1
-            # and 3; the Linux stack only covered 0 and 3 (hidraw does them),
-            # leaving interface 1 un-idled. A pad that was unplugged/replugged
-            # could then wedge interface 1 and the first upload timed out
-            # (issue #40, from FransM's Windows-vs-Linux capture comparison).
-            # HID class request: bmRequestType=0x21, bRequest=SET_IDLE(0x0A),
-            # wValue=0 (duration 0, report 0), wIndex=interface 1. Best-effort.
-            try:
-                usb_dev.ctrl_transfer(0x21, 0x0A, 0x0000, 1, None, timeout=500)
-            except Exception:
-                pass
+            _init_handshake_ctrl(usb_dev)
             return usb_dev, hid_dev
         except Exception as e:
             last_err = e
@@ -152,6 +156,70 @@ def _open_interfaces():
                     pass
             time.sleep(0.2)
     raise last_err if last_err else RuntimeError("DisplayPad open failed")
+
+
+def _init_handshake_ctrl(usb_dev):
+    """
+    Step 1: temporarily claim IF0 (the keyboard interface). IF0 is only
+    needed for the two control transfers below, so detach its kernel driver
+    first and reattach it afterwards — the keyboard must keep working.
+
+    Step 2: SET_IDLE (bRequest 0x0A, wValue 0) on IF0, IF1 (pixels) and IF3
+    (cmd) to suppress repeated reports when nothing is changing. EPIPE /
+    any failure here just means the interface doesn't support it and is
+    ignored (best-effort, matching warnLibusb's non-fatal handling).
+
+    Step 3: SET_REPORT (output report 3, payload {0x03, 0x01}) on IF0 to
+    enable the device's event reporting mode (verified by USB capture on
+    Windows).
+
+    Step 4: release IF0 and reattach its kernel driver. IF1 stays claimed
+    by us (already claimed by the caller) for the rest of the session.
+    """
+    if0_was_active = False
+    try:
+        if0_was_active = bool(usb_dev.is_kernel_driver_active(0))
+    except Exception:
+        pass
+    if if0_was_active:
+        try:
+            usb_dev.detach_kernel_driver(0)
+        except Exception:
+            pass
+
+    if0_claimed = False
+    try:
+        usb.util.claim_interface(usb_dev, 0)
+        if0_claimed = True
+    except Exception:
+        pass
+
+    def _set_idle(iface):
+        try:
+            usb_dev.ctrl_transfer(0x21, 0x0A, 0x0000, iface, None, timeout=500)
+        except Exception:
+            pass
+
+    if if0_claimed:
+        _set_idle(0)
+    _set_idle(1)  # IF_PIXELS
+    _set_idle(3)  # IF_CMD
+
+    if if0_claimed:
+        try:
+            usb_dev.ctrl_transfer(0x21, 0x09, 0x0203, 0x0000,
+                                   bytes([0x03, 0x01]), timeout=500)
+        except Exception:
+            pass
+        try:
+            usb.util.release_interface(usb_dev, 0)
+        except Exception:
+            pass
+        if if0_was_active:
+            try:
+                usb_dev.attach_kernel_driver(0)
+            except Exception:
+                pass
 
 
 def _close_interfaces(usb_dev, hid_dev):
@@ -170,28 +238,47 @@ def _close_interfaces(usb_dev, hid_dev):
 
 
 def _init_device(hid_dev):
-    """Bring the DisplayPad up by sending INIT and waiting for its 0x11 reply.
+    """Bring the DisplayPad up: send INIT_MSG on IF3 and wait for a matching echo
 
-    After an unplug/replug the pad frequently misses the first INIT: the old
-    code wrote INIT once and then blocked reading for up to 10s before trying
-    again, so recovery was slow and often timed out with "Connection timed out"
-    when the GUI was restarted on a replugged pad (issue #40). Windows Base Camp
-    instead re-sends INIT several times until the pad answers. We do the same —
-    short read windows between frequent re-writes make a missed INIT recover in
-    a fraction of a second instead of stalling."""
-    for attempt in range(15):
-        hid_dev.write(INIT_MSG)
-        for _ in range(10):
-            resp = hid_dev.read(64, timeout=100)
-            if resp and resp[0] == 0x11:
-                # The pad acknowledges INIT before its display engine is ready to
-                # accept pixel data; streaming immediately after a fresh
-                # enumeration timed out the first image write ("Connection timed
-                # out", issue #43). A short settle lets the firmware come up.
-                time.sleep(0.25)
-                return
-        time.sleep(0.1)
-    raise RuntimeError("DisplayPad did not respond to INIT")
+    Send INIT_MSG, then wait up to 500 ms for a reply. The reply is accepted
+    once its first 5 bytes echo what we sent. Retry up to 60 times with a
+    10 ms gap after a failed write or read — the device can be slow to come
+    up after a fresh plug-in (issue #40)."""
+    # INIT_MSG here carries a leading HID report-ID byte (0x00) that
+    # hid_dev.write() needs; the device's raw 64-byte packet — and the echo
+    # it sends back via hid_dev.read() — does not include that byte, so the
+    # comparison is offset by one to line up with init.cpp's INIT_MSG[0:5]
+    # (0x11 0x80 0x00 0x00 0x01).
+    pkt = INIT_MSG
+    echo = pkt[1:6]
+    ack_received = False
+    for _attempt in range(60):
+        try:
+            hid_dev.write(pkt)
+        except Exception:
+            time.sleep(0.01)
+            continue
+
+        try:
+            resp = hid_dev.read(64, timeout=500)
+        except Exception:
+            resp = None
+        if not resp:
+            time.sleep(0.01)
+            continue
+
+        # Accept if the first 5 bytes echo what we sent.
+        if len(resp) >= 5 and bytes(resp[:5]) == echo:
+            # The pad acknowledges INIT before its display engine is ready to
+            # accept pixel data; streaming immediately after a fresh
+            # enumeration timed out the first image write ("Connection timed
+            # out", issue #43). A short settle lets the firmware come up.
+            time.sleep(0.25)
+            ack_received = True
+            break
+
+    if not ack_received:
+        raise RuntimeError("DisplayPad did not respond to INIT")
 
 
 def _upload_button(usb_dev, hid_dev, key_index, bgr_pixels, key_events=None):
@@ -458,6 +545,90 @@ def _make_placeholder(size):
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
+def _close_all_dropdowns(widget):
+    """Recursively close any CTkOptionMenu's popup menu found under
+    `widget`. CTkOptionMenu keeps its DropdownMenu (a tkinter.Menu) on
+    `_dropdown_menu`; closing it just calls tkinter's own unpost()."""
+    dd = getattr(widget, "_dropdown_menu", None)
+    if dd is not None:
+        try:
+            dd.close()
+        except Exception:
+            pass
+    try:
+        children = widget.winfo_children()
+    except Exception:
+        children = []
+    for c in children:
+        _close_all_dropdowns(c)
+
+
+def _bind_dropdown_autoclose(toplevel):
+    """Work around a Tk/X11 quirk: a CTkOptionMenu's popup is an
+    override-redirect window, so the window manager doesn't include it in
+    normal focus/stacking handling -- it can stay rendered on top of every
+    other application (e.g. switching to a browser) even after this window
+    itself loses focus, because nothing tells it to close. Force any open
+    dropdown in this window closed the moment the window loses focus."""
+    def _on_focus_out(event):
+        if event.widget is toplevel:
+            _close_all_dropdowns(toplevel)
+    toplevel.bind("<FocusOut>", _on_focus_out, add="+")
+
+
+def _prompt_page_name(app, prompt_key, title_key, initial=""):
+    """Modal one-line text prompt for a page name (#52), used both to create
+    a brand-new standalone page and to rename an existing one. Returns the
+    entered name, or None if cancelled / left blank."""
+    dlg = ctk.CTkInputDialog(text=app.T(prompt_key), title=app.T(title_key))
+    try:
+        val = dlg.get_input()
+    except Exception:
+        val = None
+    val = (val or "").strip()
+    return val or None
+
+
+_REF_KIND_LABELS = {
+    "action": "dp_ref_kind_action",
+    "also_on_press": "dp_ref_kind_also_on_press",
+    "double_click": "dp_ref_kind_double_click",
+    "timeout": "dp_ref_kind_timeout",
+}
+
+
+def _confirm_delete_page(app, panel, page_id):
+    """Ask for confirmation before deleting a page (#54). If anything still
+    targets it by name, list exactly what and where so the person can
+    decide whether to fix those first or delete anyway. Returns True if the
+    person confirmed the delete."""
+    if page_id == 0:
+        messagebox.showerror(app.T("dp_delete_page_title"), app.T("dp_delete_page_main_error"))
+        return False
+
+    page_name = panel._get_page_name(page_id)
+    refs = panel._find_page_references(page_id)
+    if not refs:
+        return messagebox.askyesno(
+            app.T("dp_delete_page_title"),
+            app.T("dp_delete_page_confirm", name=page_name))
+
+    lines = []
+    for r in refs[:10]:
+        from_name = panel._get_page_name(r["from_page"])
+        kind = app.T(_REF_KIND_LABELS.get(r["kind"], r["kind"]))
+        if r["key"] is None:
+            lines.append(f"\u2022 {from_name} \u2014 {kind}")
+        else:
+            lines.append(f"\u2022 {from_name}, K{r['key'] + 1} \u2014 {kind}")
+    extra = len(refs) - len(lines)
+    if extra > 0:
+        lines.append(app.T("dp_delete_page_more", count=extra))
+    msg = app.T("dp_delete_page_referenced_warning", name=page_name, count=len(refs)) \
+        + "\n\n" + "\n".join(lines)
+    return messagebox.askyesno(app.T("dp_delete_page_title"), msg, icon="warning")
+
+
 # ── Image management dialog ───────────────────────────────────────────────────
 
 _DIALOG_TILE  = 90   # thumbnail size in dialog
@@ -525,14 +696,23 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         pages = self._panel._get_available_pages()
         page_labels = [self._panel._get_page_name(p) for p in pages]
         self._page_list = pages
+        newlbl = self._app.T("dp_new_page")
         self._page_selector = ctk.CTkOptionMenu(
-            header, values=page_labels,
+            header, values=page_labels + [newlbl],
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
             text_color=FG, font=("Helvetica", 11), width=100, height=28,
             command=self._on_page_change)
         cur = self._panel._current_page
         self._page_selector.set(self._panel._get_page_name(cur))
         self._page_selector.pack(side="right")
+        ctk.CTkButton(
+            header, text="✎", width=28, height=28,
+            fg_color=BG2, hover_color="#333a44", text_color=FG,
+            command=self._on_rename_page).pack(side="right", padx=(0, 6))
+        ctk.CTkButton(
+            header, text="🗑", width=28, height=28,
+            fg_color=BG2, hover_color="#4a2222", text_color=FG,
+            command=self._on_delete_page).pack(side="right", padx=(0, 6))
 
         # 6 × 2 grid of tiles
         grid = ctk.CTkFrame(self, fg_color="transparent")
@@ -636,6 +816,8 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             command=self._pick_fullscreen,
         ).pack(side="left")
 
+        _bind_dropdown_autoclose(self)
+
     # ── Slot management ───────────────────────────────────────────────────────
 
     def _on_drop(self, idx, raw_data):
@@ -695,7 +877,18 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         self._panel._gif_frames.pop(idx, None)
         self._panel._gui_frames_sm.pop(idx, None)
         self._panel._fullscreen_group.discard(idx)
-        _save_displaypad_buttons(self._panel._images)
+        # self._panel._images is the *live* map for whichever page is currently
+        # showing — it is NOT necessarily Main's. _save_displaypad_buttons()
+        # always writes to page 0's stored "buttons", so calling it unconditionally
+        # here clobbered Main's saved images whenever a slot was cleared on a
+        # sub-page. Mirror the branch already used by _save_page_action() /
+        # DisplayPadPanel._clear_all(): save Main directly, or sync the current
+        # page's live images into _page_images and persist all sub-pages.
+        if self._panel._current_page == 0:
+            _save_displaypad_buttons(self._panel._images)
+        else:
+            self._panel._page_images[self._panel._current_page] = dict(self._panel._images)
+            self._panel._save_sub_pages()
         self._dlg_frames.pop(idx, None)
         ph = _make_placeholder(_DIALOG_TILE)
         self._tile_imgs[idx] = ph
@@ -810,7 +1003,16 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
                 text=self._app.T("dp_fullscreen_static", name=os.path.basename(path)), text_color=GRN)
 
     def _on_page_change(self, label):
-        """Switch the image dialog to show a different page's images."""
+        """Switch the image dialog to show a different page's images, or
+        create a brand-new standalone page if 'New page...' was picked (#52)."""
+        if label == self._app.T("dp_new_page"):
+            name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
+            if not name:
+                self._page_selector.set(self._panel._get_page_name(self._panel._current_page))
+                return
+            pid = self._panel._create_named_page(name)
+            self._refresh_page_selector(select=pid)
+            return
         for p, lbl in zip(self._page_list,
                           [self._panel._get_page_name(x)
                            for x in self._page_list]):
@@ -828,6 +1030,40 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
                 for idx in range(NUM_KEYS):
                     self._refresh_tile(idx)
                 break
+
+    def _refresh_page_selector(self, select=None):
+        """Rebuild the page dropdown's values after a page was created or
+        renamed (#52), and switch to `select` if given."""
+        pages = self._panel._get_available_pages()
+        self._page_list = pages
+        page_labels = [self._panel._get_page_name(p) for p in pages]
+        newlbl = self._app.T("dp_new_page")
+        self._page_selector.configure(values=page_labels + [newlbl])
+        target = select if select is not None else self._panel._current_page
+        self._page_selector.set(self._panel._get_page_name(target))
+        if select is not None and select != self._panel._current_page:
+            self._on_page_change(self._panel._get_page_name(select))
+
+    def _on_rename_page(self):
+        """Rename the page currently shown in this dialog (#52). Main (page
+        0) is renamable too -- it's just the page the app opens on."""
+        cur = self._panel._current_page
+        name = _prompt_page_name(
+            self._app, "dp_page_name_prompt", "dp_rename_page_title",
+            initial=self._panel._get_page_name(cur))
+        if not name:
+            return
+        self._panel._rename_page(cur, name)
+        self._refresh_page_selector()
+
+    def _on_delete_page(self):
+        """Delete the page currently shown in this dialog (#54), after
+        warning if anything still points at it by name."""
+        cur = self._panel._current_page
+        if not _confirm_delete_page(self._app, self._panel, cur):
+            return
+        self._panel._delete_page(cur)
+        self._refresh_page_selector()
 
     def destroy(self):
         # Auto-upload when dialog closes. Guard against the panel being
@@ -856,8 +1092,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._page  = panel._current_page
         self.title(panel._app.T("dp_actions_title"))
         self.configure(fg_color=BG)
-        self.resizable(False, False)
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.resizable(True, True)
+        self.minsize(420, 420)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._resize_save_after_id = None
+        self.bind("<Configure>", self._on_configure)
 
         _folder_pil = Image.open(
             os.path.join(panel._res_path, "resources", "foldericon.png")).convert("RGBA")
@@ -887,21 +1126,58 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._sec_cmd     = [tk.StringVar() for _ in range(12)]
         self._sec_menus   = []
         self._sec_entries = []
+        self._sec_page_combos = []  # 'page' target picker for also-on-press (existing pages only)
         # Double-click action (issue #47)
         self._dbl_type    = [tk.StringVar() for _ in range(12)]
         self._dbl_cmd     = [tk.StringVar() for _ in range(12)]
         self._dbl_menus   = []
         self._dbl_entries = []
+        self._dbl_page_combos = []  # 'page' target picker for double-click (existing pages only)
         self._cards       = []
 
         self._build_ui()
         self._load_page(self._page)
 
         self.update_idletasks()
+        saved_size = _load_displaypad_actions_dialog_size()
         pw = self._app.winfo_rootx() + self._app.winfo_width() // 2
         ph = self._app.winfo_rooty() + self._app.winfo_height() // 2
-        w, h = self.winfo_width(), self.winfo_height()
-        self.geometry(f"+{pw - w//2}+{ph - h//2}")
+        if saved_size:
+            w, h = saved_size
+        else:
+            w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"{w}x{h}+{pw - w // 2}+{ph - h // 2}")
+
+    def _on_configure(self, event):
+        """Debounce <Configure> events (fired continuously while dragging the
+        window edge) so we only persist the size ~400ms after resizing stops."""
+        if event.widget is not self:
+            return
+        if self._resize_save_after_id is not None:
+            try:
+                self.after_cancel(self._resize_save_after_id)
+            except Exception:
+                pass
+        self._resize_save_after_id = self.after(400, self._save_current_size)
+
+    def _save_current_size(self):
+        self._resize_save_after_id = None
+        try:
+            _save_displaypad_actions_dialog_size(self.winfo_width(), self.winfo_height())
+        except Exception:
+            pass
+
+    def _on_close(self):
+        """Persist the current size immediately (in case the debounced
+        <Configure> save hasn't fired yet) before closing the dialog."""
+        if self._resize_save_after_id is not None:
+            try:
+                self.after_cancel(self._resize_save_after_id)
+            except Exception:
+                pass
+            self._resize_save_after_id = None
+        self._save_current_size()
+        self.destroy()
 
     def _get_action_types(self, include_page=True):
         """Return list of internal action type IDs, including plugin types."""
@@ -958,8 +1234,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             act = actions[i] if i < len(actions) else {"type": "none", "action": ""}
             btype = act.get("type", "none")
             cmd   = act.get("action", "")
-            # Remember an existing 'page' target so the picker can preselect it.
-            self._page_targets[i] = act.get("target") if btype == "page" else None
+            # Remember an existing 'page' target (by name, #52) so the picker
+            # can preselect it -- resolved to an id right away so it behaves
+            # exactly like the "new"/int values the picker itself produces.
+            self._page_targets[i] = self._panel._page_target(act, i) if btype == "page" else None
 
             self._act_type[i].set(btype)
             self._act_cmd[i].set(cmd)
@@ -976,6 +1254,25 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._sec_type_labels()[_SECONDARY_TYPES.index(_sectype)])
             self._sec_menus[i].configure(state="normal")
             self._sec_entries[i].configure(state="normal")
+            self._sec_entries[i].pack_forget()
+            self._sec_page_combos[i].pack_forget()
+            if _sectype == "page":
+                _splabels, _spmap = self._existing_page_options()
+                _sel = self._sec_cmd[i].get()
+                if _sel and _sel not in _spmap:
+                    # Stored target isn't in the "clean" list right now (e.g. it
+                    # was only ever reachable via this chain step, see
+                    # _all_page_ids) — show it anyway instead of silently
+                    # swapping in a different page and losing the setting.
+                    _splabels = _splabels + [_sel]
+                elif not _sel:
+                    _sel = _splabels[0] if _splabels else ""
+                    self._sec_cmd[i].set(_sel)
+                self._sec_page_combos[i].configure(values=_splabels or [""])
+                self._sec_page_combos[i].set(_sel)
+                self._sec_page_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            else:
+                self._sec_entries[i].pack(side="left", padx=4, expand=True, fill="x")
 
             # Double-click action (issue #47)
             _dbl = act.get("double") if isinstance(act, dict) else None
@@ -988,6 +1285,21 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._sec_type_labels()[_SECONDARY_TYPES.index(_dbltype)])
             self._dbl_menus[i].configure(state="normal")
             self._dbl_entries[i].configure(state="normal")
+            self._dbl_entries[i].pack_forget()
+            self._dbl_page_combos[i].pack_forget()
+            if _dbltype == "page":
+                _dplabels, _dpmap = self._existing_page_options()
+                _dsel = self._dbl_cmd[i].get()
+                if _dsel and _dsel not in _dpmap:
+                    _dplabels = _dplabels + [_dsel]
+                elif not _dsel:
+                    _dsel = _dplabels[0] if _dplabels else ""
+                    self._dbl_cmd[i].set(_dsel)
+                self._dbl_page_combos[i].configure(values=_dplabels or [""])
+                self._dbl_page_combos[i].set(_dsel)
+                self._dbl_page_combos[i].pack(side="left", padx=4, expand=True, fill="x")
+            else:
+                self._dbl_entries[i].pack(side="left", padx=4, expand=True, fill="x")
 
             menu = self._type_menus[i]
             menu.configure(values=labels)
@@ -1117,12 +1429,21 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         # Page selector
         pages = self._panel._get_available_pages()
         page_labels = [self._panel._get_page_name(p) for p in pages]
+        newlbl = self._app.T("dp_new_page")
         self._page_selector = ctk.CTkOptionMenu(
-            header, values=page_labels,
+            header, values=page_labels + [newlbl],
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
             text_color=FG, font=("Helvetica", 11), width=100, height=28,
             command=self._on_page_change)
         self._page_selector.pack(side="right")
+        ctk.CTkButton(
+            header, text="✎", width=28, height=28,
+            fg_color=BG2, hover_color="#333a44", text_color=FG,
+            command=self._on_rename_page).pack(side="right", padx=(0, 6))
+        ctk.CTkButton(
+            header, text="🗑", width=28, height=28,
+            fg_color=BG2, hover_color="#4a2222", text_color=FG,
+            command=self._on_delete_page).pack(side="right", padx=(0, 6))
         self._page_list = pages
 
         # ── Per-page auto-timeout (issue #45) ─────────────────────────────────
@@ -1162,6 +1483,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                                         width=480, height=460)
         scroll.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
+        # Fixed widths so the label + dropdown column lines up identically
+        # across all three rows of a key card (action / also-on-press / double-click).
+        _ROW_LABEL_W = 130
+        _ROW_MENU_W  = 130
+
         for i in range(12):
             card = ctk.CTkFrame(scroll, fg_color=BG3, corner_radius=4)
             card.pack(fill="x", padx=4, pady=2)
@@ -1175,12 +1501,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
             ctk.CTkLabel(row, text=self._app.T("action_label"),
                          font=("Helvetica", 10), text_color=FG2,
-                         width=50, anchor="w").pack(side="left", padx=(4, 2))
+                         width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
 
             type_menu = ctk.CTkOptionMenu(
                 row, values=self._type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=30,
+                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=30,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_type_change(val, ix))
             type_menu.pack(side="left", padx=(2, 2))
@@ -1268,11 +1594,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             sec_row.pack(fill="x", padx=4, pady=(0, 6))
             ctk.CTkLabel(sec_row, text=self._app.T("dp_also_on_press"),
                          font=("Helvetica", 10), text_color=FG2,
-                         anchor="w").pack(side="left", padx=(4, 2))
+                         width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
             sec_menu = ctk.CTkOptionMenu(
                 sec_row, values=self._sec_type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=28,
+                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=28,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_sec_type_change(val, ix))
             sec_menu.pack(side="left", padx=(2, 2))
@@ -1286,6 +1612,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             attach_clipboard_menu(sec_entry, self._app.T)
             self._sec_entries.append(sec_entry)
 
+            sec_page_combo = ctk.CTkOptionMenu(
+                sec_row, values=[""], width=140, height=28,
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_sec_page_select(val, ix))
+            self._sec_page_combos.append(sec_page_combo)
+            # not packed yet — shown only when 'page' type selected
+
             # Double-click action (issue #47) — a distinct action on a quick
             # second press. When set, the primary is held until the click window
             # elapses; when 'none', the key stays instant.
@@ -1293,11 +1627,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             dbl_row.pack(fill="x", padx=4, pady=(0, 6))
             ctk.CTkLabel(dbl_row, text=self._app.T("dp_on_double_click"),
                          font=("Helvetica", 10), text_color=FG2,
-                         anchor="w").pack(side="left", padx=(4, 2))
+                         width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
             dbl_menu = ctk.CTkOptionMenu(
                 dbl_row, values=self._sec_type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=28,
+                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=28,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_dbl_type_change(val, ix))
             dbl_menu.pack(side="left", padx=(2, 2))
@@ -1311,6 +1645,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             attach_clipboard_menu(dbl_entry, self._app.T)
             self._dbl_entries.append(dbl_entry)
 
+            dbl_page_combo = ctk.CTkOptionMenu(
+                dbl_row, values=[""], width=140, height=28,
+                fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
+                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                command=lambda val, ix=i: self._on_dbl_page_select(val, ix))
+            self._dbl_page_combos.append(dbl_page_combo)
+            # not packed yet — shown only when 'page' type selected
+
         self._info_lbl = ctk.CTkLabel(self, text="",
                                       font=("Helvetica", 11), text_color=GRN)
         self._info_lbl.pack(pady=(0, 4))
@@ -1322,7 +1664,17 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             command=self._apply_all_and_close,
         ).pack(fill="x", padx=12, pady=(0, 12))
 
+        _bind_dropdown_autoclose(self)
+
     def _on_page_change(self, label):
+        if label == self._app.T("dp_new_page"):
+            name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
+            if not name:
+                self._page_selector.set(self._panel._get_page_name(self._page))
+                return
+            pid = self._panel._create_named_page(name)
+            self._refresh_page_selector(select=pid)
+            return
         for p, lbl in zip(self._page_list,
                           [self._panel._get_page_name(x)
                            for x in self._page_list]):
@@ -1336,6 +1688,40 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 except Exception:
                     pass
                 break
+
+    def _refresh_page_selector(self, select=None):
+        """Rebuild the page dropdown's values after a page was created or
+        renamed (#52), and switch the editor to `select` if given."""
+        pages = self._panel._get_available_pages()
+        self._page_list = pages
+        page_labels = [self._panel._get_page_name(p) for p in pages]
+        newlbl = self._app.T("dp_new_page")
+        self._page_selector.configure(values=page_labels + [newlbl])
+        target = select if select is not None else self._page
+        self._page_selector.set(self._panel._get_page_name(target))
+        if select is not None and select != self._page:
+            self._on_page_change(self._panel._get_page_name(select))
+
+    def _on_rename_page(self):
+        """Rename the page currently open in the editor (#52). Main (page 0)
+        is renamable too -- it's just the page the app opens on."""
+        name = _prompt_page_name(
+            self._app, "dp_page_name_prompt", "dp_rename_page_title",
+            initial=self._panel._get_page_name(self._page))
+        if not name:
+            return
+        self._panel._rename_page(self._page, name)
+        self._refresh_page_selector()
+
+    def _on_delete_page(self):
+        """Delete the page currently open in the editor (#54), after
+        warning if anything still points at it by name. Always falls back
+        to showing Main afterward, since the page being edited is gone."""
+        page_id = self._page
+        if not _confirm_delete_page(self._app, self._panel, page_id):
+            return
+        self._panel._delete_page(page_id)
+        self._refresh_page_selector(select=0)
 
     # ── Per-page auto-timeout controls (issue #45) ────────────────────────────
     _TIMEOUT_MODES = ["off", "after", "idle"]
@@ -1372,7 +1758,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         tgt = to.get("target", "prev")
         sel = None
         for lbl, val in mapping.items():
-            if val == tgt:
+            if val == "prev":
+                match = (tgt == "prev")
+            else:
+                # tgt may be a legacy int id or (#52) a persisted page name.
+                match = (tgt == val or tgt == self._panel._get_page_name(val))
+            if match:
                 sel = lbl
                 break
         self._to_target_menu.set(sel or self._app.T("dp_timeout_prev"))
@@ -1389,7 +1780,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, TypeError):
             secs = 10
         _labels, mapping = self._timeout_target_options()
-        tgt = mapping.get(self._to_target_menu.get(), "prev")
+        picked = mapping.get(self._to_target_menu.get(), "prev")
+        # Store by name (#52), like every other page reference; "prev" is
+        # kept as-is since it's a mode, not a page.
+        tgt = picked if picked == "prev" else self._panel._get_page_name(picked)
         if mode == "off":
             self._panel._page_timeout.pop(self._page, None)
         else:
@@ -1399,6 +1793,17 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         # Re-arm live if the page being edited is the one on the device now.
         if self._page == self._panel._current_page:
             self._panel._arm_page_timeout(self._page)
+
+    def _existing_page_options(self):
+        """(labels, {label: page_id}) of every existing page, no 'New page'
+        entry — used by the also-on-press / double-click page pickers, which
+        can only jump to a page that already exists (issue #16/#47)."""
+        mapping, labels = {}, []
+        for p in self._panel._get_available_pages():
+            lbl = self._panel._get_page_name(p)
+            labels.append(lbl)
+            mapping[lbl] = p
+        return labels, mapping
 
     def _page_target_options(self):
         """(labels, {label: target}) for the page-target picker: every existing
@@ -1551,17 +1956,38 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, IndexError):
             internal = "none"
         self._sec_type[idx].set(internal)
-        if internal == "keypress":
-            self._sec_entries[idx].configure(
-                placeholder_text="e.g. F12, ctrl+shift+a")
-        elif internal == "text":
-            self._sec_entries[idx].configure(
-                placeholder_text=self._app.T("action_type_text_hint"))
-        elif internal == "none":
-            self._sec_cmd[idx].set("")
-            self._sec_entries[idx].configure(placeholder_text="")
+        self._sec_entries[idx].pack_forget()
+        self._sec_page_combos[idx].pack_forget()
+        if internal == "page":
+            plabels, pmap = self._existing_page_options()
+            cur = self._sec_cmd[idx].get()
+            if cur and cur not in pmap:
+                plabels = plabels + [cur]
+                sel = cur
+            else:
+                sel = cur if cur in pmap else (plabels[0] if plabels else "")
+                self._sec_cmd[idx].set(sel)
+            self._sec_page_combos[idx].configure(values=plabels or [""])
+            self._sec_page_combos[idx].set(sel)
+            self._sec_page_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
         else:
-            self._sec_entries[idx].configure(placeholder_text="")
+            if internal == "keypress":
+                self._sec_entries[idx].configure(
+                    placeholder_text="e.g. F12, ctrl+shift+a")
+            elif internal == "text":
+                self._sec_entries[idx].configure(
+                    placeholder_text=self._app.T("action_type_text_hint"))
+            elif internal == "none":
+                self._sec_cmd[idx].set("")
+                self._sec_entries[idx].configure(placeholder_text="")
+            else:
+                self._sec_entries[idx].configure(placeholder_text="")
+            self._sec_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
+        self._apply(idx)
+
+    def _on_sec_page_select(self, val, idx):
+        """User picked a destination page for the 'also on press' action."""
+        self._sec_cmd[idx].set(val)
         self._apply(idx)
 
     def _on_dbl_type_change(self, label, idx):
@@ -1572,17 +1998,38 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         except (ValueError, IndexError):
             internal = "none"
         self._dbl_type[idx].set(internal)
-        if internal == "keypress":
-            self._dbl_entries[idx].configure(
-                placeholder_text="e.g. F12, ctrl+shift+a")
-        elif internal == "text":
-            self._dbl_entries[idx].configure(
-                placeholder_text=self._app.T("action_type_text_hint"))
-        elif internal == "none":
-            self._dbl_cmd[idx].set("")
-            self._dbl_entries[idx].configure(placeholder_text="")
+        self._dbl_entries[idx].pack_forget()
+        self._dbl_page_combos[idx].pack_forget()
+        if internal == "page":
+            plabels, pmap = self._existing_page_options()
+            cur = self._dbl_cmd[idx].get()
+            if cur and cur not in pmap:
+                plabels = plabels + [cur]
+                sel = cur
+            else:
+                sel = cur if cur in pmap else (plabels[0] if plabels else "")
+                self._dbl_cmd[idx].set(sel)
+            self._dbl_page_combos[idx].configure(values=plabels or [""])
+            self._dbl_page_combos[idx].set(sel)
+            self._dbl_page_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
         else:
-            self._dbl_entries[idx].configure(placeholder_text="")
+            if internal == "keypress":
+                self._dbl_entries[idx].configure(
+                    placeholder_text="e.g. F12, ctrl+shift+a")
+            elif internal == "text":
+                self._dbl_entries[idx].configure(
+                    placeholder_text=self._app.T("action_type_text_hint"))
+            elif internal == "none":
+                self._dbl_cmd[idx].set("")
+                self._dbl_entries[idx].configure(placeholder_text="")
+            else:
+                self._dbl_entries[idx].configure(placeholder_text="")
+            self._dbl_entries[idx].pack(side="left", padx=4, expand=True, fill="x")
+        self._apply(idx)
+
+    def _on_dbl_page_select(self, val, idx):
+        """User picked a destination page for the double-click action."""
+        self._dbl_cmd[idx].set(val)
         self._apply(idx)
 
     def _on_obs_select(self, val, idx):
@@ -1792,11 +2239,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             step = {"type": sectype, "action": secval}
             if sectype == "page":
                 # 'also on press → go to page' (#17): the entry holds a page
-                # name; resolve it to a page id so the chain can navigate.
-                _lbls, mapping = self._page_target_options()
-                tgt = mapping.get(secval)
-                if isinstance(tgt, int):
-                    step["target"] = tgt
+                # name, stored directly (#52) -- _page_target() resolves it
+                # back to an id when the chain actually runs.
+                if self._panel._page_id_by_name(secval) is not None:
+                    step["target"] = secval
                     extra = [step]
                 # unresolved / 'New page' name → skip (nothing to jump to)
             elif secval:
@@ -1809,10 +2255,8 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         if dbltype and dbltype != "none":
             step = {"type": dbltype, "action": dblval}
             if dbltype == "page":
-                _l2, map2 = self._page_target_options()
-                tgt2 = map2.get(dblval)
-                if isinstance(tgt2, int):
-                    step["target"] = tgt2
+                if self._panel._page_id_by_name(dblval) is not None:
+                    step["target"] = dblval
                     double = step
             elif dblval:
                 double = step
@@ -1841,6 +2285,13 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             pass
         for i in range(12):
             self._apply(i)
+        if self._resize_save_after_id is not None:
+            try:
+                self.after_cancel(self._resize_save_after_id)
+            except Exception:
+                pass
+            self._resize_save_after_id = None
+        self._save_current_size()
         self.destroy()
 
 
@@ -1861,6 +2312,13 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._tile_lbls   = {}   # compact overview: key_index -> CTkLabel
         self._uploading        = False
         self._animating        = False
+        self._page_switch_waiting = False  # set by _switch_to_page while it
+                                            # waits for the plugin worker to
+                                            # yield the device (see there)
+        self._deleted_page_ids = set()     # ids _delete_page() has removed —
+                                            # _switch_to_page() must never
+                                            # write outgoing-page state back
+                                            # for one of these (see there)
         self._anim_stop        = threading.Event()
         self._anim_thread      = None
         self._min_frame_ms     = 50
@@ -1903,17 +2361,18 @@ class DisplayPadPanel(ctk.CTkFrame):
         # interface (3) never enumerates — the usbhid interface-order quirk
         # FransM hit on Ubuntu/Mint (issue #36).
         self._warned_quirk    = False
-        # Key event listener
-        self._key_stop        = threading.Event()
-        self._key_thread      = None
-        # Set whenever the key listener is NOT holding interface 3, so a plugin
-        # image upload can wait for the device to be free before opening it.
+        # Set whenever the device worker is NOT holding interface 3, so a
+        # manual upload/animation can wait for it to free up before opening.
         self._key_released    = threading.Event()
         self._key_released.set()
-        # Plugin live-image uploads (System Monitor, Clock, ...)
-        self._plugin_worker_lock   = threading.Lock()
-        self._plugin_worker_active = False
-        self._last_plugin_error    = None
+        # Plugin live-image uploads (System Monitor, Clock, ...) AND key-event
+        # listening — both handled by one persistent worker thread (started
+        # once, see __init__ below) that owns interface 1/3 for as long as
+        # nothing else needs them, instead of a separate key-event listener
+        # and per-burst upload sessions constantly trading the device back
+        # and forth.
+        self._plugin_worker_stop = threading.Event()
+        self._last_plugin_error  = None
         # Serialises every USB session (manual upload, animation, plugin worker)
         # so two of them can never hold interface 1/3 at once. Without this the
         # check-and-set on the _uploading/_animating bools races between the GUI
@@ -1997,14 +2456,17 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._gui_frames_sm:
             self.after(200, self._gui_tick)
         if self._images or self._gif_frames:
-            self.after(1500, self._start_upload)
+            self.after(200, self._start_upload)
 
-        # Start device presence monitor and key event listener
+        # Start device presence monitor and the persistent device worker
+        # (owns interface 1/3: plugin uploads AND key-event listening).
         threading.Thread(target=self._monitor_loop, daemon=True).start()
-        threading.Thread(target=self._key_event_loop, daemon=True).start()
-        self.bind("<Destroy>", lambda e: (self._monitor_stop.set(), self._key_stop.set()))
+        threading.Thread(target=self._plugin_upload_worker, daemon=True).start()
+        self.bind("<Destroy>", lambda e: (self._monitor_stop.set(),
+                                           self._plugin_worker_stop.set()))
         # Arm the auto-timeout for the start page, if it has one (#45).
         self.after(800, lambda: self._arm_page_timeout(self._current_page))
+        _bind_dropdown_autoclose(self.winfo_toplevel())
 
     def T(self, key, **kwargs):
         return self._app.T(key, **kwargs)
@@ -2217,12 +2679,23 @@ class DisplayPadPanel(ctk.CTkFrame):
             return (a.get("type", "none"), a.get("action", ""))
         return ("none", "")
 
-    @staticmethod
-    def _page_target(act, idx):
-        """Resolve a 'page' action's destination page id. New configs carry an
-        explicit integer 'target'; legacy main-page actions had no target and
-        mapped to the fixed sub-page idx+1, so fall back to that (#30 migration)."""
+    def _page_target(self, act, idx):
+        """Resolve a 'page' action's destination page id. Targets are stored
+        by NAME (a string, resolved against the page-name registry) so they
+        keep working even as page ids get minted/reordered elsewhere and so
+        they match what's shown in the page picker (#52). Legacy configs
+        stored a raw integer id, which is still accepted here; very old
+        main-page-only actions had no target at all and mapped to the fixed
+        sub-page idx+1, so that fallback is kept too."""
         t = act.get("target")
+        if isinstance(t, str):
+            pid = self._page_id_by_name(t)
+            if pid is not None:
+                return pid
+            try:
+                return int(t)
+            except ValueError:
+                return idx + 1
         try:
             return int(t)
         except (TypeError, ValueError):
@@ -2230,14 +2703,42 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _all_page_ids(self):
         """Every page id that exists or is referenced: 0, any page with stored
-        actions/images, and every 'page' action target anywhere."""
+        actions/images, every 'page' action target anywhere, and every page
+        registered by name even if nothing points at it yet (#52)."""
         ids = {0}
         ids.update(self._page_actions.keys())
         ids.update(self._page_images.keys())
+        ids.update(_load_displaypad_page_names().keys())
         for page, acts in self._page_actions.items():
             for i, act in enumerate(acts):
                 if act.get("type") == "page":
                     ids.add(self._page_target(act, i))
+                # A page targeted only by an 'also on press' chain step or a
+                # double-click action was already treated as "referenced" by
+                # _gc_orphan_pages (so it never gets deleted) — but it was
+                # missing here, so it silently fell out of the page picker's
+                # option list and got clobbered on reload. Resolve those
+                # targets too so such a page always counts as existing.
+                for step in (act.get("actions") or []):
+                    if isinstance(step, dict) and step.get("type") == "page":
+                        pid = self._page_id_by_name(step.get("target") or "")
+                        if pid is None:
+                            try:
+                                pid = int(step.get("target"))
+                            except (TypeError, ValueError):
+                                pid = None
+                        if pid is not None:
+                            ids.add(pid)
+                dbl = act.get("double")
+                if isinstance(dbl, dict) and dbl.get("type") == "page":
+                    pid = self._page_id_by_name(dbl.get("target") or "")
+                    if pid is None:
+                        try:
+                            pid = int(dbl.get("target"))
+                        except (TypeError, ValueError):
+                            pid = None
+                    if pid is not None:
+                        ids.add(pid)
         return {p for p in ids if isinstance(p, int) and p >= 0}
 
     def _mint_page_id(self):
@@ -2285,7 +2786,7 @@ class DisplayPadPanel(ctk.CTkFrame):
             return
         acts = [dict(a) for a in _DEFAULT_ACTIONS]
         acts[0] = {"type": "page", "action": self.T("dp_page_back"),
-                   "target": int(back_to), "icon": self._back_icon}
+                   "target": self._get_page_name(int(back_to)), "icon": self._back_icon}
         self._page_actions[page_id] = acts
         self._page_images.setdefault(page_id, {})
         self._save_sub_pages()
@@ -2293,10 +2794,27 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _gc_orphan_pages(self):
         """Drop pages that nothing navigates to and that hold no content — e.g.
         a page minted when the user picked 'New page' but then retargeted the
-        button to an existing page (#30). Conservative: never touches page 0 or
-        the current page, keeps any page with an image/fullscreen or a non-default
-        action (the auto back button on K1 doesn't count as content)."""
-        referenced = {0, self._current_page}
+        button to an existing page (#30). Conservative: never touches page 0, the
+        current page, or any page registered by name (#52 -- a person may have
+        pre-created it on purpose and not gotten around to using it yet). Also
+        keeps any page with an image/fullscreen or a non-default action (the
+        auto back button on K1 doesn't count as content)."""
+        registered = set(_load_displaypad_page_names().keys())
+        referenced = {0, self._current_page} | registered
+
+        def _resolve(tgt, idx=0):
+            if isinstance(tgt, str):
+                pid = self._page_id_by_name(tgt)
+                if pid is not None:
+                    return pid
+                try:
+                    return int(tgt)
+                except ValueError:
+                    return None
+            if isinstance(tgt, int):
+                return tgt
+            return None
+
         for page, acts in self._page_actions.items():
             for i, a in enumerate(acts):
                 if a.get("type") == "page":
@@ -2304,17 +2822,20 @@ class DisplayPadPanel(ctk.CTkFrame):
                 # A page targeted only by an 'also on press' chain step (#17) or a
                 # double-click action (#47) is still referenced — don't GC it.
                 for step in (a.get("actions") or []):
-                    if step.get("type") == "page" and isinstance(step.get("target"), int):
-                        referenced.add(step["target"])
+                    if step.get("type") == "page":
+                        pid = _resolve(step.get("target"))
+                        if pid is not None:
+                            referenced.add(pid)
                 dbl = a.get("double")
-                if (isinstance(dbl, dict) and dbl.get("type") == "page"
-                        and isinstance(dbl.get("target"), int)):
-                    referenced.add(dbl["target"])
+                if isinstance(dbl, dict) and dbl.get("type") == "page":
+                    pid = _resolve(dbl.get("target"))
+                    if pid is not None:
+                        referenced.add(pid)
         # A page reachable only as an auto-timeout destination is referenced too (#45).
         for _p, to in (self._page_timeout or {}).items():
-            tgt = (to or {}).get("target")
-            if isinstance(tgt, int):
-                referenced.add(tgt)
+            pid = _resolve((to or {}).get("target"))
+            if pid is not None:
+                referenced.add(pid)
         removed = False
         for p in list(self._page_actions.keys()):
             if p in referenced or p == 0:
@@ -2384,15 +2905,15 @@ class DisplayPadPanel(ctk.CTkFrame):
         # ── 'page' action: resolve/allocate target + custom icon ──────────────
         if btype == "page":
             if target in (None, "", "new"):
-                target = (old.get("target")
-                          if old.get("type") == "page" and isinstance(old.get("target"), int)
+                target = (self._page_target(old, idx)
+                          if old.get("type") == "page" and old.get("target") not in (None, "")
                           else self._mint_page_id())
             target = int(target)
-            entry["target"] = target
+            self._ensure_page(target, back_to=page)
+            entry["target"] = self._get_page_name(target)
             keep_icon = icon or (old.get("icon") if old.get("type") == "page" else None)
             if keep_icon:
                 entry["icon"] = keep_icon
-            self._ensure_page(target, back_to=page)
 
         actions[idx] = entry
         self._page_images.setdefault(page, {})
@@ -2514,10 +3035,30 @@ class DisplayPadPanel(ctk.CTkFrame):
         # page looked "pre-filled" with the previous page's images (issue #28).
         # Defer and retry until the short upload finishes (bounded so a stuck
         # flag can't loop forever).
+        #
+        # _page_switch_waiting tells _plugin_upload_worker to yield the device
+        # at its next loop iteration instead of only releasing it after a full
+        # LINGER (2s) idle gap between queued frames — without this, a plugin
+        # that keeps pushing more often than every 2s (e.g. a ~1/s System
+        # Monitor push) held the device indefinitely and every retry here just
+        # failed until the bound below silently gave up (this was the actual
+        # bug: page switching appeared to stop working whenever such a plugin
+        # was active on the current page).
+        self._page_switch_waiting = True
         if self._uploading:
             if _retry < 40:  # ~6s worst case at 150ms
                 self.after(150, lambda: self._switch_to_page(page_num, _retry + 1))
             return
+        # NOTE: _page_switch_waiting stays True here — it is NOT cleared yet.
+        # Clearing it as soon as this guard passes left a window (until the
+        # scheduled _start_upload -> _worker actually acquires _usb_lock,
+        # ~200ms+ below) where the plugin worker saw no reason to keep
+        # yielding and could grab the device again for its next push,
+        # blocking the page's own static-icon upload on the same lock —
+        # static icons then simply never got refreshed after a switch. It's
+        # cleared instead in _finish() (reached by every _worker() upload,
+        # including the "nothing assigned" blank-out case) or immediately
+        # below if this switch has nothing to upload at all.
         # Cancel any pending double-click timers: they belong to the page we're
         # leaving. Left armed, a stale timer would fire the primary against the
         # wrong page, or a later single press on the new page would be mistaken
@@ -2529,19 +3070,50 @@ class DisplayPadPanel(ctk.CTkFrame):
                 pass
         self._dc_timers.clear()
 
-        # Save current page state
+        # Save current page state -- unless old_page was just deleted via
+        # _delete_page(). That function tries to clean up the entries this
+        # writes right after calling us, but _switch_to_page() isn't always
+        # synchronous: if _uploading/_animating was true at the time,
+        # this whole call was just a scheduled retry (see the guards above)
+        # and the real switch — and this save — happens later, *after*
+        # _delete_page() already returned and did its cleanup. That silently
+        # resurrected the deleted page in memory, invisible until the next
+        # unrelated _save_sub_pages() call (e.g. deleting another page
+        # afterward) wrote its file back to disk. Guarding it here, at the
+        # point the write actually happens, is correct regardless of timing.
         old_page = self._current_page
-        self._prev_page = old_page   # 'previous page' timeout target (#45)
-        self._page_images[old_page] = dict(self._images)
-        self._page_gif_frames[old_page] = dict(self._gif_frames)
-        self._page_gui_frames[old_page] = dict(self._gui_frames_sm)
-        if self._fullscreen_group:
-            self._page_fullscreen.setdefault(old_page, None)  # keep existing path
+        if old_page in self._deleted_page_ids:
+            _dbg(f"[DBG switch] {old_page} -> {page_num} | old_page was deleted, not saving its state")
+        else:
+            self._prev_page = old_page   # 'previous page' timeout target (#45)
+            self._page_images[old_page] = dict(self._images)
+            self._page_gif_frames[old_page] = dict(self._gif_frames)
+            self._page_gui_frames[old_page] = dict(self._gui_frames_sm)
+            if self._fullscreen_group:
+                self._page_fullscreen.setdefault(old_page, None)  # keep existing path
+            _dbg(f"[DBG switch] {old_page} -> {page_num} | saved page_images[{old_page}]={self._page_images[old_page]}")
 
         self._current_page = page_num
 
+        # Start/stop page-bound service plugins using their normal start()/
+        # stop() lifecycle: a plugin whose button was on the page we're
+        # leaving gets stop()'d (it was otherwise still polling and painting
+        # over that key index on the new page, since keys are shared
+        # hardware slots across pages), and a plugin whose button is on the
+        # page we're entering gets start()'d right away.
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm:
+            try:
+                pm.sync_services_for_page(page_num)
+            except Exception as e:
+                print(f"[Plugin] sync_services_for_page failed: {e}")
+
+        _dbg(f"[DBG switch] after sync_services_for_page({page_num}): "
+              f"page_images[{page_num}]={self._page_images.get(page_num)}")
+
         # Load new page
         self._images = dict(self._page_images.get(page_num, {}))
+        _dbg(f"[DBG switch] loaded self._images for page {page_num} = {self._images}")
         self._gif_frames = {}
         self._gui_frames_sm = {}
         self._gui_fidx = {}
@@ -2594,6 +3166,12 @@ class DisplayPadPanel(ctk.CTkFrame):
         if self._images or self._gif_frames:
             self._uploading = True
             self.after(200, self._start_upload)
+        else:
+            # Nothing to upload for this page at all -- _start_upload/_finish
+            # (which normally clear _page_switch_waiting) will never run, so
+            # clear it here or the plugin worker would keep yielding the
+            # device forever for a switch that has already fully completed.
+            self._page_switch_waiting = False
 
         # Start this page's auto-timeout countdown, if any (#45).
         self._arm_page_timeout(page_num)
@@ -2605,18 +3183,185 @@ class DisplayPadPanel(ctk.CTkFrame):
         return sorted(self._all_page_ids())
 
     def _get_page_name(self, p):
-        """Return the user-defined name for a page, falling back to 'Page N'.
-        The name is taken from the label of any 'page' action that targets it
-        (searched across all pages, not just the main page)."""
+        """Return the persisted name for a page. Page 0 is just another
+        entry in the same registry -- it only happens to be the page the
+        app opens on -- defaulting to a translated 'Main' the first time
+        (after which it's stored data like any other page and can be
+        renamed). A page with no registry entry yet but that's targeted by
+        an existing 'page' action (pre-#52 configs) has its button-derived
+        label adopted into the registry once, so the name becomes durable
+        instead of being re-derived (and able to disappear) every time."""
+        names = _load_displaypad_page_names()
+        if p in names:
+            return names[p]
         if p == 0:
-            return self.T("dp_page_main")
+            default = self._unique_page_name(self.T("dp_page_main"), exclude_id=0)
+            names[0] = default
+            _save_displaypad_page_names(names)
+            return default
         for page, acts in self._page_actions.items():
             for i, act in enumerate(acts):
                 if act.get("type") == "page" and self._page_target(act, i) == p:
                     name = (act.get("action") or "").strip()
                     if name:
+                        name = self._unique_page_name(name, exclude_id=p)
+                        names[p] = name
+                        _save_displaypad_page_names(names)
                         return name
-        return f"Page {p}"
+        fallback = self._unique_page_name(f"Page {p}", exclude_id=p)
+        names[p] = fallback
+        _save_displaypad_page_names(names)
+        return fallback
+
+    def _page_id_by_name(self, name):
+        """Resolve a page name back to its id, or None if no page has that
+        name right now (e.g. it was renamed or deleted elsewhere)."""
+        for pid, nm in _load_displaypad_page_names().items():
+            if nm == name:
+                return pid
+        return None
+
+    def _unique_page_name(self, name, exclude_id=None):
+        """Disambiguate `name` against every other page's name (#55) by
+        appending " (2)", " (3)", etc. Without this, two pages could end up
+        with the identical name and the page dropdown would show that name
+        twice -- looking like a duplicate entry, even though they're two
+        distinct, valid pages underneath."""
+        existing = {n for pid, n in _load_displaypad_page_names().items()
+                    if pid != exclude_id}
+        if name not in existing:
+            return name
+        i = 2
+        while f"{name} ({i})" in existing:
+            i += 1
+        return f"{name} ({i})"
+
+    def _create_named_page(self, name):
+        """Register a brand-new page that isn't targeted by any button yet
+        (#52) -- it exists purely because it's in the name registry, and
+        _gc_orphan_pages() knows to leave it alone."""
+        name = (name or "").strip() or f"Page {self._mint_page_id()}"
+        name = self._unique_page_name(name)
+        pid = _create_displaypad_page(name, existing_ids=self._all_page_ids())
+        self._page_actions.setdefault(pid, [dict(a) for a in _DEFAULT_ACTIONS])
+        self._page_images.setdefault(pid, {})
+        self._save_sub_pages()
+        return pid
+
+    def _rename_page(self, page_id, name):
+        """Rename a page and update every stored reference to it (#52).
+        References are stored by name, so without this cascade a button
+        that pointed at the old name would silently stop resolving the
+        moment the page got renamed -- that would make name-based
+        references *less* durable than plain ids, not more."""
+        page_id = int(page_id)
+        name = (name or "").strip()
+        if not name:
+            return
+        name = self._unique_page_name(name, exclude_id=page_id)
+        old_name = self._get_page_name(page_id)
+        _rename_displaypad_page(page_id, name)
+        if old_name == name:
+            return
+
+        def _retarget(step):
+            if isinstance(step, dict) and step.get("target") == old_name:
+                step["target"] = name
+                return True
+            return False
+
+        changed_actions = False
+        for page, acts in self._page_actions.items():
+            for act in acts:
+                if not isinstance(act, dict):
+                    continue
+                if act.get("type") == "page" and _retarget(act):
+                    changed_actions = True
+                for step in (act.get("actions") or []):
+                    if step.get("type") == "page" and _retarget(step):
+                        changed_actions = True
+                dbl = act.get("double")
+                if isinstance(dbl, dict) and dbl.get("type") == "page" and _retarget(dbl):
+                    changed_actions = True
+        if changed_actions:
+            if 0 in self._page_actions:
+                _save_displaypad_actions(self._page_actions[0])
+            self._save_sub_pages()
+
+        changed_timeout = False
+        for _p, to in (self._page_timeout or {}).items():
+            if isinstance(to, dict) and to.get("target") == old_name:
+                to["target"] = name
+                changed_timeout = True
+        if changed_timeout:
+            _save_displaypad_page_timeouts(self._page_timeout)
+
+    def _find_page_references(self, page_id):
+        """Return every place that targets this page by name: a primary
+        'page' action, an 'also on press' step, a double-click action, or a
+        page-timeout target -- on ANY page, including this one. Used to
+        warn before deleting a page that's still pointed at."""
+        name = self._get_page_name(page_id)
+        refs = []
+        for from_page, acts in self._page_actions.items():
+            for i, act in enumerate(acts or []):
+                if not isinstance(act, dict):
+                    continue
+                if act.get("type") == "page" and act.get("target") == name:
+                    refs.append({"from_page": from_page, "key": i, "kind": "action"})
+                for step in (act.get("actions") or []):
+                    if step.get("type") == "page" and step.get("target") == name:
+                        refs.append({"from_page": from_page, "key": i, "kind": "also_on_press"})
+                dbl = act.get("double")
+                if isinstance(dbl, dict) and dbl.get("type") == "page" and dbl.get("target") == name:
+                    refs.append({"from_page": from_page, "key": i, "kind": "double_click"})
+        for from_page, to in (self._page_timeout or {}).items():
+            if isinstance(to, dict) and to.get("target") == name:
+                refs.append({"from_page": from_page, "key": None, "kind": "timeout"})
+        return refs
+
+    def _delete_page(self, page_id):
+        """Remove a page's data, its stored file, and switch away from it
+        first if it was the one currently on screen. Does NOT clean up
+        references to it elsewhere (#54) -- those buttons are left as-is
+        and will simply fail to resolve a target next time they're used;
+        the delete-page UI is expected to have already warned about that."""
+        page_id = int(page_id)
+        if page_id == 0:
+            return False
+        if not _delete_displaypad_page(page_id):
+            return False
+        # Marks this id so _switch_to_page() will never write outgoing-page
+        # state back for it — needed because _switch_to_page() isn't always
+        # synchronous (it can defer itself via a scheduled retry while
+        # _uploading/_animating is true), so cleanup done only *after*
+        # calling it below isn't reliable; see the guard inside
+        # _switch_to_page() itself for the actual fix.
+        self._deleted_page_ids.add(page_id)
+        self._page_actions.pop(page_id, None)
+        self._page_images.pop(page_id, None)
+        self._page_fullscreen.pop(page_id, None)
+        self._page_timeout.pop(page_id, None)
+        self._page_gif_frames.pop(page_id, None)
+        self._page_gui_frames.pop(page_id, None)
+        if self._current_page == page_id:
+            self._switch_to_page(0)
+            # Belt-and-suspenders: _switch_to_page() itself now refuses to
+            # write outgoing-page state for anything in _deleted_page_ids
+            # (see the guard there), which is what actually prevents the
+            # resurrection regardless of whether the switch above ran
+            # synchronously or was deferred. These pops just keep the
+            # in-memory dicts tidy for the (now-harmless) synchronous case.
+            self._page_actions.pop(page_id, None)
+            self._page_images.pop(page_id, None)
+            self._page_fullscreen.pop(page_id, None)
+            self._page_gif_frames.pop(page_id, None)
+            self._page_gui_frames.pop(page_id, None)
+            if self._prev_page == page_id:
+                self._prev_page = 0
+        self._save_sub_pages()
+        _save_displaypad_page_timeouts(self._page_timeout)
+        return True
 
     def _get_extra_actions(self, idx):
         """Extra action steps for button idx (issue #17). Stored as an `actions`
@@ -2715,6 +3460,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         tgt = to.get("target", 0)
         if tgt == "prev":
             tgt = self._prev_page
+        elif isinstance(tgt, str):
+            pid = self._page_id_by_name(tgt)
+            tgt = pid if pid is not None else 0
         try:
             tgt = int(tgt)
         except (TypeError, ValueError):
@@ -2829,79 +3577,13 @@ class DisplayPadPanel(ctk.CTkFrame):
             except Exception:
                 pass
 
-    def _key_event_loop(self):
-        """Persistent key-event listener. Runs for the lifetime of the panel,
-        pauses while upload/animation is active, retries on device errors."""
-        last_fire = {}  # key_index -> monotonic time of last action
-
-        while not self._key_stop.is_set():
-            # Wait while upload or animation holds the HID device. Signal that
-            # interface 3 is free so a pending image upload can grab it.
-            if self._uploading or self._animating:
-                self._key_released.set()
-                # Poll the flag often so we re-grab interface 3 promptly once an
-                # upload finishes. Plugins (System Monitor, Clock) push roughly
-                # once a second; a slow re-attach here left a blind window where
-                # key presses were silently dropped (issue #27).
-                self._key_stop.wait(timeout=0.1)
-                continue
-
-            # Try to open the HID device
-            hid_dev = None
-            try:
-                for d in hid.enumerate(VID, PID):
-                    if d['interface_number'] == 3:
-                        hid_dev = hid.Device(path=d['path'])
-                        break
-            except Exception:
-                pass
-
-            if hid_dev is None:
-                self._key_released.set()
-                self._key_stop.wait(timeout=1.0)
-                continue
-
-            # We now own interface 3.
-            self._key_released.clear()
-
-            # Read events until stop / upload starts / device error.
-            # Only packets with data[0] == 0x01 are key-event packets.
-            # All other packets (0x11 init, 0x21 image responses, etc.) are ignored.
-            prev = [0] * 64
-            try:
-                hid_dev.nonblocking = False
-                while not self._key_stop.is_set() and not self._uploading and not self._animating:
-                    try:
-                        data = hid_dev.read(64, timeout=300)
-                    except Exception:
-                        break
-                    if not data or len(data) < 48:
-                        continue
-                    data = list(data)
-                    if data[0] != 0x01:
-                        continue
-                    now = time.monotonic()
-                    for k, (bi, mask) in enumerate(_KEY_MAP):
-                        if bi < len(data):
-                            if (data[bi] & mask) and not (prev[bi] & mask):
-                                # A double-click key uses a short anti-bounce so a
-                                # deliberate second tap gets through; every other
-                                # key keeps the user's debounce (issue #47).
-                                deb = (self._dc_antibounce if self._is_double_key(k)
-                                       else self._debounce)
-                                if now - last_fire.get(k, 0) >= deb:
-                                    last_fire[k] = now
-                                    self.after(0, lambda k=k: self._execute_action_k(k))
-                    prev = data
-            finally:
-                try:
-                    hid_dev.close()
-                except Exception:
-                    pass
-                self._key_released.set()
-            # Brief pause before reconnecting (kept short so presses right after
-            # an upload aren't missed, issue #27).
-            self._key_stop.wait(timeout=0.15)
+    # NOTE: key-event listening used to be a separate persistent thread here
+    # (_key_event_loop) that opened and closed interface 3 every time it
+    # traded places with an upload/animation/plugin session. That's now
+    # folded into _plugin_upload_worker below: reading key events is just
+    # what that thread does while idle, inside the same open session as
+    # plugin pushes, so interface 3 no longer gets closed and reopened for
+    # the handoff between "listening" and "pushing a plugin frame".
 
     def apply_lang(self):
         """Called by App when language changes."""
@@ -2928,7 +3610,13 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _set_button_image(self, key_index, path):
         self._images[str(key_index)] = path
-        _save_displaypad_buttons(self._images)
+        # Same page-agnostic-map issue as _clear_slot: self._images is the live
+        # map for whichever page is currently showing, not necessarily Main.
+        if self._current_page == 0:
+            _save_displaypad_buttons(self._images)
+        else:
+            self._page_images[self._current_page] = dict(self._images)
+            self._save_sub_pages()
         frames = _load_gif_frames(path) if path.lower().endswith('.gif') else None
         if frames:
             self._gif_frames[key_index] = frames
@@ -3112,6 +3800,7 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _start_upload(self):
         assigned = {int(k): v for k, v in self._images.items()
                     if v and os.path.exists(v)}
+        _dbg(f"[DBG upload] page={self._current_page} uploading assigned={assigned}")
         # Include gif_frames keys not in _images (fullscreen GIF loaded without individual paths)
         for k in self._gif_frames:
             if k not in assigned:
@@ -3129,6 +3818,11 @@ class DisplayPadPanel(ctk.CTkFrame):
                 self._anim_thread.start()
             else:
                 self._uploading = False
+                # This path never reaches _worker()/_finish() (no device to
+                # talk to), so clear it here too -- otherwise a page switch
+                # that landed here would leave the plugin worker yielding
+                # the device forever for a switch that's already done.
+                self._page_switch_waiting = False
                 self._info_label.configure(text=self.T("dp_no_images"), text_color=YLW)
             return
         try:
@@ -3316,14 +4010,16 @@ class DisplayPadPanel(ctk.CTkFrame):
     def _finish(self, success, err):
         self._uploading = False
         self._animating = False
+        # A page switch waiting on this upload (see _switch_to_page) can stop
+        # yielding the device to the plugin worker now that it's done.
+        self._page_switch_waiting = False
         if success:
             self._info_label.configure(text=self.T("dp_done"), text_color=GRN)
         else:
             self._info_label.configure(text=self.T("dp_error", err=err), text_color=RED)
-        # Flush any plugin images that queued up while this upload held the
-        # device (a one-shot upload doesn't drain the queue itself).
-        if not self._upload_queue.empty() and self._device_present:
-            self._maybe_start_plugin_worker()
+        # Any plugin images that queued up while this upload held the device
+        # get picked up by the persistent plugin worker on its next poll
+        # (at most 0.2s later) — nothing to kick off explicitly here anymore.
 
     def _monitor_loop(self):
         """Background thread: detect device connect/disconnect and auto-reupload."""
@@ -3423,13 +4119,15 @@ class DisplayPadPanel(ctk.CTkFrame):
         pil_image: PIL Image (any size, will be resized to 102x102).
         key_index: 0-11 (K1-K12).
 
-        Images are always queued. If a GIF animation or a regular upload is
-        running, that worker drains the queue. Otherwise a single short-lived
-        plugin worker is started that pauses the key listener, drains the queue
-        in one device session, and releases the device again.
+        Images are always queued. A persistent worker thread (started once
+        for the panel's lifetime, see _plugin_upload_worker) drains the
+        queue — no new thread is spawned per push, and interface 1/3 stay
+        claimed across a run of pushes instead of being released and
+        reclaimed for every single image.
         """
         if not (0 <= key_index <= 11):
             return
+        _dbg(f"[DBG push_plugin_image] key={key_index} current_page={self._current_page}")
         img = pil_image.convert("RGB").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
         rot = self._rotation
         if rot:
@@ -3438,85 +4136,169 @@ class DisplayPadPanel(ctk.CTkFrame):
         bgr_bytes = Image.merge("RGB", (b, g, r)).tobytes()
 
         # Don't accumulate frames for a device that nobody will drain (absent
-        # and no worker running) — that would grow the queue without bound.
+        # and no session running) — that would grow the queue without bound.
         busy = self._animating or self._uploading
         if not (self._device_present or busy):
             return
         self._upload_queue.put((key_index, bgr_bytes, None))
 
-        # An animation/upload worker already owns the device and drains the
-        # queue; don't open a competing connection (that races the key-event
-        # listener on interface 3 and causes "Connection timed out").
-        if busy:
-            return
-        # Hold off until the pad has been INIT'd on this connection. The primary
-        # connect upload sets _pad_ready and then flushes the queue via _finish,
-        # so nothing is lost — this only stops a plugin from streaming pixels to
-        # a pad that enumerated but hasn't finished booting (issue #43).
-        if not self._pad_ready:
-            return
-        self._maybe_start_plugin_worker()
-
-    def _maybe_start_plugin_worker(self):
-        """Start the plugin upload worker unless one is already running."""
-        with self._plugin_worker_lock:
-            if self._plugin_worker_active:
-                return
-            self._plugin_worker_active = True
-        threading.Thread(target=self._plugin_upload_worker, daemon=True).start()
-
     def _plugin_upload_worker(self):
-        """Open the device once, drain all queued plugin images, then close.
+        """Persistent thread (started once at panel init, alive for the
+        whole app session) that owns interface 1 (pixels) + interface 3
+        (commands/keys) for as long as nothing else needs them: plugin image
+        uploads AND key-event listening both happen from this one thread now.
 
-        Takes exclusive access to interface 3 by raising the `_uploading` flag
-        (which makes the key-event listener release the device) and waiting for
-        the listener to actually let go before opening. This serialises with
-        the key listener so concurrent access no longer times out.
+        Previously these were two separate concerns that kept trading the
+        device back and forth — a standalone key-event listener that closed
+        and reopened interface 3 every time a plugin (or a manual upload)
+        wanted it, and a plugin worker that itself claimed/released interface
+        1+3 around every burst of pushes. Since both ultimately want the same
+        session, and reading key events is cheap to do "while idle" between
+        pushes, they're now one thread: it opens the device once and simply
+        never closes it again on its own — listening for a key IS this
+        thread's idle-time job, not a reason to give the device back. It only
+        yields (closes + releases the lock) the moment a manual upload,
+        GIF animation, or a page switch that's waiting on one of those
+        (_page_switch_waiting) explicitly needs exclusive access — that code
+        (_worker, below) still runs its own separate, more involved session
+        exactly as before; this thread just resumes once it's done.
         """
-        try:
-            if self._animating:
-                return  # animation worker owns the device and drains the queue
-            self._uploading = True
-            # Wait for the key-event listener to release interface 3.
-            self._key_released.wait(timeout=1.5)
-            # Serialise with the manual upload/animation worker so the two can
-            # never open the device at the same time (issue #26).
-            with self._usb_lock:
+        usb_dev = hid_dev = None
+        holding = False  # True while we hold _usb_lock + interface 1/3
+        last_evt = [0] * 64
+        last_fire = {}  # key_index -> monotonic time of last action
+
+        def _wants_device():
+            # Anything that isn't us, wanting exclusive access right now.
+            return self._uploading or self._animating or self._page_switch_waiting
+
+        def _release():
+            nonlocal usb_dev, hid_dev, holding
+            if usb_dev is not None:
+                try:
+                    _close_interfaces(usb_dev, hid_dev)
+                except Exception:
+                    pass
+                usb_dev = hid_dev = None
+            if holding:
+                self._key_released.set()
+                try:
+                    self._usb_lock.release()
+                except RuntimeError:
+                    pass
+                holding = False
+
+        while not self._plugin_worker_stop.is_set():
+            # Yield the device immediately the moment anything else wants
+            # it — don't linger. A plugin pushing frequently, or a steady
+            # stream of key reads, must never starve a manual upload or a
+            # pending page switch of the device (see _switch_to_page's
+            # _page_switch_waiting comment for the bug this avoids).
+            if holding and _wants_device():
+                _release()
+
+            # --- Is there a plugin image waiting? Grab at most one without
+            # blocking long, so this loop stays responsive to key events
+            # and to _wants_device() in between. ---
+            try:
+                item = self._upload_queue.get(timeout=0.05)
+            except queue.Empty:
+                item = None
+
+            if _wants_device():
+                if item is not None:
+                    self._upload_queue.put(item)
+                time.sleep(0.05)
+                continue
+
+            if not self._device_present:
+                if item is not None:
+                    self._upload_queue.put(item)  # don't lose it, drain later
+                if holding:
+                    _release()
+                time.sleep(0.2)
+                continue
+
+            if not self._pad_ready:
+                if item is not None:
+                    self._upload_queue.put(item)
+                time.sleep(0.1)
+                continue
+
+            if not holding:
+                # Wait for any previous session to actually let go before we
+                # try to open (mirrors the old key-event listener's own wait).
+                self._key_released.wait(timeout=1.5)
+                # Serialise with the manual upload/animation worker so the
+                # two can never open the device at the same time (#26).
+                self._usb_lock.acquire()
+                holding = True
+                self._key_released.clear()
                 try:
                     usb_dev, hid_dev = _open_interfaces()
-                except Exception as e:
-                    # Device busy/unplugged -- leave images queued and retry on
-                    # the next push instead of spinning.
-                    self._log_plugin_error(e)
-                    return
-                try:
                     _init_device(hid_dev)
                     self._pad_ready = True
-                    self._drain_plugin_queue(usb_dev, hid_dev)
                     self._last_plugin_error = None
+                    last_evt = [0] * 64  # fresh session -- no stale key state
                 except Exception as e:
                     self._log_plugin_error(e)
-                finally:
-                    _close_interfaces(usb_dev, hid_dev)
-        finally:
-            self._uploading = False
-            with self._plugin_worker_lock:
-                self._plugin_worker_active = False
-            # New images may have arrived while we were finishing up.
-            if (not self._upload_queue.empty()
-                    and not self._animating and self._device_present):
-                self.after(0, self._maybe_start_plugin_worker)
+                    if item is not None:
+                        self._upload_queue.put(item)  # don't lose this frame
+                    _release()
+                    time.sleep(0.5)
+                    continue
 
-    def _drain_plugin_queue(self, usb_dev, hid_dev):
-        """Upload every queued plugin image in this session, keeping only the
-        latest frame per key. Key presses seen during the upload are dispatched
-        so the keys stay responsive while the listener is paused."""
-        latest = {}
-        while True:
+            if item is not None:
+                try:
+                    self._drain_plugin_queue(usb_dev, hid_dev, first=item)
+                except Exception as e:
+                    self._log_plugin_error(e)
+                    _release()
+                continue
+
+            # --- Nothing to push right now: this is what used to be the
+            # separate key-event listener's job. Only packets with
+            # data[0] == 0x01 are key-event packets; everything else
+            # (0x11 init, 0x21 image responses, etc.) is ignored. ---
             try:
-                ki, bgr, frames = self._upload_queue.get_nowait()
-            except queue.Empty:
-                break
+                data = hid_dev.read(64, timeout=150)
+            except Exception as e:
+                self._log_plugin_error(e)
+                _release()
+                continue
+            if not data or len(data) < 48 or data[0] != 0x01:
+                continue
+            data = list(data)
+            now = time.monotonic()
+            for k, (bi, mask) in enumerate(_KEY_MAP):
+                if bi < len(data) and (data[bi] & mask) and not (last_evt[bi] & mask):
+                    # A double-click key uses a short anti-bounce so a
+                    # deliberate second tap gets through; every other key
+                    # keeps the user's debounce (issue #47).
+                    deb = (self._dc_antibounce if self._is_double_key(k) else self._debounce)
+                    if now - last_fire.get(k, 0) >= deb:
+                        last_fire[k] = now
+                        self.after(0, lambda k=k: self._execute_action_k(k))
+            last_evt = data
+
+        _release()
+
+    def _drain_plugin_queue(self, usb_dev, hid_dev, first=None):
+        """Upload every queued plugin image in this session — plus `first`,
+        if given (an item the caller already popped off the queue) — keeping
+        only the latest frame per key. Key presses seen during the upload
+        are dispatched so the keys stay responsive while the listener is
+        paused."""
+        latest = {}
+        pending = [first] if first is not None else []
+        while True:
+            if pending:
+                ki, bgr, frames = pending.pop()
+            else:
+                try:
+                    ki, bgr, frames = self._upload_queue.get_nowait()
+                except queue.Empty:
+                    break
             if frames:
                 # A GIF arrived -- hand it back and let _start_upload handle it.
                 self._upload_queue.put((ki, bgr, frames))

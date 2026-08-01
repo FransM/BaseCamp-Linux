@@ -10,8 +10,8 @@ import json
 import subprocess
 import threading
 import psutil
-import struct
 import pwd as _pwd
+from shared.image_utils import image_to_rgb565
 
 VID = 0x3282
 PID = 0x0001
@@ -349,30 +349,6 @@ def _upload_main_display_image(dev, img_bytes, activate=False):
         # fb: retry same chunk (don't advance)
 
 
-
-def image_to_rgb565(image_path, size=(72, 72), frame=0):
-    """Convert image file to RGB565 little-endian bytes at the given size.
-
-    size=(72, 72)    → numpad button displays (D1-D4)
-    size=(240, 204)  → main OLED display
-
-    For animated GIFs, ``frame`` selects which frame to use (0-based).
-    """
-    try:
-        from PIL import Image
-    except ImportError:
-        raise RuntimeError("Pillow not installed. Run: pip install pillow")
-    img = Image.open(image_path)
-    if frame > 0 and getattr(img, 'n_frames', 1) > 1:
-        img.seek(min(frame, img.n_frames - 1))
-    img = img.resize(size, Image.LANCZOS).convert('RGB')
-    data = bytearray()
-    for y in range(size[1]):
-        for x in range(size[0]):
-            r, g, b = img.getpixel((x, y))
-            value = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-            data += struct.pack('<H', value)  # little-endian
-    return bytes(data)
 
 def _read_action(dev, button_idx):
     """Liest die gespeicherte Aktion aus dem Keyboard-Flash zurück."""

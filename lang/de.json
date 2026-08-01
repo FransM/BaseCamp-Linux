@@ -17,7 +17,7 @@
   "monitor_stopped": "Monitor-Modus gestoppt",
   "numpad_title": "Numpad Tasten",
   "numpad_subtitle": "Aktion hinterlegen + Bild hochladen",
-  "action_label": "Aktion:",
+  "action_label": "Bei Druck:",
   "action_type_none": "Keine",
   "action_type_shell": "Shell",
   "action_type_url": "URL",
