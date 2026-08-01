@@ -12,7 +12,8 @@ from shared.macros import (
     KEYSYM_TO_FRIENDLY, check_macro_tools, get_mouse_location,
     save_mouse_recording, list_mouse_recordings,
 )
-from shared.ui_helpers import BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, BORDER
+from shared.ui_helpers import (BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, BORDER,
+                               cap_scroll_speed)
 
 
 def _placeholder_for_type(atype):
@@ -947,6 +948,7 @@ class MacroPanel(ctk.CTkFrame):
 
         scroll = ctk.CTkScrollableFrame(dlg, fg_color=BG2, corner_radius=4)
         scroll.pack(fill="both", expand=True, padx=8, pady=8)
+        cap_scroll_speed(scroll)
 
         def _rebuild_list():
             for w in scroll.winfo_children():

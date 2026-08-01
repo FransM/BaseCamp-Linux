@@ -21,7 +21,7 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw
 
 from shared.ui_helpers import (
-    BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
+    BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER, cap_scroll_speed,
     native_open_image, native_open_folder, parse_desktop_apps,
     pick_dp_library_image, pick_dp_fullscreen_image,
     attach_clipboard_menu,
@@ -1482,6 +1482,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG2, corner_radius=6,
                                         width=480, height=460)
         scroll.pack(fill="both", expand=True, padx=12, pady=(0, 6))
+        cap_scroll_speed(scroll)
 
         # Fixed widths so the label + dropdown column lines up identically
         # across all three rows of a key card (action / also-on-press / double-click).
@@ -2192,6 +2193,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
         list_frame = ctk.CTkScrollableFrame(dlg, fg_color=BG2, corner_radius=6)
         list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        cap_scroll_speed(list_frame)
 
         _btn_refs = []
 

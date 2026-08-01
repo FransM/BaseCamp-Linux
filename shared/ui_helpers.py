@@ -207,18 +207,57 @@ def cap_scroll_speed(scrollable_frame, max_units=2):
     feels far too fast in dense panels. Wrapping canvas.yview is the only
     reliable approach — CTk re-binds child widgets internally, so binding
     on Canvas alone is not enough.
+
+    It is also the fix for a much worse symptom on Tk 9: X11 wheel input is
+    delivered as <MouseWheel> with a delta of ±120 there (Tk 8.6 sent
+    Button-4/5 with a delta of 0), and CustomTkinter 5.2.2 passes that delta
+    straight through as a unit count, so a single notch scrolls 120 units,
+    i.e. instantly to the very top or bottom. Horizontal scrolling gets the
+    same treatment for shift-wheel.
     """
     canvas = scrollable_frame._parent_canvas
-    original = canvas.yview
 
-    def capped(*args):
-        if args and args[0] == "scroll":
-            n    = max(-max_units, min(max_units, int(args[1])))
-            what = args[2] if len(args) > 2 else "units"
-            return original("scroll", n, what)
-        return original(*args)
+    def _cap(original):
+        def capped(*args):
+            if args and args[0] == "scroll":
+                n    = max(-max_units, min(max_units, int(args[1])))
+                what = args[2] if len(args) > 2 else "units"
+                return original("scroll", n, what)
+            return original(*args)
+        return capped
 
-    canvas.yview = capped
+    canvas.yview = _cap(canvas.yview)
+    canvas.xview = _cap(canvas.xview)
+
+
+def _install_ctk_wheel_fix(units_per_notch=2):
+    """Make one wheel notch scroll a few units in every CTkScrollableFrame.
+
+    cap_scroll_speed() has to be called per frame, and a frame that never got
+    the call scrolls to the very top or bottom on a single notch under Tk 9
+    (see the note there). This normalises the wheel delta once, centrally, so
+    frames nobody remembered to cap behave too. Linux only: CustomTkinter
+    divides the delta by 6 on Windows, where overwriting it with a small
+    number would round down to no scrolling at all, and macOS already reports
+    single-digit deltas.
+    """
+    if sys.platform.startswith("win") or sys.platform == "darwin":
+        return
+    if getattr(ctk.CTkScrollableFrame, "_basecamp_wheel_fix", False):
+        return
+    original = ctk.CTkScrollableFrame._mouse_wheel_all
+
+    def normalised(self, event):
+        delta = getattr(event, "delta", 0)
+        if delta:
+            event.delta = units_per_notch if delta > 0 else -units_per_notch
+        return original(self, event)
+
+    ctk.CTkScrollableFrame._mouse_wheel_all = normalised
+    ctk.CTkScrollableFrame._basecamp_wheel_fix = True
+
+
+_install_ctk_wheel_fix()
 
 
 def attach_clipboard_menu(widget, T=None):

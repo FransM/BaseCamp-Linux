@@ -6,7 +6,7 @@ import customtkinter as ctk
 
 from shared.ui_helpers import (
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
-    AccordionSection, pick_color, _rgb_hex,
+    AccordionSection, pick_color, _rgb_hex, cap_scroll_speed,
 )
 from shared.config import (
     _load_makalu_dpi, _save_makalu_dpi, DPI_DEFAULTS,
@@ -128,6 +128,7 @@ class Makalu67Panel(ctk.CTkFrame):
 
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
         scroll.pack(fill="both", expand=True, pady=(4, 0))
+        cap_scroll_speed(scroll)
 
         self._build_rgb_section(scroll)
         self._build_custom_section(scroll)

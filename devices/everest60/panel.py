@@ -5,7 +5,8 @@ import threading
 import tkinter as tk
 import customtkinter as ctk
 
-from shared.ui_helpers import BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER
+from shared.ui_helpers import (BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER,
+                               cap_scroll_speed)
 from shared.config import (CONFIG_DIR, load_rgb_config, save_rgb_config,
                             _load_per_key_60, _save_per_key_60,
                             _load_presets_60, _save_presets_60)
@@ -106,6 +107,7 @@ class Everest60Panel(ctk.CTkFrame):
 
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
         scroll.pack(fill="both", expand=True, pady=(4, 0))
+        cap_scroll_speed(scroll)
 
         self._build_rgb_section(scroll)
         self._build_side_leds_section(scroll)
