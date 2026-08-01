@@ -28,6 +28,28 @@ _FROZEN_ENV_VARS = (
     "SSL_CERT_FILE", "SSL_CERT_DIR",
 )
 
+# Vars that only describe our own bundle. They do not break the dynamic linker,
+# but they announce "you are running inside an AppImage" to every program we
+# start, and libraries do key off them. Dropped so a launched app sees the same
+# environment it would get from the desktop launcher. See GitHub issue #49.
+_BUNDLE_ID_VARS = (
+    "APPDIR", "APPIMAGE", "APPIMAGE_UUID", "ARGV0", "OWD", "_MEIPASS2",
+)
+
+# Vars systemd sets for the unit BaseCamp itself runs in (KDE autostart puts us
+# in app-basecamp-linux@autostart.service). They are inherited by every child,
+# so a launched app logs into our journal stream, watches our cgroup's memory
+# pressure and reports our invocation id, which is one of the ways it ends up
+# behaving differently than the same app started from the launcher or a
+# terminal. Not frozen-specific: a source or distro install started by the same
+# autostart unit leaks them too. See GitHub issue #49.
+_SYSTEMD_UNIT_VARS = (
+    "INVOCATION_ID", "JOURNAL_STREAM", "MEMORY_PRESSURE_WATCH",
+    "SYSTEMD_EXEC_PID", "MANAGERPID", "NOTIFY_SOCKET",
+    "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES",
+    "WATCHDOG_PID", "WATCHDOG_USEC",
+)
+
 
 def clean_child_env(env=None):
     """Return a copy of `env` (default os.environ) safe to hand to an external
@@ -36,17 +58,21 @@ def clean_child_env(env=None):
     PyInstaller and AppRun save the pre-launch value of each injected var as
     ``<VAR>_ORIG``; we restore that when present, otherwise drop the var so the
     program falls back to the system libraries. AppImage mount paths are also
-    stripped from PATH / XDG_*_DIRS. A no-op when not running frozen.
+    stripped from PATH / XDG_*_DIRS, the bundle-identity vars are removed, and
+    the systemd unit vars of our own service are dropped in every install kind.
     """
     env = dict(os.environ if env is None else env)
+    for var in _SYSTEMD_UNIT_VARS:
+        env.pop(var, None)
     if not (getattr(sys, "frozen", False) or env.get("APPDIR") or env.get("APPIMAGE")):
         return env
     for var in _FROZEN_ENV_VARS:
         orig = env.get(var + "_ORIG")
-        if orig is not None:
+        if orig:
             env[var] = orig
         else:
             env.pop(var, None)
+        env.pop(var + "_ORIG", None)
     appdir = env.get("APPDIR")
     if appdir:
         for var in ("PATH", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS"):
@@ -57,7 +83,31 @@ def clean_child_env(env=None):
                      if p and not p.startswith(appdir)]
             if parts:
                 env[var] = os.pathsep.join(parts)
+    for var in _BUNDLE_ID_VARS:
+        env.pop(var, None)
+    for var in [k for k in env if k.startswith("_PYI_")]:
+        env.pop(var, None)
     return env
+
+
+def user_scope_prefix(env=None):
+    """Return a systemd-run prefix that puts a launched program in its own scope.
+
+    KDE and GNOME start applications in an ``app-*.scope`` of their own, while a
+    program we start plainly inherits BaseCamp's cgroup. That ties its resource
+    limits and its lifetime to ours: stopping BaseCamp's autostart unit takes
+    the program down with it. Returns an empty list when no user systemd manager
+    is reachable, so the caller runs the command unchanged. See issue #49.
+    """
+    import shutil
+    env = os.environ if env is None else env
+    runtime = env.get("XDG_RUNTIME_DIR")
+    if not runtime or not os.path.exists(os.path.join(runtime, "systemd", "private")):
+        return []
+    if not shutil.which("systemd-run"):
+        return []
+    return ["systemd-run", "--user", "--scope", "--quiet", "--collect",
+            "--slice=app.slice"]
 
 # Friendly key name -> xdotool keysym
 KEY_MAP = {
@@ -299,10 +349,9 @@ def _run_xdg_open(target):
 def _run_shell(command):
     """Run a shell command."""
     env, sudo_user = _build_env()
+    cmd = user_scope_prefix(env) + ["bash", "-c", command]
     if sudo_user:
-        cmd = ["sudo", "-u", sudo_user, "-E", "bash", "-c", command]
-    else:
-        cmd = ["bash", "-c", command]
+        cmd = ["sudo", "-u", sudo_user, "-E"] + cmd
     try:
         subprocess.Popen(cmd, env=env)
     except Exception:

@@ -974,7 +974,7 @@ def controller_loop(style=STYLE_ANALOG):
                 return  # handled by a plugin-registered action type
             # Built-in shell / url / folder / app. clean_child_env() strips the
             # AppImage/PyInstaller library-path injection (issue #11).
-            from shared.macros import clean_child_env
+            from shared.macros import clean_child_env, user_scope_prefix
             sudo_user = os.environ.get("SUDO_USER")
             if sudo_user:
                 uid = _pwd.getpwnam(sudo_user).pw_uid
@@ -997,13 +997,15 @@ def controller_loop(style=STYLE_ANALOG):
                 if btype in ("url", "folder"):
                     subprocess.Popen(["sudo", "-u", sudo_user, "-E", "xdg-open", action], env=env)
                 else:
-                    subprocess.Popen(["sudo", "-u", sudo_user, "-E", "bash", "-c", action], env=env)
+                    subprocess.Popen(["sudo", "-u", sudo_user, "-E"]
+                                     + user_scope_prefix(env) + ["bash", "-c", action], env=env)
             else:
                 child_env = clean_child_env()
                 if btype in ("url", "folder"):
                     subprocess.Popen(["xdg-open", action], env=child_env)
                 else:
-                    subprocess.Popen(["bash", "-c", action], env=child_env)
+                    subprocess.Popen(user_scope_prefix(child_env)
+                                     + ["bash", "-c", action], env=child_env)
 
         def _handle_btn_resp(resp):
             nonlocal last_btn_state, last_btn_action_time
