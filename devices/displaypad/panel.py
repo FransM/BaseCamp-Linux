@@ -618,9 +618,9 @@ def _confirm_delete_page(app, panel, page_id):
         from_name = panel._get_page_name(r["from_page"])
         kind = app.T(_REF_KIND_LABELS.get(r["kind"], r["kind"]))
         if r["key"] is None:
-            lines.append(f"\u2022 {from_name} \u2014 {kind}")
+            lines.append(f"\u2022 {from_name}: {kind}")
         else:
-            lines.append(f"\u2022 {from_name}, K{r['key'] + 1} \u2014 {kind}")
+            lines.append(f"\u2022 {from_name}, K{r['key'] + 1}: {kind}")
     extra = len(refs) - len(lines)
     if extra > 0:
         lines.append(app.T("dp_delete_page_more", count=extra))
@@ -4167,6 +4167,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         holding = False  # True while we hold _usb_lock + interface 1/3
         last_evt = [0] * 64
         last_fire = {}  # key_index -> monotonic time of last action
+        not_ready_since = None  # when we first saw a present but un-INIT'd pad
 
         def _wants_device():
             # Anything that isn't us, wanting exclusive access right now.
@@ -4220,10 +4221,23 @@ class DisplayPadPanel(ctk.CTkFrame):
                 continue
 
             if not self._pad_ready:
-                if item is not None:
-                    self._upload_queue.put(item)
-                time.sleep(0.1)
-                continue
+                # Normally the connect upload INITs the pad and flips this
+                # flag within a couple of seconds. If that upload never
+                # happens or fails, this thread must not wait forever: key
+                # events live in here now, so a permanently unready flag
+                # would mean a silently dead pad until the next replug. After
+                # a grace period we open and INIT it ourselves, which is what
+                # sets _pad_ready anyway, so nothing streams pixels to a pad
+                # that hasn't booted (issue #43).
+                if not_ready_since is None:
+                    not_ready_since = time.monotonic()
+                if time.monotonic() - not_ready_since < 8.0:
+                    if item is not None:
+                        self._upload_queue.put(item)
+                    time.sleep(0.1)
+                    continue
+            else:
+                not_ready_since = None
 
             if not holding:
                 # Wait for any previous session to actually let go before we

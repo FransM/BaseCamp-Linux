@@ -126,6 +126,11 @@ KEY_MAP = {
     "f1": "F1", "f2": "F2", "f3": "F3", "f4": "F4",
     "f5": "F5", "f6": "F6", "f7": "F7", "f8": "F8",
     "f9": "F9", "f10": "F10", "f11": "F11", "f12": "F12",
+    # F13-F24 have no key on the board but exist as keysyms, so they are the
+    # usual target for a macro key that must not collide with a real shortcut.
+    "f13": "F13", "f14": "F14", "f15": "F15", "f16": "F16",
+    "f17": "F17", "f18": "F18", "f19": "F19", "f20": "F20",
+    "f21": "F21", "f22": "F22", "f23": "F23", "f24": "F24",
     "pause": "Pause", "menu": "Menu",
 }
 
@@ -139,6 +144,8 @@ KEY_CHOICES = [
     "home", "end", "pageup", "pagedown", "insert",
     # F-keys
     "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+    "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20",
+    "f21", "f22", "f23", "f24",
     # Letters
     "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
     "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",

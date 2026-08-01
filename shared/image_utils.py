@@ -1,6 +1,11 @@
 """Shared image utility functions for BaseCamp Linux."""
-import numpy as np
+import struct
 from PIL import Image
+
+try:
+    import numpy as np
+except ImportError:  # optional: only speeds the conversion up, see below
+    np = None
 
 
 def image_to_rgb565(image_path, size=(72, 72), frame=0):
@@ -11,17 +16,25 @@ def image_to_rgb565(image_path, size=(72, 72), frame=0):
 
     For animated GIFs, ``frame`` selects which frame to use (0-based).
 
-    Vectorized with NumPy: identical output to the original pixel-by-pixel
-    implementation, but avoids per-pixel Python function call overhead
-    (getpixel/struct.pack), which is the actual bottleneck for larger
-    sizes and animated GIFs — not something extra CPU cores fix, since a
-    tight per-pixel Python loop doesn't parallelize well and the work
-    itself was just needlessly slow per element.
+    Vectorized with NumPy when it is available: identical output to the
+    pixel-by-pixel fallback below, but without the per-pixel Python call
+    overhead (getpixel/struct.pack) that dominates larger sizes and animated
+    GIFs. NumPy ships inside the AppImage; a source install without it simply
+    takes the slower path instead of failing to import.
     """
     img = Image.open(image_path)
     if frame > 0 and getattr(img, 'n_frames', 1) > 1:
         img.seek(min(frame, img.n_frames - 1))
     img = img.resize(size, Image.LANCZOS).convert('RGB')
+
+    if np is None:
+        data = bytearray()
+        for y in range(size[1]):
+            for x in range(size[0]):
+                r, g, b = img.getpixel((x, y))
+                value = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+                data += struct.pack('<H', value)  # little-endian
+        return bytes(data)
 
     arr = np.asarray(img, dtype=np.uint16)  # shape (H, W, 3), H=size[1], W=size[0]
     r = arr[..., 0]

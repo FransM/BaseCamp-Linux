@@ -421,5 +421,17 @@
   "rgb_cmode_rainbow": "Rainbow",
   "rgb_build_label": "BaseCamp Linux v{ver}",
   "dp_page_target": "Go to page:",
-  "dp_new_page": "＋ New page"
+  "dp_new_page": "＋ New page",
+  "dp_page_name_title": "New page",
+  "dp_page_name_prompt": "Name for this page:",
+  "dp_rename_page_title": "Rename page",
+  "dp_delete_page_title": "Delete page",
+  "dp_delete_page_confirm": "Delete the page \"{name}\"?",
+  "dp_delete_page_main_error": "The main page cannot be deleted.",
+  "dp_delete_page_referenced_warning": "\"{name}\" is still used by {count} button(s) or timeout(s). They will stop working. Delete anyway?",
+  "dp_delete_page_more": "… and {count} more",
+  "dp_ref_kind_action": "action",
+  "dp_ref_kind_also_on_press": "also on press",
+  "dp_ref_kind_double_click": "double-click",
+  "dp_ref_kind_timeout": "page timeout"
 }
