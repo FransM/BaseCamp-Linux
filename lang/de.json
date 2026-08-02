@@ -461,5 +461,8 @@
   "nav_devices": "Geräte",
   "nav_tools": "Werkzeuge",
   "nav_no_devices": "Kein Gerät gefunden. USB-Rechte prüfen, siehe README.",
-  "ui_quit": "Beenden"
+  "ui_quit": "Beenden",
+  "state_connected": "verbunden",
+  "state_absent": "nicht verbunden",
+  "state_not_ready": "nicht bereit"
 }

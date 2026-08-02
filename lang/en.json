@@ -461,5 +461,8 @@
   "nav_devices": "Devices",
   "nav_tools": "Tools",
   "nav_no_devices": "No device found. Check the USB permissions, see the README.",
-  "ui_quit": "Quit"
+  "ui_quit": "Quit",
+  "state_connected": "connected",
+  "state_absent": "not connected",
+  "state_not_ready": "not ready"
 }

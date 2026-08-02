@@ -2503,11 +2503,13 @@ class DisplayPadPanel(ctk.CTkFrame):
         head_row = ctk.CTkFrame(content, fg_color="transparent")
         head_row.pack(padx=16, pady=(14, 0))
 
+        # The screen header above the panel already says which device this is,
+        # so the heading is kept for the string refresh but not shown. It goes
+        # away entirely when this screen is rebuilt.
         self._heading_lbl = ctk.CTkLabel(
             head_row, text=self.T("dp_title"),
             font=("Helvetica", 14, "bold"), text_color=FG,
             fg_color="transparent", anchor="w")
-        self._heading_lbl.pack(side="left")
 
         self._rot_menu = ctk.CTkOptionMenu(
             head_row, values=["0°", "90°", "180°", "270°"],

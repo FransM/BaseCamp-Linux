@@ -1060,9 +1060,26 @@ class App(ctk.CTk):
         self._nav_quit = UI.NavItem(foot, text=self.T("ui_quit"), command=self._quit)
         self._nav_quit.pack(fill="x")
 
-        # ── Panel area ──
-        self._panel_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
-        self._panel_area.grid(row=0, column=1, sticky="nsew")
+        # ── Content column: one header strip, then the screen ──
+        content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        content.grid(row=0, column=1, sticky="nsew")
+
+        # The header belongs to the screen, not to the panel inside it, so
+        # every screen says the same things in the same place: what you are
+        # looking at on the left, what state it is in next to it, and later
+        # the screen's one primary action on the right.
+        head = ctk.CTkFrame(content, fg_color=BG2, corner_radius=0, height=48)
+        head.pack(fill="x")
+        head.pack_propagate(False)
+        self._screen_title = ctk.CTkLabel(
+            head, text="", font=("Helvetica", 14, "bold"), text_color=FG, anchor="w")
+        self._screen_title.pack(side="left", padx=(UI.S4, UI.S3))
+        self._screen_state = UI.StatusPill(head, text="", state="off")
+        self._screen_actions = ctk.CTkFrame(head, fg_color="transparent")
+        self._screen_actions.pack(side="right", padx=UI.S4)
+
+        self._panel_area = ctk.CTkFrame(content, fg_color=BG, corner_radius=0)
+        self._panel_area.pack(fill="both", expand=True)
 
         # Empty-state overlay shown over a hardware panel when its device isn't
         # connected, instead of a panel full of inert controls (issue #19).
@@ -1132,8 +1149,9 @@ class App(ctk.CTk):
         self._panels[device_id].pack(fill="both", expand=True)
         self._active_device = device_id
 
-        # Update switcher button styles
-        self._refresh_switcher_colors()
+        # Update the sidebar selection and the screen header
+        self._refresh_sidebar()
+        self._refresh_screen_header()
 
         # Show/hide the "no device connected" overlay for this panel
         self._update_empty_state()
@@ -1286,6 +1304,7 @@ class App(ctk.CTk):
               and not self._dev_present.get(self._active_device, False)):
             self._fall_back_to_present_device()
         self._refresh_sidebar()
+        self._refresh_screen_header()
         # Notify panels
         if hasattr(self, "_makalu_panel"):
             self._makalu_panel.set_connected(mouse_present)
@@ -1337,6 +1356,43 @@ class App(ctk.CTk):
 
     # Kept so older call sites keep working while the panels are migrated.
     _refresh_switcher_colors = _refresh_sidebar
+
+    _SCREEN_TITLES = {
+        "obs": "OBS Studio", "macros": "Macros", "plugins": "Plugins",
+    }
+
+    def _refresh_screen_header(self):
+        """Name of the current screen on the left, device state beside it.
+
+        Devices carry a state pill, tools do not: a plugin screen has no
+        connection to report and an empty pill next to it would only raise the
+        question of what it is missing.
+        """
+        if not hasattr(self, "_screen_title"):
+            return
+        dev = self._active_device
+        if dev in ("everest_max", "everest60"):
+            title = self._nav_items["keyboard"]._label.cget("text")
+        elif dev in ("makalu67", "displaypad"):
+            title = self._nav_items[dev]._label.cget("text")
+        elif dev in self._SCREEN_TITLES:
+            title = self._SCREEN_TITLES[dev]
+        else:
+            item = self._nav_items.get(dev)
+            title = item._label.cget("text") if item is not None else ""
+        self._screen_title.configure(text=title)
+
+        is_device = dev in ("everest_max", "everest60", "makalu67", "displaypad")
+        if is_device:
+            present = (self._dev_present.get("everest_max") or
+                       self._dev_present.get("everest60")) if dev.startswith("everest") \
+                else self._dev_present.get(dev, False)
+            self._screen_state.set(
+                text=self.T("state_connected") if present else self.T("state_absent"),
+                state="ok" if present else "off")
+            self._screen_state.pack(side="left")
+        else:
+            self._screen_state.pack_forget()
 
     # ── Tray / lifecycle ──────────────────────────────────────────────────────
 
