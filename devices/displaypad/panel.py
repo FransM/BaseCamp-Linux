@@ -545,12 +545,6 @@ def _make_placeholder(size):
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
-def _close_all_dropdowns(widget):
-    """Kept as the name the dialogs in this file use; the work lives in the
-    design system now so every window gets the same behaviour."""
-    UI.close_dropdowns(widget)
-
-
 def _bind_dropdown_autoclose(toplevel):
     UI.bind_dropdown_autoclose(toplevel)
 

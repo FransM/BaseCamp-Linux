@@ -20,7 +20,7 @@ from shared.ui.widgets import (
     Card, SectionLabel, Toolbar, NavItem,
     PrimaryButton, GhostButton, DangerButton,
     StatusDot, StatusPill, Field, Toast, resolve_t,
-    close_dropdowns, bind_dropdown_autoclose,
+    bind_dropdown_autoclose,
     ConfirmDialog, PromptDialog, ask_yes_no, ask_text, show_error,
 )
 
@@ -33,6 +33,6 @@ __all__ = [
     "Card", "SectionLabel", "Toolbar", "NavItem",
     "PrimaryButton", "GhostButton", "DangerButton",
     "StatusDot", "StatusPill", "Field", "Toast", "resolve_t",
-    "close_dropdowns", "bind_dropdown_autoclose",
+    "bind_dropdown_autoclose",
     "ConfirmDialog", "PromptDialog", "ask_yes_no", "ask_text", "show_error",
 ]

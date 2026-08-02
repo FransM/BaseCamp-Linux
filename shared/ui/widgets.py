@@ -36,43 +36,51 @@ def resolve_t(widget):
 
 # ── Dropdown behaviour ────────────────────────────────────────────────────────
 
-def close_dropdowns(widget):
-    """Close every open option-menu popup under `widget`.
-
-    A CustomTkinter dropdown is an override-redirect window, so the window
-    manager leaves it out of normal stacking: it can stay painted on top of
-    every other application after this window loses focus, because nothing
-    tells it to go away (#66).
-
-    The popup is a tkinter.Menu, so `unpost()` is what closes it. An earlier
-    attempt called `close()`, which this DropdownMenu does not have; inside a
-    try/except that silently did nothing, which is why the bug looked handled
-    and was not.
-    """
-    dd = getattr(widget, "_dropdown_menu", None)
-    if dd is not None:
-        try:
-            dd.grab_release()
-        except Exception:
-            pass
-        try:
-            dd.unpost()
-        except Exception:
-            pass
-    try:
-        children = widget.winfo_children()
-    except Exception:
-        children = []
-    for child in children:
-        close_dropdowns(child)
-
-
 def bind_dropdown_autoclose(toplevel):
-    """Close open dropdowns whenever this window loses focus."""
-    def _on_focus_out(event):
-        if event.widget is toplevel:
-            close_dropdowns(toplevel)
-    toplevel.bind("<FocusOut>", _on_focus_out, add="+")
+    """Close an open option-menu popup when the focus leaves the application.
+
+    This only helps where the popup is told that the focus left, which is not
+    everywhere. Measured under Wayland (XWayland, KWin): a posted popup holds a
+    *global* grab, the compositor still activates the other application, and
+    nothing in this process is notified. No FocusOut, no Deactivate, no pointer
+    event. The popup therefore stays painted over the other application and
+    there is no event left to hang a fix on (#66). A popup drawn inside our own
+    window instead of in a separate override-redirect window is the only real
+    cure, and that means replacing the widget, not binding an event.
+
+    Two earlier attempts are worth not repeating. Binding the window's own
+    <FocusOut> breaks opening a dropdown at all: the popup takes the focus, so
+    the window fires FocusOut the instant the popup appears and the menu is shut
+    again by the very click that opened it. Calling `close()` on the popup does
+    nothing either, because DropdownMenu has no such method; inside a try/except
+    that looked like a working fix for a long time.
+    """
+    # the flag belongs on the interpreter root, not on the window handed in:
+    # several windows call this, and one Menu binding already covers them all
+    root = toplevel._root()
+    if getattr(root, "_bc_dropdown_autoclose", False):
+        return
+    root._bc_dropdown_autoclose = True
+
+    def _on_menu_focus_out(event):
+        menu = event.widget
+        try:
+            # "" means the focus went to another application; a widget path
+            # means it stayed in ours, and then the menu is not stranded
+            if str(menu.tk.call("focus", "-displayof", menu._w)):
+                return
+        except Exception:
+            return
+        try:
+            menu.grab_release()
+        except Exception:
+            pass
+        try:
+            menu.unpost()
+        except Exception:
+            pass
+
+    toplevel.bind_class("Menu", "<FocusOut>", _on_menu_focus_out, add="+")
 
 
 # ── Containers ────────────────────────────────────────────────────────────────
