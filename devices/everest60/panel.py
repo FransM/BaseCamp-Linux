@@ -684,7 +684,8 @@ class Everest60Panel(ctk.CTkFrame):
 # ── Accordion section ─────────────────────────────────────────────────────────
 
 class _Section:
-    def __init__(self, parent, app, icon, title, card=False, auto_pack=True):
+    def __init__(self, parent, app, icon, title, card=False, auto_pack=True,
+                 hint=None):
         self._app       = app
         self._card      = card
         self._open      = bool(card)
@@ -714,6 +715,15 @@ class _Section:
         self._title_lbl = ctk.CTkLabel(self._header, text=title,
                                        font=("Helvetica", 11, "bold"), text_color=FG, anchor="w")
         self._title_lbl.pack(side="left", fill="x", expand=True, padx=4, pady=12)
+        # Right-hand hint in the card header: the current value, so a card
+        # says what it is set to without being opened or read in full.
+        self._hint_lbl = None
+        if card:
+            self._hint_lbl = ctk.CTkLabel(
+                self._header, text=hint or "", font=("Helvetica", 11),
+                text_color=FG2, anchor="e")
+            self._hint_lbl.pack(side="right", padx=(0, 12))
+
         self._chevron = ctk.CTkLabel(self._header, text="▶",
                                      font=("Helvetica", 10), text_color=FG2, width=24)
         if not card:
@@ -735,6 +745,10 @@ class _Section:
     @property
     def content(self):
         return self._content
+
+    def set_hint(self, text):
+        if self._hint_lbl is not None:
+            self._hint_lbl.configure(text=text or "")
 
     @property
     def outer(self):

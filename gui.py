@@ -1209,8 +1209,14 @@ class App(ctk.CTk):
     def _switch_device(self, device_id):
         if self._active_device == device_id:
             return
-        # Hide all panels
-        for panel in self._panels.values():
+        # Hide all panels. A screen that polls something is told it is gone,
+        # so nothing keeps reading sensors for a screen nobody is looking at.
+        for pid, panel in self._panels.items():
+            if pid == self._active_device and hasattr(panel, "on_hide"):
+                try:
+                    panel.on_hide()
+                except Exception:
+                    pass
             panel.pack_forget()
         # Show selected panel
         self._panels[device_id].pack(fill="both", expand=True)

@@ -496,5 +496,13 @@
   "pluginmgr_requires_missing": "Needs {pkg}, not available here. The AppImage ships its own Python and cannot see packages installed with the system pip, so this plugin only works on a source install.",
   "tray_pages": "DisplayPad page",
   "custom_rgb_colour": "Colour",
-  "custom_rgb_eyedropper_btn": "Eyedropper"
+  "custom_rgb_eyedropper_btn": "Eyedropper",
+  "clock_format_label": "Format",
+  "clock_style_label": "Style",
+  "dial_reset_label": "Dial image",
+  "meter_cpu": "CPU",
+  "meter_ram": "RAM",
+  "meter_disk": "Disk",
+  "meter_net": "Net MB/s",
+  "main_display_image_label": "Image"
 }

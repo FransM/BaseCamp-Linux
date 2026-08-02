@@ -97,6 +97,19 @@ class EverestMaxPanel(ctk.CTkFrame):
     def _reg(self, widget, key, attr="text"):
         return self._app._reg(widget, key, attr)
 
+    def _row(self, parent, label_key):
+        """A card row: label on the left, control packed to the right.
+
+        The old panel centred every block, which reads as a poster rather than
+        as a set of settings. Everything in a card lines up on one left edge
+        and its control on one right edge.
+        """
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        self._reg(ctk.CTkLabel(row, text=self.T(label_key), font=("Helvetica", 11),
+                               text_color=FG2, anchor="w"), label_key).pack(side="left")
+        return row
+
     # ── subprocess command builder ────────────────────────────────────────────
 
     def _cmd(self, *args):
@@ -118,22 +131,28 @@ class EverestMaxPanel(ctk.CTkFrame):
         cards.grid_columnconfigure(1, weight=1, uniform="card")
 
         clock_card = AccordionSection(cards, self._app, "", "clock_title",
-                                      card=True, auto_pack=False)
+                                      card=True, auto_pack=False,
+                                      hint=self._current_style.get())
         self._sections.append(clock_card)
+        self._clock_card = clock_card
         dash = clock_card.content
 
-        self._clock_label = ctk.CTkLabel(dash, text="",
-                                          font=("Courier", 26, "bold"), text_color=BLUE)
-        self._clock_label.pack(pady=(6, 0))
+        # Dial preview on the left, the two settings as label/value rows on the
+        # right. The design puts the thing being configured next to what
+        # configures it instead of stacking centred blocks.
+        face = ctk.CTkFrame(dash, fg_color="transparent")
+        face.pack(side="left", padx=(0, 14))
+        self._clock_label = ctk.CTkLabel(face, text="",
+                                         font=("Courier", 24, "bold"), text_color=BLUE)
+        self._clock_label.pack()
+        self._date_label = ctk.CTkLabel(face, text="",
+                                        font=("Helvetica", 10), text_color=FG2)
+        self._date_label.pack(pady=(2, 0))
 
-        self._date_label = ctk.CTkLabel(dash, text="",
-                                         font=("Helvetica", 10), text_color=FG2)
-        self._date_label.pack(pady=(2, 4))
+        rows = ctk.CTkFrame(dash, fg_color="transparent")
+        rows.pack(side="left", fill="x", expand=True)
 
-        # Format + Language row
-        fmt_row = ctk.CTkFrame(dash, fg_color="transparent")
-        fmt_row.pack(pady=4)
-
+        fmt_row = self._row(rows, "clock_format_label")
         ctk.CTkSegmentedButton(
             fmt_row, values=["24H", "12H"],
             variable=self._clock_format,
@@ -141,26 +160,10 @@ class EverestMaxPanel(ctk.CTkFrame):
             font=("Helvetica", 10),
             fg_color=BG3, selected_color=BLUE, selected_hover_color=BLUE,
             unselected_color=BG3, unselected_hover_color=BG2,
-            text_color=FG, width=90, height=28,
-        ).pack(side="left", padx=(0, 10))
+            text_color=FG, width=94, height=UI.CTRL_H_SM,
+        ).pack(side="right")
 
-        # The language picker moved to the settings screen with autostart and
-        # the splash: it belongs to the app, not to a keyboard. The combo box
-        # itself stays alive so _apply_lang keeps working.
-        self._lang_var = self._app._lang_var
-        self._lang_combo = ctk.CTkComboBox(fmt_row, variable=self._lang_var,
-                                           values=[])
-
-        self._reg(
-            UI.DangerButton(fmt_row, "", self._reset_dial_image, width=140,
-                            height=UI.CTRL_H_SM),
-            "dial_reset_btn"
-        ).pack(side="left", padx=(10, 0))
-
-        # Analog/Digital row
-        style_row = ctk.CTkFrame(dash, fg_color="transparent")
-        style_row.pack(pady=(2, 2))
-
+        style_row = self._row(rows, "clock_style_label")
         ctk.CTkSegmentedButton(
             style_row, values=list(STYLES.keys()),
             variable=self._current_style,
@@ -168,12 +171,25 @@ class EverestMaxPanel(ctk.CTkFrame):
             font=("Helvetica", 10),
             fg_color=BG3, selected_color=BLUE, selected_hover_color=BLUE,
             unselected_color=BG3, unselected_hover_color=BG2,
-            text_color=FG, width=160, height=32,
-        ).pack()
+            text_color=FG, width=150, height=UI.CTRL_H_SM,
+        ).pack(side="right")
 
-        self._style_status = ctk.CTkLabel(dash, text="", font=("Helvetica", 11),
-                                           text_color=GRN)
-        self._style_status.pack(pady=(0, 4))
+        reset_row = self._row(rows, "dial_reset_label")
+        self._reg(
+            UI.DangerButton(reset_row, "", self._reset_dial_image, width=150,
+                            height=UI.CTRL_H_SM),
+            "dial_reset_btn"
+        ).pack(side="right")
+
+        # The language picker moved to the settings screen with autostart and
+        # the splash: it belongs to the app, not to a keyboard. The combo box
+        # itself stays alive so _apply_lang keeps working.
+        self._lang_var = self._app._lang_var
+        self._lang_combo = ctk.CTkComboBox(rows, variable=self._lang_var, values=[])
+
+        self._style_status = ctk.CTkLabel(rows, text="", font=("Helvetica", 10),
+                                          text_color=GRN, anchor="w")
+        self._style_status.pack(fill="x", pady=(6, 0))
 
         # Splash and autostart moved to the settings screen: they are
         # application settings, and sitting here they were out of reach for
@@ -203,25 +219,88 @@ class EverestMaxPanel(ctk.CTkFrame):
     # ── Section builders ──────────────────────────────────────────────────────
 
     def _build_monitor_section(self, parent):
-        s1 = AccordionSection(parent, self._app, "", "monitor_title", card=True, auto_pack=False)
+        s1 = AccordionSection(parent, self._app, "", "monitor_title", card=True,
+                              auto_pack=False)
         self._sections.append(s1)
+        self._monitor_card = s1
         b1 = s1.content
+
+        # The card showed a button and a line of text about a mode whose whole
+        # point is live numbers. It shows the numbers, from the same psutil the
+        # controller uses, so you can see what the keyboard is being sent.
+        self._meters = {}
+        for key, label_key in (("cpu", "meter_cpu"), ("ram", "meter_ram"),
+                               ("disk", "meter_disk"), ("net", "meter_net")):
+            row = ctk.CTkFrame(b1, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            self._reg(ctk.CTkLabel(row, text=self.T(label_key), width=52,
+                                   font=("Helvetica", 10), text_color=FG2,
+                                   anchor="w"), label_key).pack(side="left")
+            val = ctk.CTkLabel(row, text="0", width=44, font=("Helvetica", 10),
+                               text_color=FG, anchor="e")
+            val.pack(side="right")
+            bar = ctk.CTkProgressBar(row, height=5, corner_radius=3,
+                                     progress_color=BLUE, fg_color=BG3)
+            bar.set(0)
+            bar.pack(side="left", fill="x", expand=True, padx=8)
+            self._meters[key] = (bar, val)
 
         self._btn_cpu = UI.PrimaryButton(b1, self.T("monitor_start"),
                                          self._toggle_cpu)
-        self._btn_cpu.pack(fill="x", pady=(4, 8))
+        self._btn_cpu.pack(fill="x", pady=(10, 4))
 
-        self._cpu_status = ctk.CTkLabel(b1, text="", font=("Helvetica", 11),
-                                         text_color=FG2)
-        self._cpu_status.pack(pady=(0, 12))
+        self._cpu_status = ctk.CTkLabel(b1, text="", font=("Helvetica", 10),
+                                        text_color=FG2, anchor="w")
+        self._cpu_status.pack(fill="x")
+        self._meter_after = None
+        self._net_last = None
+
+    def _tick_meters(self):
+        """Refresh the four meters. Runs only while this screen is visible:
+        the shell calls refresh() when it is shown and on_hide() when it is
+        left, so nothing polls in the background for a screen nobody sees."""
+        try:
+            import psutil, time
+            cpu = psutil.cpu_percent(interval=None)
+            ram = psutil.virtual_memory().percent
+            disk = psutil.disk_usage("/").percent
+            io = psutil.net_io_counters()
+            now = time.monotonic()
+            mbs = 0.0
+            if self._net_last:
+                dt = max(0.001, now - self._net_last[0])
+                mbs = ((io.bytes_sent + io.bytes_recv) - self._net_last[1]) / dt / 1e6
+            self._net_last = (now, io.bytes_sent + io.bytes_recv)
+            for key, value, shown in (("cpu", cpu, f"{cpu:.0f}%"),
+                                      ("ram", ram, f"{ram:.0f}%"),
+                                      ("disk", disk, f"{disk:.0f}%"),
+                                      ("net", min(mbs / 10 * 100, 100), f"{mbs:.1f}")):
+                bar, lbl = self._meters[key]
+                bar.set(max(0.0, min(1.0, value / 100)))
+                lbl.configure(text=shown)
+        except Exception:
+            pass
+        self._meter_after = self._app.after(2000, self._tick_meters)
+
+    def refresh(self):
+        self._sync_card_hints()
+        if getattr(self, "_meter_after", None) is None:
+            self._tick_meters()
+
+    def on_hide(self):
+        if getattr(self, "_meter_after", None) is not None:
+            try:
+                self._app.after_cancel(self._meter_after)
+            except Exception:
+                pass
+            self._meter_after = None
 
     def _build_main_display_section(self, parent):
-        s2 = AccordionSection(parent, self._app, "", "main_display_title", card=True, auto_pack=False)
+        s2 = AccordionSection(parent, self._app, "", "main_display_title",
+                              card=True, auto_pack=False)
         self._sections.append(s2)
+        self._main_card = s2
         b2 = s2.content
-
-        mode_row = ctk.CTkFrame(b2, fg_color="transparent")
-        mode_row.pack(pady=(10, 4))
 
         _MODE_KEYS = ["image", "clock", "volume", "cpu", "gpu", "hd", "network", "ram", "apm"]
         _MODE_LANG = ["main_mode_image", "main_mode_clock", "main_mode_volume", "main_mode_cpu",
@@ -230,10 +309,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._mode_labels  = [self.T(k) for k in _MODE_LANG]
         self._mode_key_map = {lbl: key for key, lbl in zip(_MODE_KEYS, self._mode_labels)}
 
-        ctk.CTkLabel(mode_row, text="", font=("Helvetica", 11),
-                     text_color=FG2).pack(side="left", padx=(0, 6))
-        self._reg(ctk.CTkLabel(mode_row, text="", font=("Helvetica", 11),
-                               text_color=FG2), "main_mode_label").pack(side="left", padx=(0, 6))
+        mode_row = self._row(b2, "main_mode_label")
         self._main_mode_var = tk.StringVar(
             value=self._mode_labels[_MODE_KEYS.index(self._main_mode)])
         self._main_mode_menu = ctk.CTkOptionMenu(
@@ -241,13 +317,16 @@ class EverestMaxPanel(ctk.CTkFrame):
             values=self._mode_labels,
             command=lambda lbl: self._set_main_mode(self._mode_key_map[lbl]),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=160, height=32)
-        self._main_mode_menu.pack(side="left")
+            text_color=FG, font=("Helvetica", 11), width=170,
+            height=UI.CTRL_H_SM)
+        self._main_mode_menu.pack(side="right")
 
+        img_row = self._row(b2, "main_display_image_label")
         self._reg(
-            UI.GhostButton(b2, "", self._upload_main_image),
+            UI.GhostButton(img_row, "", self._upload_main_image, width=170,
+                           height=UI.CTRL_H_SM),
             "main_display_upload"
-        ).pack(pady=4, padx=12, fill="x")
+        ).pack(side="right")
 
         self._main_bar = ctk.CTkProgressBar(b2, mode="determinate",
                                              progress_color=BLUE, fg_color=BG3,
@@ -260,17 +339,19 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._main_status.pack(pady=(0, 12))
 
     def _build_numpad_section(self, parent):
-        s3 = AccordionSection(parent, self._app, "", "numpad_title", card=True, auto_pack=False)
+        s3 = AccordionSection(parent, self._app, "", "numpad_title", card=True,
+                              auto_pack=False, hint="D1 - D4")
         self._sections.append(s3)
         b3 = s3.content
 
         self._reg(
-            ctk.CTkLabel(b3, text="", font=("Helvetica", 11), text_color=FG2),
+            ctk.CTkLabel(b3, text="", font=("Helvetica", 10), text_color=FG2,
+                         anchor="w"),
             "numpad_subtitle"
-        ).pack(pady=(8, 4))
+        ).pack(fill="x", pady=(0, 6))
 
         multi_row = ctk.CTkFrame(b3, fg_color="transparent")
-        multi_row.pack(fill="x", padx=8, pady=(0, 8))
+        multi_row.pack(fill="x", pady=(0, 8))
         self._reg(
             UI.GhostButton(multi_row, "", self._open_multi_upload),
             "multi_upload_btn"
@@ -431,7 +512,9 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._numpad_info.pack(pady=(4, 10))
 
     def _build_rgb_section(self, parent):
-        s5 = AccordionSection(parent, self._app, "", "rgb_title", card=True, auto_pack=False)
+        s5 = AccordionSection(parent, self._app, "", "rgb_title", card=True,
+                              auto_pack=False, hint=self._rgb_mode_var.get()
+                              if hasattr(self, "_rgb_mode_var") else None)
         self._sections.append(s5)
         c = s5.content
 
@@ -559,7 +642,8 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_update_controls()
 
     def _build_zone_section(self, parent):
-        s6 = AccordionSection(parent, self._app, "", "zone_title", card=True, auto_pack=False)
+        s6 = AccordionSection(parent, self._app, "", "zone_title", card=True,
+                              auto_pack=False)
         self._sections.append(s6)
         c6 = s6.content
 
@@ -610,7 +694,19 @@ class EverestMaxPanel(ctk.CTkFrame):
         with open(os.path.join(CONFIG_DIR, "clock_format"), "w") as f:
             f.write(self._clock_format.get())
 
+    def _sync_card_hints(self):
+        """Card headers show the current value, so the hint has to follow it."""
+        try:
+            self._clock_card.set_hint(self._current_style.get())
+        except Exception:
+            pass
+        try:
+            self._main_card.set_hint(self._main_mode_var.get())
+        except Exception:
+            pass
+
     def _on_style_change(self):
+        self._sync_card_hints()
         label = self._current_style.get()
         save_style(STYLES[label])
         self._style_status.configure(
@@ -1055,6 +1151,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         threading.Thread(target=do_upload, daemon=True).start()
 
     def _set_main_mode(self, mode):
+        self._sync_card_hints()
         self._main_mode = mode
         with open(MAIN_MODE_FILE, "w") as f:
             f.write(mode)

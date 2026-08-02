@@ -496,5 +496,13 @@
   "pluginmgr_requires_missing": "Benötigt {pkg}, hier nicht vorhanden. Die AppImage bringt ihr eigenes Python mit und sieht keine Pakete aus dem System-pip, dieses Plugin läuft also nur bei einer Quellinstallation.",
   "tray_pages": "DisplayPad-Seite",
   "custom_rgb_colour": "Farbe",
-  "custom_rgb_eyedropper_btn": "Pipette"
+  "custom_rgb_eyedropper_btn": "Pipette",
+  "clock_format_label": "Format",
+  "clock_style_label": "Stil",
+  "dial_reset_label": "Zifferblatt",
+  "meter_cpu": "CPU",
+  "meter_ram": "RAM",
+  "meter_disk": "Platte",
+  "meter_net": "Netz MB/s",
+  "main_display_image_label": "Bild"
 }
