@@ -1,5 +1,33 @@
 # Changelog
 
+## [3.0.0] - 2026-08-02
+
+The interface has been rebuilt. Same devices, same features, a different application to look at and to move around in. Delivered as a source-overlay patch, so the update arrives through Settings without a new AppImage.
+
+### The interface
+
+- **A sidebar instead of two rows of coloured pills.** Devices are listed down the left with a small dot for their state, and **only devices that are actually plugged in appear**. Below them sit the tools that are always there: macros, plugins, OBS, plugins that bring their own screen. Every screen carries a header strip with the device name, its state, and that screen's actions, so the same things live in the same place everywhere.
+- **Settings, plugins, macros and the colour editors are screens now, not windows.** Nineteen separate windows in five different styles have become screens inside the one window, with one shared dialog for the few questions that genuinely need to interrupt: confirm, ask for a name, report an error.
+- **The DisplayPad is a single screen.** The pad, its pages, and the editor for the selected key used to be three windows you had to keep straight. It is now the twelve keys as they sit on the device, page tabs above, and an inspector for the selected key beside them.
+- **Settings arranged in cards** for updates, profile, application and backup, with the update card offering the update when there is one instead of hiding it behind a check.
+- **Plugins as list and detail.** The description, what a plugin needs, and its update state have room now instead of a line of truncated text.
+- **Macros show where they are used.** The editor sits beside the list, and each macro names the keys it is bound to.
+- **The window can be resized** and comes back the size you left it. It was fixed at 480x760 before.
+- **Results say so.** Applying, saving and uploading raise a short message instead of leaving you to guess whether anything happened.
+- **The tray menu can switch DisplayPad pages** (companion to the `dp_page` command from 2.1.8).
+- **No pictograms in the interface.** Emoji rendered in whatever font happened to be installed, in their own colours, at their own line height, and could not be translated. Where a mark carries meaning it is drawn now, so it takes the text colour and is the same size everywhere.
+
+### Under it
+
+- **A design system.** One file holds every colour, type size and spacing step; a second builds the components from them. A button is one call rather than eight keyword arguments repeated across the code, and a colour has a meaning: accent means you can click it, green is state and never a button fill, red is destructive and outlined only.
+- **Screens are built when they are first opened.** Start is **1362 ms instead of 4121 ms**. Nearly all of the old figure was CustomTkinter drawing some 1400 rounded rectangles and 4000 anti-aliased circles for screens nobody had asked for yet. The monitor bars now poll only while their screen is visible.
+
+### Fixes
+
+- **The overlay could not update the language files or the presets (this affects 2.1.x today).** A frozen build looked them up inside the AppImage bundle, which an update never touches, so the files the patch shipped were never read. The bundled language files hold 373 keys; 2.1.1 through 2.1.8 added 30 more, and every one of them showed up in the interface as its own name instead of as text. The DisplayPad page dialogs from 2.1.7 are where you would have met them: `dp_new_page`, `dp_page_name_prompt`, `dp_delete_page_confirm`. Since the fix travels inside the overlay itself, this update repairs it on existing installations.
+- **A dropdown could stay painted over other applications (#66), and is only partly curable.** The popup holds a global grab, and under Wayland the compositor activates the other application without this process being told anything at all: no focus event, no pointer event, nothing to react to. Where the system does report it, an X11 session, the popup closes now. Getting rid of it entirely means drawing the popup inside our own window, which is a change of widget and not of this release.
+- **A page file with an unusable image entry is read anyway** instead of refused, with a warning naming the key.
+
 ## [2.1.8] - 2026-08-02
 
 Source-overlay patch: the control socket can put the DisplayPad on a page, and a documentation pass.
