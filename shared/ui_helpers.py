@@ -10,6 +10,7 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog
 import customtkinter as ctk
+import shared.ui as _ui
 from PIL import Image, ImageTk, ImageEnhance
 
 from shared.ui.widgets import resolve_t
@@ -739,6 +740,9 @@ _SIDE_ZONE_INDICES = [
 ]
 
 
+_RGB_RAIL_W = 236   # colour column beside the keyboard
+
+
 # ── CustomRGBWindow ────────────────────────────────────────────────────────────
 
 class CustomRGBWindow(ctk.CTkFrame):
@@ -811,9 +815,41 @@ class CustomRGBWindow(ctk.CTkFrame):
         PAD = 12
         self.configure(fg_color=BG)
 
-        self._cv = tk.Canvas(self, width=self._canvas_w, height=self._canvas_h,
+        # Toolbar over the stage, everything about colour in a column on the
+        # right, the one filled action in the screen header. The old layout
+        # stacked six rows of controls under the keyboard, so the thing being
+        # painted and the tools painting it were never in one glance.
+        bar = ctk.CTkFrame(self, fg_color="transparent")
+        bar.pack(fill="x", padx=PAD, pady=(PAD, 0))
+        for key, cmd in (("custom_rgb_select_all", self._select_all),
+                         ("custom_rgb_deselect", self._deselect_all),
+                         ("custom_rgb_all_black", lambda: self._fill_all((0, 0, 0))),
+                         ("custom_rgb_all_white", lambda: self._fill_all((255, 255, 255)))):
+            _ui.GhostButton(bar, self._T(key), cmd, width=104,
+                            height=_ui.CTRL_H_SM).pack(side="left", padx=(0, 6))
+        self._eyedrop_mode = False
+        self._eyedrop_btn = _ui.GhostButton(
+            bar, self._T("custom_rgb_eyedropper_btn"), self._toggle_eyedrop,
+            width=96, height=_ui.CTRL_H_SM)
+        self._eyedrop_btn.pack(side="left", padx=(0, 6))
+        _ui.GhostButton(bar, self._T("custom_rgb_undo"), self._undo, width=104,
+                        height=_ui.CTRL_H_SM).pack(side="left")
+        self._sel_lbl = ctk.CTkLabel(bar, text=self._T("custom_rgb_selected", n=0),
+                                     text_color=FG2, font=("Helvetica", 11))
+        self._sel_lbl.pack(side="right")
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=PAD, pady=PAD)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=0, minsize=_RGB_RAIL_W)
+        body.grid_rowconfigure(0, weight=1)
+
+        stage = ctk.CTkFrame(body, fg_color="transparent")
+        stage.grid(row=0, column=0, sticky="nsew")
+
+        self._cv = tk.Canvas(stage, width=self._canvas_w, height=self._canvas_h,
                              bg="#111118", highlightthickness=0, bd=0)
-        self._cv.pack(padx=PAD, pady=(PAD, 4))
+        self._cv.pack(anchor="n")
         self._cv.bind("<Button-1>",        self._on_click)
         self._cv.bind("<B1-Motion>",       self._on_drag)
         self._cv.bind("<ButtonRelease-1>", self._on_release)
@@ -823,8 +859,8 @@ class CustomRGBWindow(ctk.CTkFrame):
         self.bind("<Control-z>", self._undo)
         self.bind("<Control-Z>", self._undo)
 
-        kb_bar = ctk.CTkFrame(self, fg_color="transparent")
-        kb_bar.pack(fill="x", padx=PAD, pady=(0, 2))
+        kb_bar = ctk.CTkFrame(stage, fg_color="transparent")
+        kb_bar.pack(pady=(8, 0))
         ctk.CTkLabel(kb_bar, text=self._T("custom_rgb_kb_layout"),
                      text_color=FG2, font=("Helvetica", 11)).pack(side="left", padx=(0, 6))
         self._kb_seg = ctk.CTkSegmentedButton(
@@ -836,127 +872,91 @@ class CustomRGBWindow(ctk.CTkFrame):
         self._kb_seg.set("QWERTY")
         self._kb_seg.pack(side="left")
 
-        strip = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
-        strip.pack(fill="x", padx=PAD, pady=4)
+        rail = ctk.CTkFrame(body, fg_color=BG2, corner_radius=7,
+                            border_width=1, border_color=BORDER)
+        rail.grid(row=0, column=1, sticky="nsew", padx=(PAD, 0))
 
-        self._fill_swatch = tk.Canvas(strip, width=28, height=28,
+        _ui.SectionLabel(rail, text=self._T("custom_rgb_colour")).pack(
+            fill="x", padx=12, pady=(12, 6))
+        sw_row = ctk.CTkFrame(rail, fg_color="transparent")
+        sw_row.pack(fill="x", padx=12)
+        self._fill_swatch = tk.Canvas(sw_row, width=30, height=30,
                                       bg=_rgb_hex(self._fill_rgb),
                                       highlightthickness=1,
                                       highlightbackground="#555")
-        self._fill_swatch.pack(side="left", padx=(8, 2), pady=6)
-        ctk.CTkButton(strip, text=self._T("custom_rgb_pick"), width=50, height=28,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._pick_fill).pack(side="left", padx=(0, 8))
+        self._fill_swatch.pack(side="left")
+        _ui.GhostButton(sw_row, self._T("custom_rgb_pick"), self._pick_fill,
+                        width=_RGB_RAIL_W - 74,
+                        height=_ui.CTRL_H_SM).pack(side="left", padx=(8, 0))
 
-        for hex_c, rgb in _QUICK_COLORS:
-            btn = tk.Canvas(strip, width=20, height=20, bg=hex_c,
+        quick = ctk.CTkFrame(rail, fg_color="transparent")
+        quick.pack(fill="x", padx=12, pady=(8, 0))
+        for i, (hex_c, rgb) in enumerate(_QUICK_COLORS):
+            btn = tk.Canvas(quick, width=22, height=22, bg=hex_c,
                             highlightthickness=1, highlightbackground="#333",
                             cursor="hand2")
-            btn.pack(side="left", padx=2, pady=8)
+            btn.grid(row=i // 5, column=i % 5, padx=2, pady=2)
             btn.bind("<Button-1>", lambda e, c=rgb: self._set_fill(c))
+        _ui.PrimaryButton(rail, self._T("custom_rgb_fill"), self._fill_selected,
+                          width=_RGB_RAIL_W - 24,
+                          height=_ui.CTRL_H_SM).pack(fill="x", padx=12, pady=(10, 0))
 
-        self._sel_lbl = ctk.CTkLabel(strip, text=self._T("custom_rgb_selected", n=0),
-                                     text_color=FG2, font=("Helvetica", 11))
-        self._sel_lbl.pack(side="right", padx=10)
-
-        act = ctk.CTkFrame(self, fg_color="transparent")
-        act.pack(fill="x", padx=PAD, pady=4)
-
-        ctk.CTkButton(act, text=self._T("custom_rgb_fill"), width=110, height=30,
-                      fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._fill_selected).pack(side="left", padx=(0,4))
-        ctk.CTkButton(act, text=self._T("custom_rgb_select_all"), width=90, height=30,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._select_all).pack(side="left", padx=4)
-        ctk.CTkButton(act, text=self._T("custom_rgb_deselect"), width=80, height=30,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._deselect_all).pack(side="left", padx=4)
-        ctk.CTkButton(act, text=self._T("custom_rgb_all_black"), width=80, height=30,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=lambda: self._fill_all((0,0,0))).pack(side="left", padx=4)
-        ctk.CTkButton(act, text=self._T("custom_rgb_all_white"), width=80, height=30,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=lambda: self._fill_all((255,255,255))).pack(side="left", padx=4)
-        ctk.CTkButton(act, text=self._T("custom_rgb_undo"), width=70, height=30,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._undo).pack(side="right", padx=(4, 0))
-        ctk.CTkLabel(act, text=self._T("custom_rgb_eyedropper"), text_color=FG2,
-                     font=("Helvetica", 10)).pack(side="right", padx=8)
-
-        pre = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
-        pre.pack(fill="x", padx=PAD, pady=(0, 4))
-
-        ctk.CTkLabel(pre, text=self._T("custom_rgb_presets"), text_color=FG2,
-                     font=("Helvetica", 11)).pack(side="left", padx=(8, 4), pady=6)
-        self._preset_var = tk.StringVar()
-        self._preset_combo = ctk.CTkComboBox(
-            pre, variable=self._preset_var, values=[], width=180, height=28,
-            fg_color=BG3, border_color=BORDER, button_color=BLUE,
-            dropdown_fg_color=BG2, text_color=FG, font=("Helvetica", 11))
-        self._preset_combo.pack(side="left", padx=(0, 4), pady=6)
-        ctk.CTkButton(pre, text=self._T("custom_rgb_load"), width=60, height=28,
-                      fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._preset_load).pack(side="left", padx=2)
-        ctk.CTkButton(pre, text=self._T("custom_rgb_save_as"), width=80, height=28,
-                      fg_color="#166534", hover_color="#14532d", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._preset_save_as).pack(side="left", padx=2)
-        ctk.CTkButton(pre, text=self._T("custom_rgb_delete"), width=68, height=28,
-                      fg_color="#7f1d1d", hover_color="#6b1a1a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._preset_delete).pack(side="left", padx=2)
-        self._preset_status = ctk.CTkLabel(pre, text="", text_color=FG2,
-                                           font=("Helvetica", 10))
-        self._preset_status.pack(side="left", padx=8)
-        self._preset_refresh()
-
-        bot = ctk.CTkFrame(self, fg_color="transparent")
-        bot.pack(fill="x", padx=PAD, pady=4)
-
-        ctk.CTkLabel(bot, text=self._T("custom_rgb_brightness"), text_color=FG2,
-                     font=("Helvetica", 11)).pack(side="left")
-        self._bri_val = ctk.CTkLabel(bot, text=str(self._bri), text_color=FG,
-                                     font=("Helvetica", 11), width=30)
-        self._bri_val.pack(side="right")
-        self._bri_sl = ctk.CTkSlider(bot, from_=10, to=100, number_of_steps=90,
+        _ui.SectionLabel(rail, text=self._T("custom_rgb_brightness_short")).pack(
+            fill="x", padx=12, pady=(14, 4))
+        bri_row = ctk.CTkFrame(rail, fg_color="transparent")
+        bri_row.pack(fill="x", padx=12)
+        self._bri_sl = ctk.CTkSlider(bri_row, from_=10, to=100, number_of_steps=90,
                                      fg_color=BG3, progress_color=BLUE,
                                      button_color=BLUE, button_hover_color=BLUE,
-                                     width=160, height=16)
+                                     height=16)
         self._bri_sl.set(self._bri)
         self._bri_sl.configure(command=self._on_bri_change)
-        self._bri_sl.pack(side="right", padx=(0, 6))
+        self._bri_sl.pack(side="left", fill="x", expand=True)
+        self._bri_val = ctk.CTkLabel(bri_row, text=str(self._bri), text_color=FG,
+                                     font=("Helvetica", 11), width=32)
+        self._bri_val.pack(side="right")
 
-        btns = ctk.CTkFrame(self, fg_color="transparent")
-        btns.pack(fill="x", padx=PAD, pady=(4, PAD))
+        _ui.SectionLabel(rail, text=self._T("custom_rgb_presets")).pack(
+            fill="x", padx=12, pady=(14, 4))
+        self._preset_var = tk.StringVar()
+        self._preset_combo = ctk.CTkComboBox(
+            rail, variable=self._preset_var, values=[],
+            width=_RGB_RAIL_W - 24, height=_ui.CTRL_H_SM,
+            fg_color=BG3, border_color=BORDER, button_color=BG3,
+            dropdown_fg_color=BG2, text_color=FG, font=("Helvetica", 11))
+        self._preset_combo.pack(padx=12)
+        pre_row = ctk.CTkFrame(rail, fg_color="transparent")
+        pre_row.pack(fill="x", padx=12, pady=(6, 0))
+        _ui.GhostButton(pre_row, self._T("custom_rgb_load"), self._preset_load,
+                        width=62, height=_ui.CTRL_H_SM).pack(side="left")
+        _ui.GhostButton(pre_row, self._T("custom_rgb_save_as"), self._preset_save_as,
+                        width=84, height=_ui.CTRL_H_SM).pack(side="left", padx=6)
+        _ui.DangerButton(pre_row, self._T("custom_rgb_delete"), self._preset_delete,
+                         width=62, height=_ui.CTRL_H_SM).pack(side="left")
+        self._preset_status = ctk.CTkLabel(rail, text="", text_color=FG2,
+                                           font=("Helvetica", 10), anchor="w")
+        self._preset_status.pack(fill="x", padx=12, pady=(4, 0))
+        self._preset_refresh()
 
-        ctk.CTkButton(btns, text=self._T("custom_rgb_apply"), width=140, height=32,
-                      fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                      font=("Helvetica", 11, "bold"),
-                      command=self._apply).pack(side="left", padx=(0, 4))
-        if self._has_persist:
-            ctk.CTkButton(btns, text=self._T("custom_rgb_persist"), width=120, height=32,
-                          fg_color="#166534", hover_color="#14532d", text_color=FG,
-                          font=("Helvetica", 11),
-                          command=self._persist).pack(side="left", padx=4)
-        ctk.CTkButton(btns, text=self._T("custom_rgb_save_profile"), width=100, height=32,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._save_profile).pack(side="left", padx=4)
-        ctk.CTkButton(btns, text=self._T("custom_rgb_load_profile"), width=100, height=32,
-                      fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
-                      command=self._load_profile).pack(side="left", padx=4)
-        self._status = ctk.CTkLabel(btns, text="", text_color=FG2,
-                                    font=("Helvetica", 11))
-        self._status.pack(side="left", padx=10)
+        prof = ctk.CTkFrame(rail, fg_color="transparent")
+        prof.pack(fill="x", padx=12, pady=(14, 12), side="bottom")
+        _ui.GhostButton(prof, self._T("custom_rgb_save_profile"), self._save_profile,
+                        width=_RGB_RAIL_W - 24,
+                        height=_ui.CTRL_H_SM).pack(fill="x")
+        _ui.GhostButton(prof, self._T("custom_rgb_load_profile"), self._load_profile,
+                        width=_RGB_RAIL_W - 24,
+                        height=_ui.CTRL_H_SM).pack(fill="x", pady=(6, 0))
+        self._status = ctk.CTkLabel(prof, text="", text_color=FG2,
+                                    font=("Helvetica", 11), anchor="w")
+        self._status.pack(fill="x", pady=(6, 0))
+
+    def _toggle_eyedrop(self):
+        """The eyedropper was a grey hint saying "Shift+click"; whoever did not
+        read it never found it. As a button that latches it is a tool."""
+        self._eyedrop_mode = not self._eyedrop_mode
+        self._eyedrop_btn.configure(
+            border_color=BLUE if self._eyedrop_mode else BORDER,
+            text_color=BLUE if self._eyedrop_mode else FG2)
 
     def _draw_keys(self):
         self._cv.delete("all")
@@ -1101,6 +1101,10 @@ class CustomRGBWindow(ctk.CTkFrame):
         return None
 
     def _on_click(self, e):
+        if getattr(self, "_eyedrop_mode", False):
+            self._on_eyedrop(e)
+            self._toggle_eyedrop()      # one pick, then back to selecting
+            return
         ctrl = (e.state & 0x0004) != 0
         idx  = self._key_at(e.x, e.y)
         self._drag_rect = (e.x, e.y)
@@ -1438,12 +1442,19 @@ class CustomRGBWindow(ctk.CTkFrame):
             self._status.configure(text=self._T("custom_rgb_load_error", err=str(ex)), text_color=RED)
 
     def header_actions(self, parent):
-        """A way back, in the screen header where every screen has its
-        actions. The editor had no close control of its own before: it relied
-        on the window title bar, which a screen does not have."""
-        import shared.ui as _UI
-        _UI.GhostButton(parent, self._T("ui_back"), self._on_close,
-                        width=110, height=_UI.CTRL_H_SM).pack(side="right")
+        """The screen's actions belong here: one filled primary on the right,
+        the rest as outlines. The editor had no close control of its own
+        before either, it relied on a window title bar a screen does not have.
+        """
+        _ui.PrimaryButton(parent, self._T("custom_rgb_apply"), self._apply,
+                          width=170, height=_ui.CTRL_H_SM).pack(
+            side="right", padx=(_ui.S2, 0))
+        if self._has_persist:
+            _ui.GhostButton(parent, self._T("custom_rgb_persist"), self._persist,
+                            width=150, height=_ui.CTRL_H_SM).pack(
+                side="right", padx=(_ui.S2, 0))
+        _ui.GhostButton(parent, self._T("ui_back"), self._on_close,
+                        width=90, height=_ui.CTRL_H_SM).pack(side="right")
 
     def _on_close(self):
         if self._bri_debounce_id is not None:

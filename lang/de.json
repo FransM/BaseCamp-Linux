@@ -494,5 +494,7 @@
   "macro_unassigned": "Noch keiner Taste zugewiesen",
   "pluginmgr_requires_ok": "Benötigt {pkg}, vorhanden",
   "pluginmgr_requires_missing": "Benötigt {pkg}, hier nicht vorhanden. Die AppImage bringt ihr eigenes Python mit und sieht keine Pakete aus dem System-pip, dieses Plugin läuft also nur bei einer Quellinstallation.",
-  "tray_pages": "DisplayPad-Seite"
+  "tray_pages": "DisplayPad-Seite",
+  "custom_rgb_colour": "Farbe",
+  "custom_rgb_eyedropper_btn": "Pipette"
 }

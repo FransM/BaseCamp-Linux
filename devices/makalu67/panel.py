@@ -281,11 +281,8 @@ class Makalu67Panel(ctk.CTkFrame):
         # ── Apply row ────────────────────────────────────────────────────────
         self._rgb_apply_row = ctk.CTkFrame(parent, fg_color="transparent")
         self._rgb_apply_row.pack(fill="x", padx=10, pady=(6, 10))
-        _btn = ctk.CTkButton(
-            self._rgb_apply_row, text=self.T("makalu_apply"),
-            font=("Helvetica", 11), fg_color=BLUE, hover_color="#0284c7",
-            text_color=FG, width=120, height=32, command=self._apply_rgb,
-        )
+        _btn = UI.PrimaryButton(self._rgb_apply_row, self.T("makalu_apply"),
+                                self._apply_rgb, width=140)
         _btn.pack(side="left")
         self._reg(_btn, "makalu_apply")
         self._rgb_status = ctk.CTkLabel(self._rgb_apply_row, text="",
@@ -297,12 +294,8 @@ class Makalu67Panel(ctk.CTkFrame):
     # ── Custom RGB ────────────────────────────────────────────────────────────
 
     def _build_custom_content(self, parent):
-        _btn = ctk.CTkButton(
-            parent, text=self.T("makalu_custom_open"),
-            font=("Helvetica", 12, "bold"), fg_color=BLUE, hover_color="#0284c7",
-            text_color=FG, width=200, height=36,
-            command=self._open_custom_rgb,
-        )
+        _btn = UI.GhostButton(parent, self.T("makalu_custom_open"),
+                              self._open_custom_rgb, width=220)
         _btn.pack(pady=20)
         self._reg(_btn, "makalu_custom_open")
 
@@ -378,12 +371,8 @@ class Makalu67Panel(ctk.CTkFrame):
         # Apply row
         apply_row = ctk.CTkFrame(parent, fg_color="transparent")
         apply_row.pack(fill="x", padx=10, pady=(4, 12))
-        _btn = ctk.CTkButton(
-            apply_row, text=self.T("makalu_apply"),
-            font=("Helvetica", 11), fg_color=BLUE, hover_color="#0284c7",
-            text_color=FG, width=80, height=28, corner_radius=5,
-            command=self._apply_dpi,
-        )
+        _btn = UI.GhostButton(apply_row, self.T("makalu_apply"), self._apply_dpi,
+                              width=100, height=UI.CTRL_H_SM)
         _btn.pack(side="left")
         self._reg(_btn, "makalu_apply")
         _btn = ctk.CTkButton(
@@ -679,12 +668,8 @@ class Makalu67Panel(ctk.CTkFrame):
         self._remap_apply_row = ctk.CTkFrame(assign_card, fg_color="transparent")
         apply_row = self._remap_apply_row
         apply_row.pack(fill="x", padx=12, pady=(6, 10))
-        _btn = ctk.CTkButton(
-            apply_row, text=self.T("makalu_apply"),
-            font=("Helvetica", 11), fg_color=BLUE, hover_color="#0284c7",
-            text_color=FG, width=80, height=28, corner_radius=5,
-            command=self._apply_remap,
-        )
+        _btn = UI.GhostButton(apply_row, self.T("makalu_apply"), self._apply_remap,
+                              width=100, height=UI.CTRL_H_SM)
         _btn.pack(side="left")
         self._reg(_btn, "makalu_apply")
         _btn = ctk.CTkButton(

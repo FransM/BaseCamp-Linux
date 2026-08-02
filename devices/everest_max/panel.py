@@ -207,11 +207,9 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._sections.append(s1)
         b1 = s1.content
 
-        self._btn_cpu = ctk.CTkButton(
-            b1, text=self.T("monitor_start"), command=self._toggle_cpu,
-            fg_color=YLW, text_color="#0d0d14", hover_color="#d4a900",
-            font=("Helvetica", 10, "bold"), height=34, corner_radius=6)
-        self._btn_cpu.pack(pady=8)
+        self._btn_cpu = UI.PrimaryButton(b1, self.T("monitor_start"),
+                                         self._toggle_cpu)
+        self._btn_cpu.pack(fill="x", pady=(4, 8))
 
         self._cpu_status = ctk.CTkLabel(b1, text="", font=("Helvetica", 11),
                                          text_color=FG2)
@@ -247,9 +245,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._main_mode_menu.pack(side="left")
 
         self._reg(
-            ctk.CTkButton(b2, text="", command=self._upload_main_image,
-                          fg_color=BLUE, text_color=FG, hover_color="#0884be",
-                          font=("Helvetica", 10, "bold"), height=34, corner_radius=6),
+            UI.GhostButton(b2, "", self._upload_main_image),
             "main_display_upload"
         ).pack(pady=4, padx=12, fill="x")
 
@@ -276,13 +272,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         multi_row = ctk.CTkFrame(b3, fg_color="transparent")
         multi_row.pack(fill="x", padx=8, pady=(0, 8))
         self._reg(
-            ctk.CTkButton(
-                multi_row, text="",
-                height=34, corner_radius=6,
-                fg_color="#7c3aed", hover_color="#6d28d9", text_color=FG,
-                font=("Helvetica", 11, "bold"),
-                command=self._open_multi_upload,
-            ),
+            UI.GhostButton(multi_row, "", self._open_multi_upload),
             "multi_upload_btn"
         ).pack(fill="x")
 
@@ -423,10 +413,8 @@ class EverestMaxPanel(ctk.CTkFrame):
         reset_row = ctk.CTkFrame(b3, fg_color="transparent")
         reset_row.pack(fill="x", padx=8, pady=(4, 0))
         self._reg(
-            ctk.CTkButton(reset_row, text="", height=28, corner_radius=4,
-                          fg_color=RED, hover_color="#b91c1c", text_color=FG,
-                          font=("Helvetica", 11),
-                          command=self._reset_buttons_flash),
+            UI.DangerButton(reset_row, "", self._reset_buttons_flash,
+                            height=UI.CTRL_H_SM),
             "reset_buttons_btn"
         ).pack(fill="x")
 
@@ -558,9 +546,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_apply_row = rgb_apply_row
         rgb_apply_row.pack(fill="x", padx=10, pady=(6, 10))
         self._reg(
-            ctk.CTkButton(rgb_apply_row, text="", font=("Helvetica", 11),
-                          fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                          width=120, height=32, command=self._apply_rgb),
+            UI.PrimaryButton(rgb_apply_row, "", self._apply_rgb, width=140),
             "rgb_apply"
         ).pack(side="left")
         self._rgb_status = ctk.CTkLabel(rgb_apply_row, text="", text_color=FG2,
@@ -584,9 +570,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         open_row = ctk.CTkFrame(c6, fg_color="transparent")
         open_row.pack(pady=(16, 16))
         self._reg(
-            ctk.CTkButton(open_row, text="", font=("Helvetica", 12, "bold"),
-                          fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                          width=220, height=38, command=self._open_rgb_editor),
+            UI.GhostButton(open_row, "", self._open_rgb_editor, width=240),
             "zone_open_editor"
         ).pack()
 
@@ -618,7 +602,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         if self._cpu_proc and self._cpu_proc.poll() is not None:
             self._cpu_proc = None
             self._btn_cpu.configure(text=self.T("monitor_start"),
-                                    fg_color=YLW, text_color="#0d0d14")
+                                    fg_color=UI.ACCENT, text_color=UI.tokens.ACCENT_TEXT)
             self._cpu_status.configure(text=self.T("monitor_stopped"), text_color=RED)
         self._app.after(5000, self._update_cpu_bar)
 
@@ -681,7 +665,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             self._cpu_proc.terminate()
             self._cpu_proc = None
             self._btn_cpu.configure(text=self.T("monitor_start"),
-                                    fg_color=YLW, text_color="#0d0d14")
+                                    fg_color=UI.ACCENT, text_color=UI.tokens.ACCENT_TEXT)
             self._cpu_status.configure(text=self.T("monitor_stopped"), text_color=RED)
         else:
             style_arg = STYLES[self._current_style.get()]
@@ -691,9 +675,12 @@ class EverestMaxPanel(ctk.CTkFrame):
                 self._cpu_proc = subprocess.Popen(
                     self._cmd("cpu", style_arg),
                     stdout=subprocess.DEVNULL, stderr=_stderr_log)
+                # Stopping a monitor is not destructive; red here only
+                # competed with the actual delete buttons elsewhere. The state
+                # is in the line below the button.
                 self._btn_cpu.configure(text=self.T("monitor_stop"),
-                                        fg_color=RED, text_color=BG,
-                                        font=("Helvetica", 11, "bold"))
+                                        fg_color=UI.ACCENT,
+                                        text_color=UI.tokens.ACCENT_TEXT)
                 self._cpu_status.configure(text=self.T("monitor_running"), text_color=GRN)
             except Exception as e:
                 self._cpu_status.configure(text=f"{self.T('error')}: {e}", text_color=RED)

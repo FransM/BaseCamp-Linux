@@ -494,5 +494,7 @@
   "macro_unassigned": "Not assigned to any key yet",
   "pluginmgr_requires_ok": "Needs {pkg}, available",
   "pluginmgr_requires_missing": "Needs {pkg}, not available here. The AppImage ships its own Python and cannot see packages installed with the system pip, so this plugin only works on a source install.",
-  "tray_pages": "DisplayPad page"
+  "tray_pages": "DisplayPad page",
+  "custom_rgb_colour": "Colour",
+  "custom_rgb_eyedropper_btn": "Eyedropper"
 }
