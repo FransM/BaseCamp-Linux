@@ -128,7 +128,7 @@ class Everest60Panel(ctk.CTkFrame):
             s.measure()
 
     def _build_rgb_section(self, parent):
-        title = f"{self.T('rgb_title')} — {self._model_name}"
+        title = f"{self.T('rgb_title')}, {self._model_name}"
         s = _Section(parent, self._app, "", title, card=True, auto_pack=False)
         self._sections.append(s)
         self._rgb_section = s

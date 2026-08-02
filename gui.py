@@ -192,12 +192,12 @@ class SettingsPanel(ctk.CTkFrame):
             font=("Helvetica", 11), text_color=FG, anchor="w",
             justify="left", wraplength=520)
         self._update_lbl.pack(side="left", fill="x", expand=True)
+        # The button cannot be built here: this screen exists from startup,
+        # the update check answers seconds later. As a dialog that was fine
+        # because it was created fresh on every open. refresh() creates it.
+        self._update_body = upd.body
         self._update_btn = None
-        if (getattr(app, "_update_install_type", "") == "appimage"
-                and getattr(app, "_update_url", "")):
-            self._update_btn = UI.PrimaryButton(
-                upd.body, app.T("settings_update_button"), self._do_update, width=150)
-            self._update_btn.pack(side="right")
+        self._maybe_add_update_button()
 
         # ── Profiles ──
         from shared.config import list_profiles, get_active_profile
@@ -315,11 +315,24 @@ class SettingsPanel(ctk.CTkFrame):
         self._status.grid(row=3, column=0, columnspan=2, sticky="ew",
                           pady=(UI.S3, 0))
 
-    def refresh(self):
-        """Called every time the screen is shown. The control socket starts
-        after the UI is built, so a value read at construction time would say
-        "not connected" for the rest of the session."""
+    def _maybe_add_update_button(self):
+        """Add the update button once an update is actually available."""
         app = self._app
+        if self._update_btn is not None:
+            return
+        if (getattr(app, "_update_install_type", "") == "appimage"
+                and getattr(app, "_update_url", "")):
+            self._update_btn = UI.PrimaryButton(
+                self._update_body, app.T("settings_update_button"),
+                self._do_update, width=150)
+            self._update_btn.pack(side="right")
+
+    def refresh(self):
+        """Called every time the screen is shown. Two things are only known
+        later than construction: the control socket starts after the UI is
+        built, and the update check answers seconds after that."""
+        app = self._app
+        self._maybe_add_update_button()
         self._about_values["settings_about_socket"].configure(
             text=app.T("state_connected") if getattr(app, "_control_server", None)
             else app.T("state_absent"))

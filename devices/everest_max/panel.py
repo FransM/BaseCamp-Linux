@@ -399,12 +399,12 @@ class EverestMaxPanel(ctk.CTkFrame):
                 entry.pack_forget()
                 obs_panel = self._app._obs_panel
                 scenes = obs_panel.get_scenes() if obs_panel.is_connected() else []
-                obs_combo.configure(values=scenes + ["— Record", "— Stream"])
+                obs_combo.configure(values=scenes + ["OBS: Record", "OBS: Stream"])
                 cur_action = self._btn_action[i].get()
                 if cur_action.startswith("scene:"):
                     obs_combo.set(cur_action[6:])
                 elif cur_action in ("record", "stream"):
-                    obs_combo.set(f"— {cur_action.capitalize()}")
+                    obs_combo.set(f"OBS: {cur_action.capitalize()}")
                 obs_combo.pack(side="left", padx=4, expand=True, fill="x")
             elif cur_type == "macro":
                 entry.pack_forget()
@@ -794,7 +794,7 @@ class EverestMaxPanel(ctk.CTkFrame):
                 })
             def finish():
                 self._rgb_status.configure(
-                    text=self.T("rgb_applied") if ok else f"{self.T('rgb_error')} — {err}",
+                    text=self.T("rgb_applied") if ok else f"{self.T('rgb_error')}: {err}",
                     text_color=GRN if ok else RED)
                 if was_running:
                     self._start_cpu_auto()
@@ -838,7 +838,7 @@ class EverestMaxPanel(ctk.CTkFrame):
                 save_zone_config(self._zone_colors, brightness)
             def finish():
                 self._zone_status.configure(
-                    text=self.T("zone_applied") if ok else f"{self.T('zone_error')} — {err}",
+                    text=self.T("zone_applied") if ok else f"{self.T('zone_error')}: {err}",
                     text_color=GRN if ok else RED)
                 if was_running:
                     self._start_cpu_auto()
@@ -874,7 +874,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             if internal == "obs":
                 obs_panel = self._app._obs_panel
                 scenes = obs_panel.get_scenes() if obs_panel.is_connected() else []
-                self._obs_combos[idx].configure(values=scenes + ["— Record", "— Stream"])
+                self._obs_combos[idx].configure(values=scenes + ["OBS: Record", "OBS: Stream"])
                 if scenes:
                     self._obs_combos[idx].set(scenes[0])
                     self._btn_action[idx].set(f"scene:{scenes[0]}")
@@ -888,9 +888,9 @@ class EverestMaxPanel(ctk.CTkFrame):
             self._apply_btn(idx)
 
     def _on_obs_select(self, val, idx):
-        if val == "— Record":
+        if val == "OBS: Record":
             self._btn_action[idx].set("record")
-        elif val == "— Stream":
+        elif val == "OBS: Stream":
             self._btn_action[idx].set("stream")
         else:
             self._btn_action[idx].set(f"scene:{val}")

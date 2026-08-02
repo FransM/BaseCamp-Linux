@@ -1385,11 +1385,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                 self._browse_btns[i].pack_forget()
                 obs_panel = self._app._obs_panel
                 scenes = obs_panel.get_scenes() if obs_panel.is_connected() else []
-                self._obs_combos[i].configure(values=scenes + ["— Record", "— Stream"])
+                self._obs_combos[i].configure(values=scenes + ["OBS: Record", "OBS: Stream"])
                 if cmd.startswith("scene:"):
                     self._obs_combos[i].set(cmd[6:])
                 elif cmd in ("record", "stream"):
-                    self._obs_combos[i].set(f"— {cmd.capitalize()}")
+                    self._obs_combos[i].set(f"OBS: {cmd.capitalize()}")
                 elif scenes:
                     self._obs_combos[i].set(scenes[0])
                 self._obs_combos[i].pack(side="left", padx=4, expand=True, fill="x")
@@ -1897,14 +1897,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         if internal == "obs":
             obs_panel = self._app._obs_panel
             scenes = obs_panel.get_scenes() if obs_panel.is_connected() else []
-            obs_values = scenes + ["— Record", "— Stream"]
+            obs_values = scenes + ["OBS: Record", "OBS: Stream"]
             self._obs_combos[idx].configure(values=obs_values)
             self._obs_combos[idx].pack(side="left", padx=4, expand=True, fill="x")
             cur = self._act_cmd[idx].get()
             if cur.startswith("scene:"):
                 self._obs_combos[idx].set(cur[6:])
             elif cur in ("record", "stream"):
-                self._obs_combos[idx].set(f"— {cur.capitalize()}")
+                self._obs_combos[idx].set(f"OBS: {cur.capitalize()}")
             elif scenes:
                 self._obs_combos[idx].set(scenes[0])
                 self._act_cmd[idx].set(f"scene:{scenes[0]}")
@@ -2064,9 +2064,9 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
     def _on_obs_select(self, val, idx):
         """Called when user picks a scene or record/stream from OBS combo."""
-        if val == "— Record":
+        if val == "OBS: Record":
             self._act_cmd[idx].set("record")
-        elif val == "— Stream":
+        elif val == "OBS: Stream":
             self._act_cmd[idx].set("stream")
         else:
             self._act_cmd[idx].set(f"scene:{val}")
@@ -2712,10 +2712,16 @@ class DisplayPadPanel(ctk.CTkFrame):
             text=self.T("dp_insp_target") if btype == "page"
             else self.T("dp_insp_value"))
         if btype == "page":
-            names = sorted(_load_displaypad_page_names().values())
+            # A key cannot usefully navigate to the page it is already on, so
+            # the current page is not offered. With no other page yet, the
+            # only sensible choice is to make one.
+            names = _load_displaypad_page_names()
+            here = names.get(self._current_page)
+            options = sorted(n for pid, n in names.items() if pid != self._current_page)
+            options.append(self.T("dp_new_page"))
             cur = act.get("target") if isinstance(act.get("target"), str) else None
-            self._insp_page.configure(values=names or [""])
-            self._insp_page.set(cur if cur in names else (names[0] if names else ""))
+            self._insp_page.configure(values=options)
+            self._insp_page.set(cur if cur in options and cur != here else options[0])
             self._insp_page.pack(padx=12, pady=(2, 4), after=self._insp_value_lbl)
         else:
             self._insp_value.pack(padx=12, pady=(2, 4), after=self._insp_value_lbl)
@@ -2752,9 +2758,12 @@ class DisplayPadPanel(ctk.CTkFrame):
         value = self._insp_value_var.get()
         if btype == "page":
             name = self._insp_page.get()
-            pid = self._page_id_by_name(name)
-            target = pid if pid is not None else "new"
-            value = name
+            if name == self.T("dp_new_page"):
+                target, value = "new", self.T("dp_page_main")
+            else:
+                pid = self._page_id_by_name(name)
+                target = pid if pid is not None else "new"
+                value = name
         self._save_page_action(self._current_page, idx, btype, value, target=target)
         self._refresh_panel_tile(idx)
         self._rebuild_page_tabs()
@@ -3846,17 +3855,16 @@ class DisplayPadPanel(ctk.CTkFrame):
     # the handoff between "listening" and "pushing a plugin frame".
 
     def apply_lang(self):
-        """Called by App when language changes."""
+        """Called by App when the language changes.
+
+        Only widgets this panel still owns: the buttons that opened the two
+        old windows are gone, and configuring them here raised AttributeError
+        the moment somebody switched language. The tabs and the inspector are
+        rebuilt instead, which picks up the new strings wholesale.
+        """
         self._heading_lbl.configure(text=self.T("dp_title"))
-        self._assign_btn.configure(text=self.T("dp_assign_images"))
-        self._clear_btn.configure(text=self.T("dp_clear_all"))
-        self._min_ms_lbl.configure(text=self.T("dp_min_ms_frame"))
-        self._gif_speed_lbl.configure(text=self.T("dp_gif_speed"))
-        self._actions_btn.configure(text=self.T("dp_configure_actions"))
-        self._page_back_btn.configure(text=self.T("dp_page_back"))
-        p = self._current_page
-        name = self._get_page_name(p)
-        self._page_lbl.configure(text=f"{self.T('dp_page_label')} {name}")
+        self._rebuild_page_tabs()
+        self._select_key(self._selected_key)
 
     # ── Dialog ────────────────────────────────────────────────────────────────
 
