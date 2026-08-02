@@ -457,5 +457,9 @@
   "ui_pick_image": "Bild wählen",
   "makalu_rgb_led_color": "LED-Farbe",
   "pluginmgr_pick_folder": "Plugin-Ordner wählen",
-  "makalu_rgb_window_title": "Custom RGB, Farbe je LED"
+  "makalu_rgb_window_title": "Custom RGB, Farbe je LED",
+  "nav_devices": "Geräte",
+  "nav_tools": "Werkzeuge",
+  "nav_no_devices": "Kein Gerät gefunden. USB-Rechte prüfen, siehe README.",
+  "ui_quit": "Beenden"
 }

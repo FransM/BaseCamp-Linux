@@ -66,6 +66,7 @@ from shared.config import (
     OBS_INTERNAL_ORDER,
 )
 from shared.image_utils import image_to_rgb565
+import shared.ui as UI
 from shared.ui_helpers import (
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
     FONT, FONT_BOLD, FONT_SM, FONT_LG,
@@ -529,6 +530,7 @@ APP_VERSION = "2.1.8"
 # 6x2 key grid plus the inspector column, measured rather than guessed.
 _MIN_W, _MIN_H         = 900, 620
 _DEFAULT_W, _DEFAULT_H = 1100, 720
+_SIDEBAR_W             = 180
 
 
 class App(ctk.CTk):
@@ -995,82 +997,72 @@ class App(ctk.CTk):
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Header bar ──
-        hdr = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0, height=50)
-        hdr.pack(fill="x")
-        hdr.pack_propagate(False)
-        inner = ctk.CTkFrame(hdr, fg_color="transparent")
-        inner.place(relx=0.5, rely=0.5, anchor="center")
-        ctk.CTkLabel(inner, text="MOUNTAIN", font=("Helvetica", 15, "bold"),
+        # Sidebar left, content right. Replaces the old stack of an app header
+        # over two rows of coloured pills: those wrapped into a third row as
+        # soon as a plugin brought its own panel, and none of the colours meant
+        # anything. A vertical list grows without rewrapping.
+        self.grid_columnconfigure(0, weight=0, minsize=_SIDEBAR_W)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        side = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0, width=_SIDEBAR_W)
+        side.grid(row=0, column=0, sticky="nsew")
+        side.grid_propagate(False)
+        self._sidebar = side
+
+        brand = ctk.CTkFrame(side, fg_color="transparent")
+        brand.pack(fill="x", padx=UI.S3, pady=(UI.S4, UI.S2))
+        ctk.CTkLabel(brand, text="Base", font=("Helvetica", 14, "bold"),
                      text_color=FG).pack(side="left")
-        ctk.CTkLabel(inner, text=" BASECAMP", font=("Helvetica", 15, "bold"),
+        ctk.CTkLabel(brand, text="Camp", font=("Helvetica", 14, "bold"),
                      text_color=BLUE).pack(side="left")
-        ctk.CTkButton(hdr, text="✕", width=32, height=32, corner_radius=6,
-                      fg_color="transparent", hover_color=BG3, text_color=FG2,
-                      font=("Helvetica", 14), command=self._quit).place(relx=1.0,
-                      rely=0.5, anchor="e", x=-8)
-        self._settings_btn = ctk.CTkButton(
-            hdr, text=self.T("ui_settings"), width=104, height=32, corner_radius=6,
-            fg_color="transparent", hover_color=BG3, text_color=FG2,
-            font=("Helvetica", 11), command=self._open_settings)
-        self._settings_btn.place(relx=1.0, rely=0.5, anchor="e", x=-44)
-        self._reg(self._settings_btn, "ui_settings")
 
-        # ── Device switcher bar (2 rows) ──
-        switcher = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
-        switcher.pack(fill="x")
+        # Devices. Only what is actually plugged in shows up here, so the list
+        # is about this desk and not about the product range.
+        self._nav_devices_label = UI.SectionLabel(side, text=self.T("nav_devices"))
+        self._nav_devices_label.pack(fill="x", padx=UI.S3, pady=(UI.S3, UI.S1))
+        self._nav_devices_box = ctk.CTkFrame(side, fg_color="transparent")
+        self._nav_devices_box.pack(fill="x")
+        self._nav_empty = ctk.CTkLabel(
+            self._nav_devices_box, text=self.T("nav_no_devices"),
+            font=("Helvetica", 10),
+            text_color=FG2, anchor="w", justify="left", wraplength=_SIDEBAR_W - 24)
+        self._reg(self._nav_empty, "nav_no_devices")
 
-        row1 = ctk.CTkFrame(switcher, fg_color="transparent")
-        row1.pack(pady=(4, 0))
-
-        self._sw_keyboard_btn = ctk.CTkButton(
-            row1, text=self.T("switcher_keyboard"), font=("Helvetica", 11, "bold"),
-            fg_color=BLUE, hover_color="#0884be", text_color=FG,
-            height=28, corner_radius=4,
+        self._nav_items = {}
+        self._nav_items["keyboard"] = UI.NavItem(
+            self._nav_devices_box, text=self.T("switcher_keyboard"), state="off",
             command=lambda: self._switch_device(self._kb_panel_id))
-        self._sw_keyboard_btn.pack(side="left", padx=4)
-
-        self._sw_mouse_btn = ctk.CTkButton(
-            row1, text=self.T("switcher_mouse"), font=("Helvetica", 11, "bold"),
-            fg_color=BG2, hover_color="#222232", text_color=FG2,
-            height=28, corner_radius=4,
+        self._nav_items["makalu67"] = UI.NavItem(
+            self._nav_devices_box, text=self.T("switcher_mouse"), state="off",
             command=lambda: self._switch_device("makalu67"))
-        self._sw_mouse_btn.pack(side="left", padx=4)
-
-        self._sw_displaypad_btn = ctk.CTkButton(
-            row1, text="DisplayPad", font=("Helvetica", 11, "bold"),
-            fg_color=BG2, hover_color="#222232", text_color=FG2,
-            height=28, corner_radius=4,
+        self._nav_items["displaypad"] = UI.NavItem(
+            self._nav_devices_box, text="DisplayPad", state="off",
             command=lambda: self._switch_device("displaypad"))
-        self._sw_displaypad_btn.pack(side="left", padx=4)
 
-        row2 = ctk.CTkFrame(switcher, fg_color="transparent")
-        row2.pack(pady=(2, 4))
+        self._nav_tools_label = UI.SectionLabel(side, text=self.T("nav_tools"))
+        self._nav_tools_label.pack(fill="x", padx=UI.S3, pady=(UI.S4, UI.S1))
+        self._nav_tools_box = ctk.CTkFrame(side, fg_color="transparent")
+        self._nav_tools_box.pack(fill="x")
+        for dev_id, label_key, literal in (("macros", None, "Macros"),
+                                           ("plugins", None, "Plugins"),
+                                           ("obs", None, "OBS Studio")):
+            item = UI.NavItem(self._nav_tools_box, text=literal,
+                              command=lambda d=dev_id: self._switch_device(d))
+            item.pack(fill="x")
+            self._nav_items[dev_id] = item
 
-        self._sw_obs_btn = ctk.CTkButton(
-            row2, text="OBS Studio", font=("Helvetica", 11, "bold"),
-            fg_color=BG2, hover_color="#222232", text_color=FG2,
-            height=28, corner_radius=4, width=110,
-            command=lambda: self._switch_device("obs"))
-        self._sw_obs_btn.pack(side="left", padx=4)
-
-        self._sw_macros_btn = ctk.CTkButton(
-            row2, text="Macros", font=("Helvetica", 11, "bold"),
-            fg_color=BG2, hover_color="#222232", text_color=FG2,
-            height=28, corner_radius=4, width=90,
-            command=lambda: self._switch_device("macros"))
-        self._sw_macros_btn.pack(side="left", padx=4)
-
-        self._sw_plugins_btn = ctk.CTkButton(
-            row2, text="Plugins", font=("Helvetica", 11, "bold"),
-            fg_color=BG2, hover_color="#222232", text_color=FG2,
-            height=28, corner_radius=4, width=90,
-            command=lambda: self._switch_device("plugins"))
-        self._sw_plugins_btn.pack(side="left", padx=4)
+        foot = ctk.CTkFrame(side, fg_color="transparent")
+        foot.pack(side="bottom", fill="x", pady=(0, UI.S2))
+        self._settings_btn = UI.NavItem(
+            foot, text=self.T("ui_settings"), command=self._open_settings)
+        self._settings_btn.pack(fill="x")
+        self._nav_quit = UI.NavItem(foot, text=self.T("ui_quit"), command=self._quit)
+        self._nav_quit.pack(fill="x")
 
         # ── Panel area ──
         self._panel_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
-        self._panel_area.pack(fill="both", expand=True)
+        self._panel_area.grid(row=0, column=1, sticky="nsew")
 
         # Empty-state overlay shown over a hardware panel when its device isn't
         # connected, instead of a panel full of inert controls (issue #19).
@@ -1105,25 +1097,22 @@ class App(ctk.CTk):
         }
 
         # ── Plugin panels ──
+        # A plugin that brings its own screen lands under Tools, in the same
+        # list as everything else. This is what used to force a third row of
+        # pills the moment two of them were installed.
         self._plugin_sw_btns = {}
-        plugin_panels = list(self._plugin_manager.get_panel_plugins())
-        if plugin_panels:
-            row3 = ctk.CTkFrame(switcher, fg_color="transparent")
-            row3.pack(pady=(2, 4))
-            for pid, info, inst in plugin_panels:
-                try:
-                    panel = inst.create_panel(self._panel_area)
-                    self._panels[pid] = panel
-                    label = getattr(inst, "panel_label", info.get("name", pid))
-                    btn = ctk.CTkButton(
-                        row3, text=label, font=("Helvetica", 11, "bold"),
-                        fg_color=BG2, hover_color="#222232", text_color=FG2,
-                        height=28, corner_radius=4, width=110,
-                        command=lambda p=pid: self._switch_device(p))
-                    btn.pack(side="left", padx=4)
-                    self._plugin_sw_btns[pid] = btn
-                except Exception as e:
-                    print(f"[Plugin] Failed to create panel for {pid}: {e}")
+        for pid, info, inst in list(self._plugin_manager.get_panel_plugins()):
+            try:
+                panel = inst.create_panel(self._panel_area)
+                self._panels[pid] = panel
+                label = getattr(inst, "panel_label", info.get("name", pid))
+                item = UI.NavItem(self._nav_tools_box, text=label,
+                                  command=lambda p=pid: self._switch_device(p))
+                item.pack(fill="x")
+                self._nav_items[pid] = item
+                self._plugin_sw_btns[pid] = item
+            except Exception as e:
+                print(f"[Plugin] Failed to create panel for {pid}: {e}")
 
         # Start plugin services after UI is ready
         self.after(100, self._plugin_manager.start_services)
@@ -1220,19 +1209,27 @@ class App(ctk.CTk):
     # ── USB presence check ────────────────────────────────────────────────────
 
     def _select_startup_device(self):
-        """Pick the initial hardware tab from what's actually connected. If a
-        keyboard is present we keep the (default) Keyboards tab; otherwise we
-        switch to the first connected device. When nothing is detected the
-        default tab stays so its empty state can explain how to connect (#22)."""
+        """Open the first connected device. With nothing connected we land on
+        Macros, which is the one screen that works without hardware, and the
+        sidebar says why the device list is empty (#22)."""
         kb_present = (self._dev_present.get("everest_max")
                       or self._dev_present.get("everest60"))
         if kb_present:
-            return  # keyboard connected — keyboard tab is already the right one
-        # No keyboard: open the first other connected device, in priority order.
+            return  # keyboard connected, that screen is already the right one
+        self._fall_back_to_present_device()
+
+    def _fall_back_to_present_device(self):
+        """Switch to the first device that is actually here, else to Macros."""
+        if (self._dev_present.get("everest_max")
+                or self._dev_present.get("everest60")):
+            self._switch_device(self._kb_panel_id)
+            return
         for dev in ("makalu67", "displaypad"):
             if self._dev_present.get(dev):
                 self._switch_device(dev)
                 return
+        if self._active_device not in ("macros", "plugins", "obs"):
+            self._switch_device("macros")
 
     def _check_devices(self):
         """Periodic USB presence check (runs in main thread — /sys reads are <1ms)."""
@@ -1265,18 +1262,30 @@ class App(ctk.CTk):
                 and self._kb_panel_id != old_kb_id):
             self._active_device = None  # force re-switch
             self._switch_device(self._kb_panel_id)
-        # Update button labels
-        mouse_label = getattr(self._makalu_panel, "_model_name", "Mouse") if hasattr(self, "_makalu_panel") else "Mouse"
+        # Entries carry the model name once we know it, so the list reads
+        # "Everest Max" and "Makalu 67" rather than "Keyboard" and "Mouse".
+        mouse_label = (getattr(self._makalu_panel, "_model_name", None)
+                       if hasattr(self, "_makalu_panel") else None)
         if kb_60_present and hasattr(self, "_everest60_panel"):
             kb_label = getattr(self._everest60_panel, "_model_name", "Everest 60")
         elif kb_max_present:
             kb_label = "Everest Max"
         else:
-            kb_label = "Keyboard"
-        self._sw_keyboard_btn.configure(text=kb_label)
-        self._sw_mouse_btn.configure(text=mouse_label)
-        self._sw_displaypad_btn.configure(text="DisplayPad")
-        self._refresh_switcher_colors()
+            kb_label = self.T("switcher_keyboard")
+        if hasattr(self, "_nav_items"):
+            self._nav_items["keyboard"].set_text(kb_label)
+            self._nav_items["makalu67"].set_text(
+                mouse_label or self.T("switcher_mouse"))
+        # A device can vanish while its screen is open (unplugged, or the pad
+        # dropping off the bus). Move to the next one that is here instead of
+        # leaving a screen up that talks to nothing.
+        if self._active_device in ("everest_max", "everest60") and not (
+                kb_max_present or kb_60_present):
+            self._fall_back_to_present_device()
+        elif (self._active_device in ("makalu67", "displaypad")
+              and not self._dev_present.get(self._active_device, False)):
+            self._fall_back_to_present_device()
+        self._refresh_sidebar()
         # Notify panels
         if hasattr(self, "_makalu_panel"):
             self._makalu_panel.set_connected(mouse_present)
@@ -1285,39 +1294,49 @@ class App(ctk.CTk):
         # Reflect (dis)connection in the empty-state overlay
         self._update_empty_state()
 
-    def _refresh_switcher_colors(self):
-        """Apply fg_color/text_color to each switcher button: blue=active, green=present, gray=absent."""
-        # Keyboard button covers both Everest Max and Everest 60
-        kb_active  = self._active_device in ("everest_max", "everest60")
+    def _refresh_sidebar(self):
+        """Show the devices that are here, hide the ones that are not, and mark
+        the current screen.
+
+        A device that is not plugged in is absent from the list rather than
+        greyed out: the list should describe this desk, not the product range.
+        The dot is therefore no longer "present or not", it is the device's
+        state, so that a pad which enumerated but has not finished its init
+        handshake can say so instead of looking identical to a working one.
+        """
+        if not hasattr(self, "_nav_items"):
+            return
         kb_present = (self._dev_present.get("everest_max", False)
                       or self._dev_present.get("everest60", False))
-        if kb_active:
-            self._sw_keyboard_btn.configure(fg_color=BLUE, text_color=FG)
-        elif kb_present:
-            self._sw_keyboard_btn.configure(fg_color=GRN, text_color=FG)
+        order = (("keyboard", kb_present),
+                 ("makalu67", self._dev_present.get("makalu67", False)),
+                 ("displaypad", self._dev_present.get("displaypad", False)))
+
+        # Re-pack in a fixed order: packing an already-packed widget again
+        # would move it to the end of the box.
+        for key, _ in order:
+            self._nav_items[key].pack_forget()
+        visible = []
+        for key, present in order:
+            if present:
+                self._nav_items[key].pack(fill="x")
+                self._nav_items[key].set_state("ok")
+                visible.append(key)
+
+        if visible:
+            self._nav_empty.pack_forget()
         else:
-            self._sw_keyboard_btn.configure(fg_color=BG2, text_color=FG2)
+            self._nav_empty.pack(fill="x", padx=UI.S3, pady=(UI.S1, UI.S2))
 
-        btn_list = [
-            ("makalu67",   self._sw_mouse_btn),
-            ("displaypad", self._sw_displaypad_btn),
-            ("obs",        self._sw_obs_btn),
-            ("macros",     self._sw_macros_btn),
-            ("plugins",    self._sw_plugins_btn),
-        ]
-        # Include plugin switcher buttons
-        for pid, btn in getattr(self, "_plugin_sw_btns", {}).items():
-            btn_list.append((pid, btn))
-
-        for dev_id, btn in btn_list:
-            active  = self._active_device == dev_id
-            present = self._dev_present.get(dev_id, False)
-            if active:
-                btn.configure(fg_color=BLUE, text_color=FG)
-            elif present:
-                btn.configure(fg_color=GRN, text_color=FG)
+        active = self._active_device
+        for key, item in self._nav_items.items():
+            if key == "keyboard":
+                item.set_selected(active in ("everest_max", "everest60"))
             else:
-                btn.configure(fg_color=BG2, text_color=FG2)
+                item.set_selected(active == key)
+
+    # Kept so older call sites keep working while the panels are migrated.
+    _refresh_switcher_colors = _refresh_sidebar
 
     # ── Tray / lifecycle ──────────────────────────────────────────────────────
 
@@ -1519,15 +1538,13 @@ class App(ctk.CTk):
                         self._update_kind = "source" if source_url else "appimage"
                         self._update_version = ver
                         self._update_install_type = install_type
-                        # Decorate the settings cog so the update is visible
-                        # without opening the dialog. Works for any install
-                        # type — source/AUR users still see "open me" too.
+                        # Say it in the sidebar so the update is visible
+                        # without opening anything. Works for every install
+                        # type, source and AUR users see "there is something"
+                        # even though the button will not install it for them.
                         if hasattr(self, "_settings_btn"):
-                            # Says what it is instead of decorating the cog:
-                            # the button opens the place where the update is.
-                            self._settings_btn.configure(
-                                text=self.T("ui_update_short", ver=ver),
-                                text_color=GRN)
+                            self._settings_btn.set_text(
+                                self.T("ui_update_short", ver=ver))
                         # Proactive popup — only for AppImage installs where
                         # we can actually do something about it from the GUI.
                         # Trigger on _update_url so source-only releases (no
@@ -1747,12 +1764,9 @@ class App(ctk.CTk):
                _version_tuple(pm._manifests[pid].get("version", "0")):
                 count += 1
         self._plugin_update_count = count
-        if hasattr(self, "_sw_plugins_btn"):
-            if count > 0:
-                self._sw_plugins_btn.configure(
-                    text=f"Plugins  ↑{count}", text_color=GRN)
-            else:
-                self._sw_plugins_btn.configure(text="Plugins")
+        item = getattr(self, "_nav_items", {}).get("plugins")
+        if item is not None:
+            item.set_text(f"Plugins ({count})" if count else "Plugins")
 
     def _open_settings(self):
         if getattr(self, "_settings_win", None) is not None:

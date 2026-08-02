@@ -17,9 +17,9 @@ from shared.ui.tokens import (
     font, S1, S2, S3, S4, S5, RADIUS, RADIUS_SM, CTRL_H, CTRL_H_SM,
 )
 from shared.ui.widgets import (
-    Card, SectionLabel, Toolbar,
+    Card, SectionLabel, Toolbar, NavItem,
     PrimaryButton, GhostButton, DangerButton,
-    StatusDot, StatusPill, Field,
+    StatusDot, StatusPill, Field, resolve_t,
     ConfirmDialog, PromptDialog, ask_yes_no, ask_text, show_error,
 )
 
@@ -29,8 +29,8 @@ __all__ = [
     "ACCENT", "ACCENT_HOVER", "OK", "WARN", "DANGER", "DANGER_HOVER",
     "FONT_FAMILY", "TEXT_XS", "TEXT_SM", "TEXT_MD", "TEXT_LG", "font",
     "S1", "S2", "S3", "S4", "S5", "RADIUS", "RADIUS_SM", "CTRL_H", "CTRL_H_SM",
-    "Card", "SectionLabel", "Toolbar",
+    "Card", "SectionLabel", "Toolbar", "NavItem",
     "PrimaryButton", "GhostButton", "DangerButton",
-    "StatusDot", "StatusPill", "Field",
+    "StatusDot", "StatusPill", "Field", "resolve_t",
     "ConfirmDialog", "PromptDialog", "ask_yes_no", "ask_text", "show_error",
 ]

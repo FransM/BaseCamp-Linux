@@ -161,6 +161,84 @@ class StatusPill(ctk.CTkFrame):
             self._dot.set_state(state)
 
 
+class NavItem(ctk.CTkFrame):
+    """One row of the sidebar: a state dot, a label, a selection marker.
+
+    The marker is a bar on the left rather than a filled row, so a selected
+    item and a device that happens to be green do not fight each other for
+    the same signal. `state` is the device state (see StatusDot) or None for
+    entries that are not a device.
+    """
+
+    def __init__(self, parent, text="", command=None, state=None,
+                 bg=T.SURFACE, **kw):
+        kw.setdefault("corner_radius", 0)
+        kw.setdefault("fg_color", bg)
+        super().__init__(parent, height=30, **kw)
+        self.pack_propagate(False)
+        self._command = command
+        self._selected = False
+        self._rest = bg          # colour of the container it sits in
+        self._bg = bg
+
+        self._marker = tk.Frame(self, bg=self._bg, width=2)
+        self._marker.pack(side="left", fill="y")
+
+        self._dot = None
+        if state is not None:
+            self._dot = StatusDot(self, state=state, size=7, bg=self._bg)
+            self._dot.pack(side="left", padx=(T.S2, 0))
+
+        self._label = ctk.CTkLabel(
+            self, text=text, font=T.font(T.TEXT_XS), text_color=T.FG_DIM,
+            anchor="w")
+        self._label.pack(side="left", fill="x", expand=True,
+                         padx=(T.S2 if self._dot else T.S3, T.S2))
+
+        for w in (self, self._label, self._marker):
+            w.bind("<Button-1>", self._on_click)
+            w.bind("<Enter>", self._on_enter)
+            w.bind("<Leave>", self._on_leave)
+        if self._dot:
+            self._dot.bind("<Button-1>", self._on_click)
+
+    # ── behaviour ─────────────────────────────────────────────────────────────
+
+    def _on_click(self, _e=None):
+        if self._command:
+            self._command()
+
+    def _on_enter(self, _e=None):
+        if not self._selected:
+            self._paint(T.SURFACE_2)
+
+    def _on_leave(self, _e=None):
+        self._paint(T.SURFACE_2 if self._selected else self._rest)
+
+    def _paint(self, bg):
+        self._bg = bg
+        self.configure(fg_color=bg)
+        self._marker.configure(bg=T.ACCENT if self._selected else bg)
+        if self._dot:
+            self._dot.configure(bg=bg)
+
+    # ── state ─────────────────────────────────────────────────────────────────
+
+    def set_selected(self, selected):
+        self._selected = bool(selected)
+        self._label.configure(
+            text_color=T.FG if selected else T.FG_DIM,
+            font=T.font(T.TEXT_XS, bold=bool(selected)))
+        self._paint(T.SURFACE_2 if selected else self._rest)
+
+    def set_text(self, text):
+        self._label.configure(text=text)
+
+    def set_state(self, state):
+        if self._dot is not None:
+            self._dot.set_state(state)
+
+
 class Field(ctk.CTkFrame):
     """Label above an entry. `var` is optional; without one the widget keeps
     its own StringVar, reachable through .get() and .set()."""
