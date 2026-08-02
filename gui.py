@@ -795,8 +795,10 @@ class App(ctk.CTk):
         if isinstance(want, str):
             # A real page name always wins, over the "prev" keyword as well as
             # over an id, so a page the user called "prev" or "3" stays
-            # reachable by the name shown in the picker.
-            target = next((pid for pid, name in known.items() if name == want), None)
+            # reachable by the name shown in the picker. Resolved by the panel's
+            # own lookup, the one a 'page' button action goes through, so both
+            # paths agree on what a name means.
+            target = panel._page_id_by_name(want)
             if target is None and want.lower() == "prev":
                 target = panel._prev_page
             elif target is None:

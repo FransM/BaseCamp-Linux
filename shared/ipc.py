@@ -14,9 +14,13 @@ Example command objects::
 
     {"cmd": "rgb", "device": "everest60", "args": ["side-static", "255", "0", "0"]}
     {"cmd": "page", "page": "displaypad"}
+    {"cmd": "dp_page", "page": "Editor"}
     {"cmd": "set_key", "button": 0, "type": "shell", "action": "kitty"}
     {"cmd": "image", "button": 2, "path": "/home/me/icon.png"}
     {"cmd": "ping"}
+
+``page`` switches the GUI tab, ``dp_page`` switches the DisplayPad's own key
+page (see docs/CONTROL_INTERFACE.md for the full list).
 
 This module has no GUI dependencies so it is safe to import from the controller
 daemon and from a thin CLI client.
