@@ -1872,20 +1872,33 @@ class MultiUploadDialog(ctk.CTkToplevel):
 
 # ── Accordion ─────────────────────────────────────────────────────────────────
 
-def layout_cards(parent, sections, gap=12):
-    """Two columns of cards, each card at its natural height.
+class CardColumns:
+    """Two columns that fill themselves, so cards keep their own height.
 
-    The cards used to stretch to the height of the tallest one in their row,
-    so a card with two settings in it grew to match a long one beside it and
-    showed a field of empty space. Sticking them to the top of the row keeps
-    every card as tall as its contents.
+    A grid ties the two cards of a row together: the shorter one either
+    stretches to match its neighbour or leaves a hole under itself before the
+    next row starts. Asking for the next column before building each card
+    means every card is packed directly under the one above it in its own
+    column, which is the layout the design shows.
     """
-    parent.grid_columnconfigure(0, weight=1, uniform="card")
-    parent.grid_columnconfigure(1, weight=1, uniform="card")
-    for i, sec in enumerate(sections):
-        sec.outer.grid(row=i // 2, column=i % 2, sticky="new",
-                       padx=(0, gap // 2) if i % 2 == 0 else (gap // 2, 0),
-                       pady=(0, gap))
+
+    def __init__(self, parent, gap=12):
+        self._gap = gap
+        self.left = ctk.CTkFrame(parent, fg_color="transparent")
+        self.left.pack(side="left", fill="both", expand=True, padx=(0, gap // 2))
+        self.right = ctk.CTkFrame(parent, fg_color="transparent")
+        self.right.pack(side="left", fill="both", expand=True, padx=(gap // 2, 0))
+        self._n = 0
+
+    def next(self):
+        """Parent for the next card. Alternates left, right, left, ..."""
+        col = self.left if self._n % 2 == 0 else self.right
+        self._n += 1
+        return col
+
+    def place(self, section):
+        """Pack a card that was built with auto_pack=False into its column."""
+        section.outer.pack(fill="x", pady=(0, self._gap))
 
 
 class AccordionSection:

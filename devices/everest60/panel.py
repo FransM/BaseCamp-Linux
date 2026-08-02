@@ -5,7 +5,7 @@ import threading
 import tkinter as tk
 import customtkinter as ctk
 
-from shared.ui_helpers import (layout_cards, BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER,
+from shared.ui_helpers import (CardColumns, BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER,
                                cap_scroll_speed)
 from shared.config import (CONFIG_DIR, load_rgb_config, save_rgb_config,
                             _load_per_key_60, _save_per_key_60,
@@ -113,10 +113,11 @@ class Everest60Panel(ctk.CTkFrame):
         cards.pack(fill="both", expand=True, padx=12, pady=8)
 
 
-        self._build_rgb_section(cards)
-        self._build_side_leds_section(cards)
-
-        layout_cards(cards, self._sections)
+        cols = CardColumns(cards)
+        self._build_rgb_section(cols.next())
+        cols.place(self._sections[-1])
+        self._build_side_leds_section(cols.next())
+        cols.place(self._sections[-1])
         # Custom RGB is now the "Custom" entry in the effect dropdown (#34) — no
         # separate section.
 

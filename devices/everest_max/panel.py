@@ -22,7 +22,7 @@ from shared.config import (
     _save_to_library, _save_to_main_library,
     _compute_lib_hash, _compute_main_lib_hash,
 )
-from shared.ui_helpers import (layout_cards,
+from shared.ui_helpers import (CardColumns,
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
     AccordionSection, LibraryPickerDialog, MultiUploadDialog, CustomRGBWindow,
     pick_color, pick_library_image, pick_main_library_image,
@@ -128,8 +128,22 @@ class EverestMaxPanel(ctk.CTkFrame):
         cards = ctk.CTkFrame(scroll, fg_color="transparent")
         cards.pack(fill="both", expand=True, padx=12, pady=8)
 
+        # Ask for the column before building each card, so every card is
+        # packed under the one above it instead of hanging in a grid row.
+        cols = CardColumns(cards)
+        for build in (self._build_clock_section, self._build_monitor_section,
+                      self._build_main_display_section,
+                      self._build_numpad_section, self._build_rgb_section,
+                      self._build_zone_section):
+            build(cols.next())
+            cols.place(self._sections[-1])
 
-        clock_card = AccordionSection(cards, self._app, "", "clock_title",
+        self._app._apply_lang()
+        self._app.update_idletasks()
+        self._finish_ui(scroll)
+
+    def _build_clock_section(self, parent):
+        clock_card = AccordionSection(parent, self._app, "", "clock_title",
                                       card=True, auto_pack=False,
                                       hint=self._current_style.get())
         self._sections.append(clock_card)
@@ -195,17 +209,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         # anyone whose keyboard is not plugged in. The variables stay so the
         # rest of this panel keeps working unchanged.
 
-        self._build_monitor_section(cards)
-        self._build_main_display_section(cards)
-        self._build_numpad_section(cards)
-        self._build_rgb_section(cards)
-        self._build_zone_section(cards)
-
-        layout_cards(cards, self._sections)
-
-        self._app._apply_lang()
-        self._app.update_idletasks()
-
+    def _finish_ui(self, scroll):
         from shared.ui_helpers import cap_scroll_speed
         cap_scroll_speed(scroll)
 

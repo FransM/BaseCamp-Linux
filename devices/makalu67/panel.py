@@ -5,7 +5,7 @@ import tkinter as tk
 import customtkinter as ctk
 import shared.ui as UI
 
-from shared.ui_helpers import (layout_cards,
+from shared.ui_helpers import (CardColumns,
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
     AccordionSection, pick_color, _rgb_hex, cap_scroll_speed,
 )
@@ -135,12 +135,15 @@ class Makalu67Panel(ctk.CTkFrame):
         cards.pack(fill="both", expand=True, padx=12, pady=8)
 
 
-        self._build_rgb_section(cards)
-        self._build_dpi_section(cards)
-        self._build_remap_section(cards)
-        self._build_settings_section(cards)
-
-        layout_cards(cards, self._sections)
+        cols = CardColumns(cards)
+        self._build_rgb_section(cols.next())
+        cols.place(self._sections[-1])
+        self._build_dpi_section(cols.next())
+        cols.place(self._sections[-1])
+        self._build_remap_section(cols.next())
+        cols.place(self._sections[-1])
+        self._build_settings_section(cols.next())
+        cols.place(self._sections[-1])
 
         self._app.update_idletasks()
 
