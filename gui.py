@@ -1916,6 +1916,24 @@ class App(ctk.CTk):
         if item is not None:
             item.set_text(f"Plugins ({count})" if count else "Plugins")
 
+    def open_screen(self, screen_id, factory, title=None):
+        """Register and show a screen that is built the first time it is used.
+
+        The per-key colour editors are the case this exists for: building them
+        at startup would cost a canvas with 126 keys per keyboard for a screen
+        most sessions never open.
+        """
+        if screen_id not in self._panels:
+            panel = factory(self._panel_area)
+            self._panels[screen_id] = panel
+            if title:
+                self._SCREEN_TITLES[screen_id] = title
+        self._switch_device(screen_id)
+
+    def close_screen(self, screen_id, back_to):
+        """Leave a screen opened with open_screen() and go back."""
+        self._switch_device(back_to)
+
     def _open_settings(self):
         """Settings is a screen now, not a modal on top of the app."""
         self._switch_device("settings")

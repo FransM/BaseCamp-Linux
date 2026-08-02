@@ -741,19 +741,26 @@ _SIDE_ZONE_INDICES = [
 
 # ── CustomRGBWindow ────────────────────────────────────────────────────────────
 
-class CustomRGBWindow(ctk.CTkToplevel):
+class CustomRGBWindow(ctk.CTkFrame):
+    """The per-key colour editor.
+
+    It used to be a window on top of the app, with the colour picker as a
+    third window on top of that, which regularly covered the very keyboard
+    someone was painting. It is a screen now: `parent` is the content area and
+    `on_close` takes the caller back to the device it came from. The name is
+    kept because six hundred lines below refer to it.
+    """
+
     def __init__(self, app, layout=None, canvas_w=None, canvas_h=None,
                  num_leds=126, has_side_leds=True, num_side_leds=45,
                  has_numpad=True, has_persist=True, side_layout="ring",
                  load_per_key=None, save_per_key=None,
                  load_presets=None, save_presets=None,
-                 apply_cmd=None):
-        super().__init__(app)
+                 apply_cmd=None, parent=None, on_close=None):
+        super().__init__(parent if parent is not None else app, fg_color=BG)
         self._app = app
         self._lang = getattr(app, '_lang', {})
-        self.title(self._T("custom_rgb_title"))
-        self.resizable(False, False)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._on_close_cb = on_close
 
         self._layout     = layout    if layout    is not None else _KB_LAYOUT
         self._canvas_w   = canvas_w  if canvas_w  is not None else _KB_CANVAS_W
@@ -1430,11 +1437,20 @@ class CustomRGBWindow(ctk.CTkToplevel):
         except Exception as ex:
             self._status.configure(text=self._T("custom_rgb_load_error", err=str(ex)), text_color=RED)
 
+    def header_actions(self, parent):
+        """A way back, in the screen header where every screen has its
+        actions. The editor had no close control of its own before: it relied
+        on the window title bar, which a screen does not have."""
+        import shared.ui as _UI
+        _UI.GhostButton(parent, self._T("ui_back"), self._on_close,
+                        width=110, height=_UI.CTRL_H_SM).pack(side="right")
+
     def _on_close(self):
         if self._bri_debounce_id is not None:
             self.after_cancel(self._bri_debounce_id)
             self._bri_debounce_id = None
-        self.destroy()
+        if self._on_close_cb:
+            self._on_close_cb()
 
 
 # ── Library Picker Dialog ──────────────────────────────────────────────────────

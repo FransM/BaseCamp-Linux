@@ -838,10 +838,15 @@ class EverestMaxPanel(ctk.CTkFrame):
         threading.Thread(target=run, daemon=True).start()
 
     def _open_rgb_editor(self):
-        if self._rgb_win is not None and self._rgb_win.winfo_exists():
-            self._rgb_win.focus()
-            return
-        self._rgb_win = CustomRGBWindow(self._app)
+        """Open the per-key editor as a screen, not as a window on top of the
+        window it belongs to."""
+        self._app.open_screen(
+            "custom_rgb_max",
+            lambda parent: CustomRGBWindow(
+                self._app, parent=parent,
+                on_close=lambda: self._app.close_screen("custom_rgb_max",
+                                                        "everest_max")),
+            title=self.T("custom_rgb_title"))
 
     def _on_btn_type_change(self, label, idx):
         labels = self._numpad_type_labels_fn()

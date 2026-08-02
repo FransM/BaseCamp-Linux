@@ -412,26 +412,30 @@ class Everest60Panel(ctk.CTkFrame):
 
     def _open_custom_rgb(self):
         from shared.ui_helpers import CustomRGBWindow, _KB60_LAYOUT, _KB60_CANVAS_W, _KB60_CANVAS_H, _KB60_NUM_LEDS
-        w = CustomRGBWindow(
-            self._app,
-            layout=_KB60_LAYOUT,
-            canvas_w=_KB60_CANVAS_W,
-            # Extra vertical space for the 44-LED side-ring strip below the keys.
-            canvas_h=_KB60_CANVAS_H + 96,
-            num_leds=_KB60_NUM_LEDS,
-            has_side_leds=True,      # per-LED side ring painting (#4)
-            num_side_leds=44,        # hw indices 126..169
-            side_layout="strip",     # no per-edge ring geometry for the 60 yet
-            has_numpad=False,
-            has_persist=False,
-            load_per_key=_load_per_key_60,
-            save_per_key=_save_per_key_60,
-            load_presets=_load_presets_60,
-            save_presets=_save_presets_60,
-            apply_cmd=lambda *a: self._app._cmd_for_device("everest60", *a),
-        )
-        w.lift()
-        w.focus_force()
+        self._app.open_screen(
+            "custom_rgb_60",
+            lambda parent: CustomRGBWindow(
+                self._app,
+                parent=parent,
+                on_close=lambda: self._app.close_screen("custom_rgb_60",
+                                                        "everest60"),
+                layout=_KB60_LAYOUT,
+                canvas_w=_KB60_CANVAS_W,
+                # Extra vertical space for the 44-LED side-ring strip below the keys.
+                canvas_h=_KB60_CANVAS_H + 96,
+                num_leds=_KB60_NUM_LEDS,
+                has_side_leds=True,      # per-LED side ring painting (#4)
+                num_side_leds=44,        # hw indices 126..169
+                side_layout="strip",     # no per-edge ring geometry for the 60 yet
+                has_numpad=False,
+                has_persist=False,
+                load_per_key=_load_per_key_60,
+                save_per_key=_save_per_key_60,
+                load_presets=_load_presets_60,
+                save_presets=_save_presets_60,
+                apply_cmd=lambda *a: self._app._cmd_for_device("everest60", *a),
+            ),
+            title=self.T("custom_rgb_title"))
 
     def _available_cmodes(self, name):
         """Colour-mode keys the given effect supports (subset of single/dual/rainbow)."""

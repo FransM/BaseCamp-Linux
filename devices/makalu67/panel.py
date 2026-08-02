@@ -3,6 +3,7 @@ import subprocess
 import threading
 import tkinter as tk
 import customtkinter as ctk
+import shared.ui as UI
 
 from shared.ui_helpers import (
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
@@ -1041,10 +1042,13 @@ class Makalu67Panel(ctk.CTkFrame):
 
 
     def _open_custom_rgb(self):
-        if self._custom_rgb_win is not None and self._custom_rgb_win.winfo_exists():
-            self._custom_rgb_win.focus()
-            return
-        self._custom_rgb_win = MakaluCustomRGBWindow(self._app, self)
+        self._app.open_screen(
+            "custom_rgb_makalu",
+            lambda parent: MakaluCustomRGBWindow(
+                self._app, self, parent=parent,
+                on_close=lambda: self._app.close_screen("custom_rgb_makalu",
+                                                        "makalu67")),
+            title=self.T("makalu_rgb_window_title"))
 
     def _rgb_update_controls(self):
         name = self._rgb_mode_var.get()
@@ -1183,21 +1187,23 @@ class Makalu67Panel(ctk.CTkFrame):
 
 # ── Makalu 67 Custom RGB Window ───────────────────────────────────────────────
 
-class MakaluCustomRGBWindow(ctk.CTkToplevel):
-    """Per-LED color editor for the Makalu 67 (8 LEDs, 4 left + 4 right)."""
+class MakaluCustomRGBWindow(ctk.CTkFrame):
+    """Per-LED colour editor for the Makalu 67 (8 LEDs, 4 left + 4 right).
+
+    A screen rather than a window, like its keyboard counterpart. The name is
+    kept because the rest of the file refers to it.
+    """
 
     def _T(self, key, **kw):
         """This window had no translation access at all, which is how its
         whole toolbar ended up as English literals."""
         return self._app.T(key, **kw)
 
-    def __init__(self, app, panel):
-        super().__init__(app)
-        self.title(app.T("makalu_rgb_window_title"))
-        self.resizable(False, False)
+    def __init__(self, app, panel, parent=None, on_close=None):
+        super().__init__(parent if parent is not None else app, fg_color=BG)
         self._app   = app
         self._panel = panel
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._on_close_cb = on_close
 
         from shared.config import (
             _load_makalu_leds, _save_makalu_leds,
@@ -1631,8 +1637,13 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
             self.after(0, finish)
         threading.Thread(target=run, daemon=True).start()
 
+    def header_actions(self, parent):
+        UI.GhostButton(parent, self._T("ui_back"), self._on_close,
+                       width=110, height=UI.CTRL_H_SM).pack(side="right")
+
     def _on_close(self):
-        self.destroy()
+        if self._on_close_cb:
+            self._on_close_cb()
 
 
 # ── Helper: accordion section with plain string title ─────────────────────────
