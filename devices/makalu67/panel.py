@@ -137,7 +137,6 @@ class Makalu67Panel(ctk.CTkFrame):
         cards.grid_columnconfigure(1, weight=1, uniform="card")
 
         self._build_rgb_section(cards)
-        self._build_custom_section(cards)
         self._build_dpi_section(cards)
         self._build_remap_section(cards)
         self._build_settings_section(cards)
@@ -156,12 +155,6 @@ class Makalu67Panel(ctk.CTkFrame):
         self._rgb_section = s
         self._build_rgb_content(s.content)
 
-    def _build_custom_section(self, parent):
-        s = _PlaceholderSection(parent, self._app, "", self.T("makalu_custom_title"), card=True, auto_pack=False)
-        self._sections.append(s)
-        self._section_titles.append((s, "makalu_custom_title"))
-        self._custom_section = s
-        self._build_custom_content(s.content)
 
     def _build_rgb_content(self, parent):
         # ── Effect dropdown ──────────────────────────────────────────────────
@@ -289,14 +282,23 @@ class Makalu67Panel(ctk.CTkFrame):
                                          text_color=FG2, font=("Helvetica", 11))
         self._rgb_status.pack(side="left", padx=(10, 0))
 
+        self._build_custom_content(parent)
         self._rgb_update_controls()
 
     # ── Custom RGB ────────────────────────────────────────────────────────────
 
     def _build_custom_content(self, parent):
-        _btn = UI.GhostButton(parent, self.T("makalu_custom_open"),
-                              self._open_custom_rgb, width=220)
-        _btn.pack(pady=20)
+        """Row inside the lighting card: per-LED painting belongs to lighting,
+        and on its own it was a card with nothing in it but one button."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(8, 10))
+        ctk.CTkLabel(row, text=self.T("makalu_custom_title"),
+                     font=("Helvetica", 11), text_color=FG2,
+                     anchor="w").pack(side="left")
+        _btn = UI.GhostButton(row, self.T("makalu_custom_open"),
+                              self._open_custom_rgb, width=200,
+                              height=UI.CTRL_H_SM)
+        _btn.pack(side="right")
         self._reg(_btn, "makalu_custom_open")
 
     # ── DPI ───────────────────────────────────────────────────────────────────
@@ -908,11 +910,11 @@ class Makalu67Panel(ctk.CTkFrame):
         return lbl
 
     def _apply_btn(self, parent, cmd):
-        btn = ctk.CTkButton(
-            parent, text=self.T("makalu_apply"), font=("Helvetica", 11),
-            fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-            width=70, height=28, corner_radius=5, command=cmd,
-        )
+        # Four filled accent buttons on one screen say "most important" four
+        # times. The lighting card keeps the filled one, the sensor settings
+        # get outlines.
+        btn = UI.GhostButton(parent, self.T("makalu_apply"), cmd, width=84,
+                             height=UI.CTRL_H_SM)
         btn.pack(side="left", padx=(8, 0))
         self._reg(btn, "makalu_apply")
         return btn
