@@ -34,10 +34,10 @@ GRN    = "#22c55e"
 RED    = "#ef4444"
 BORDER = "#1e1e30"
 
-FONT      = ("Helvetica", 11)
-FONT_BOLD = ("Helvetica", 11, "bold")
-FONT_SM   = ("Helvetica", 10)
-FONT_LG   = ("Helvetica", 13, "bold")
+FONT      = (_ui.FONT_FAMILY, 11)
+FONT_BOLD = (_ui.FONT_FAMILY, 11, "bold")
+FONT_SM   = (_ui.FONT_FAMILY, 10)
+FONT_LG   = (_ui.FONT_FAMILY, 13, "bold")
 
 # Accordion animation
 ANIM_STEPS = 8
@@ -835,7 +835,7 @@ class CustomRGBWindow(ctk.CTkFrame):
         _ui.GhostButton(bar, self._T("custom_rgb_undo"), self._undo, width=104,
                         height=_ui.CTRL_H_SM).pack(side="left")
         self._sel_lbl = ctk.CTkLabel(bar, text=self._T("custom_rgb_selected", n=0),
-                                     text_color=FG2, font=("Helvetica", 11))
+                                     text_color=FG2, font=(_ui.FONT_FAMILY, 11))
         self._sel_lbl.pack(side="right")
 
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -862,10 +862,10 @@ class CustomRGBWindow(ctk.CTkFrame):
         kb_bar = ctk.CTkFrame(stage, fg_color="transparent")
         kb_bar.pack(pady=(8, 0))
         ctk.CTkLabel(kb_bar, text=self._T("custom_rgb_kb_layout"),
-                     text_color=FG2, font=("Helvetica", 11)).pack(side="left", padx=(0, 6))
+                     text_color=FG2, font=(_ui.FONT_FAMILY, 11)).pack(side="left", padx=(0, 6))
         self._kb_seg = ctk.CTkSegmentedButton(
             kb_bar, values=["QWERTY", "QWERTZ"], height=26,
-            font=("Helvetica", 11),
+            font=(_ui.FONT_FAMILY, 11),
             selected_color=BLUE, unselected_color=BG3,
             text_color=FG, unselected_hover_color="#2a2a3a",
             command=self._switch_kb_layout)
@@ -913,7 +913,7 @@ class CustomRGBWindow(ctk.CTkFrame):
         self._bri_sl.configure(command=self._on_bri_change)
         self._bri_sl.pack(side="left", fill="x", expand=True)
         self._bri_val = ctk.CTkLabel(bri_row, text=str(self._bri), text_color=FG,
-                                     font=("Helvetica", 11), width=32)
+                                     font=(_ui.FONT_FAMILY, 11), width=32)
         self._bri_val.pack(side="right")
 
         _ui.SectionLabel(rail, text=self._T("custom_rgb_presets")).pack(
@@ -923,7 +923,7 @@ class CustomRGBWindow(ctk.CTkFrame):
             rail, variable=self._preset_var, values=[],
             width=_RGB_RAIL_W - 24, height=_ui.CTRL_H_SM,
             fg_color=BG3, border_color=BORDER, button_color=BG3,
-            dropdown_fg_color=BG2, text_color=FG, font=("Helvetica", 11))
+            dropdown_fg_color=BG2, text_color=FG, font=(_ui.FONT_FAMILY, 11))
         self._preset_combo.pack(padx=12)
         pre_row = ctk.CTkFrame(rail, fg_color="transparent")
         pre_row.pack(fill="x", padx=12, pady=(6, 0))
@@ -934,7 +934,7 @@ class CustomRGBWindow(ctk.CTkFrame):
         _ui.DangerButton(pre_row, self._T("custom_rgb_delete"), self._preset_delete,
                          width=62, height=_ui.CTRL_H_SM).pack(side="left")
         self._preset_status = ctk.CTkLabel(rail, text="", text_color=FG2,
-                                           font=("Helvetica", 10), anchor="w")
+                                           font=(_ui.FONT_FAMILY, 10), anchor="w")
         self._preset_status.pack(fill="x", padx=12, pady=(4, 0))
         self._preset_refresh()
 
@@ -947,7 +947,7 @@ class CustomRGBWindow(ctk.CTkFrame):
                         width=_RGB_RAIL_W - 24,
                         height=_ui.CTRL_H_SM).pack(fill="x", pady=(6, 0))
         self._status = ctk.CTkLabel(prof, text="", text_color=FG2,
-                                    font=("Helvetica", 11), anchor="w")
+                                    font=(_ui.FONT_FAMILY, 11), anchor="w")
         self._status.pack(fill="x", pady=(6, 0))
 
     def _toggle_eyedrop(self):
@@ -1002,7 +1002,7 @@ class CustomRGBWindow(ctk.CTkFrame):
             font_size = 6 if w < 22 else 7
             draw_lbl = qz.get(lbl, lbl)
             self._cv.create_text(x + w // 2, yo + h // 2, text=draw_lbl,
-                                 fill="#cccccc", font=("Helvetica", font_size),
+                                 fill="#cccccc", font=(_ui.FONT_FAMILY, font_size),
                                  anchor="center")
             if idx is not None:
                 self._item_led[item] = idx
@@ -1058,7 +1058,7 @@ class CustomRGBWindow(ctk.CTkFrame):
         gap = 3
         sz = min(16, max(9, int((x2 - x1 - (cols - 1) * gap) / cols)))
         self._cv.create_text(x1, y0 - 3, anchor="sw", text=self._T("side_leds_title"),
-                             fill="#8892a6", font=("Helvetica", 9))
+                             fill="#8892a6", font=(_ui.FONT_FAMILY, 9))
         row_h = sz + gap + 9
         for si in range(n):
             row, col = divmod(si, cols)
@@ -1074,7 +1074,7 @@ class CustomRGBWindow(ctk.CTkFrame):
             # Sparse position ticks so the user can orient (1, 12, 24, 36, 44).
             if si == 0 or si == n - 1 or (si + 1) % 12 == 0:
                 self._cv.create_text(px + sz // 2, py + sz + 5, text=str(si + 1),
-                                     fill="#556", font=("Helvetica", 7))
+                                     fill="#556", font=(_ui.FONT_FAMILY, 7))
 
     def _switch_kb_layout(self, value):
         self._kb_layout_mode = value
@@ -1282,11 +1282,11 @@ class CustomRGBWindow(ctk.CTkFrame):
         dlg.grab_set()
         dlg.configure(fg_color=BG)
         ctk.CTkLabel(dlg, text=self._T("custom_rgb_preset_name"), text_color=FG,
-                     font=("Helvetica", 12)).pack(pady=(14, 4))
+                     font=(_ui.FONT_FAMILY, 12)).pack(pady=(14, 4))
         var = tk.StringVar(value=self._preset_var.get())
         entry = ctk.CTkEntry(dlg, textvariable=var, width=200, height=30,
                              fg_color=BG2, text_color=FG, border_color=BORDER,
-                             font=("Helvetica", 12))
+                             font=(_ui.FONT_FAMILY, 12))
         entry.pack()
         entry.focus()
         def _save():
@@ -1502,13 +1502,13 @@ class LibraryPickerDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             self, text=self._app.T("multi_upload_browse"),
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
-            font=("Helvetica", 11), height=34, corner_radius=6,
+            font=(_ui.FONT_FAMILY, 11), height=34, corner_radius=6,
             command=self._browse_file,
         ).pack(fill="x", padx=12, pady=(12, 6))
 
         ctk.CTkLabel(
             self, text=self._app.T("multi_upload_library"),
-            font=("Helvetica", 10), text_color=FG2,
+            font=(_ui.FONT_FAMILY, 10), text_color=FG2,
         ).pack(padx=14, anchor="w")
 
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG2, corner_radius=6, height=300)
@@ -1527,7 +1527,7 @@ class LibraryPickerDialog(ctk.CTkToplevel):
 
         if not files:
             ctk.CTkLabel(container, text=self._app.T("multi_upload_empty"),
-                         font=("Helvetica", 11), text_color=FG2).pack(pady=20)
+                         font=(_ui.FONT_FAMILY, 11), text_color=FG2).pack(pady=20)
             return
 
         row_frame = None
@@ -1560,7 +1560,7 @@ class LibraryPickerDialog(ctk.CTkToplevel):
             ctk.CTkButton(
                 cell, text="✕", width=20, height=16,
                 fg_color="transparent", hover_color=RED, text_color=FG2,
-                font=("Helvetica", 9), corner_radius=2,
+                font=(_ui.FONT_FAMILY, 9), corner_radius=2,
                 command=lambda fn=fname, c=cell: self._delete(fn, c),
             ).pack()
 
@@ -1688,7 +1688,7 @@ class MultiUploadDialog(ctk.CTkToplevel):
 
     def _build_ui(self):
         ctk.CTkLabel(self, text=self._app.T("multi_upload_title"),
-                     font=("Helvetica", 13, "bold"), text_color=FG).pack(
+                     font=(_ui.FONT_FAMILY, 13, "bold"), text_color=FG).pack(
                          padx=16, pady=(14, 10), anchor="w")
 
         tile_row = ctk.CTkFrame(self, fg_color="transparent")
@@ -1700,11 +1700,11 @@ class MultiUploadDialog(ctk.CTkToplevel):
             tile.pack(side="left", padx=4)
             tile.pack_propagate(False)
 
-            ctk.CTkLabel(tile, text=f"D{i+1}", font=("Helvetica", 10, "bold"),
+            ctk.CTkLabel(tile, text=f"D{i+1}", font=(_ui.FONT_FAMILY, 10, "bold"),
                          text_color=YLW).pack(pady=(6, 0))
 
             preview = ctk.CTkLabel(tile, text="+", text_color=FG2,
-                                   font=("Helvetica", 20), width=80, height=72,
+                                   font=(_ui.FONT_FAMILY, 20), width=80, height=72,
                                    fg_color=BG2, corner_radius=4, cursor="hand2")
             preview.pack(padx=4, pady=2)
             self._tile_lbls[i] = preview
@@ -1715,7 +1715,7 @@ class MultiUploadDialog(ctk.CTkToplevel):
             ctk.CTkButton(
                 tile, text="↑", height=22, corner_radius=4, width=80,
                 fg_color=BLUE, hover_color="#0884be", text_color=FG,
-                font=("Helvetica", 11, "bold"),
+                font=(_ui.FONT_FAMILY, 11, "bold"),
                 command=lambda ix=i: self._upload_single(ix),
             ).pack(padx=4, pady=(0, 6))
 
@@ -1729,10 +1729,10 @@ class MultiUploadDialog(ctk.CTkToplevel):
             row = ctk.CTkFrame(status_frame, fg_color="transparent")
             row.pack(fill="x", padx=8, pady=(4 if i == 0 else 0, 0))
 
-            ctk.CTkLabel(row, text=f"D{i+1}:", font=("Helvetica", 10, "bold"),
+            ctk.CTkLabel(row, text=f"D{i+1}:", font=(_ui.FONT_FAMILY, 10, "bold"),
                          text_color=YLW, width=28, anchor="w").pack(side="left")
 
-            lbl = ctk.CTkLabel(row, text="—", font=("Helvetica", 10),
+            lbl = ctk.CTkLabel(row, text="—", font=(_ui.FONT_FAMILY, 10),
                                text_color=FG2, anchor="w")
             lbl.pack(side="left", fill="x", expand=True)
             self._status_lbls[i] = lbl
@@ -1752,14 +1752,14 @@ class MultiUploadDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             btn_row, text=self._app.T("gif_frame_cancel"),
             fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-            font=("Helvetica", 11), height=34, corner_radius=6, width=110,
+            font=(_ui.FONT_FAMILY, 11), height=34, corner_radius=6, width=110,
             command=self.destroy,
         ).pack(side="right", padx=(6, 0))
 
         self._upload_btn = ctk.CTkButton(
             btn_row, text=self._app.T("multi_upload_start"),
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
-            font=("Helvetica", 11, "bold"), height=34, corner_radius=6,
+            font=(_ui.FONT_FAMILY, 11, "bold"), height=34, corner_radius=6,
             command=self._start_upload,
         )
         self._upload_btn.pack(side="right")
@@ -1942,11 +1942,11 @@ class AccordionSection:
         # its own colour into a system that has a rule for every colour, and
         # left a missing-glyph box on machines without one.
         if icon:
-            ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
+            ctk.CTkLabel(self._header, text=icon, font=(_ui.FONT_FAMILY, 14),
                          text_color=YLW, width=30).pack(side="left", padx=(8, 4))
 
         self._title_lbl = ctk.CTkLabel(self._header, text=app.T(title_key),
-                                        font=("Helvetica", 11, "bold"),
+                                        font=(_ui.FONT_FAMILY, 11, "bold"),
                                         text_color=FG, anchor="w")
         self._title_lbl.pack(side="left", fill="x", expand=True, padx=4, pady=12)
         app._reg(self._title_lbl, title_key)
@@ -1956,12 +1956,12 @@ class AccordionSection:
         self._hint_lbl = None
         if card:
             self._hint_lbl = ctk.CTkLabel(
-                self._header, text=hint or "", font=("Helvetica", 11),
+                self._header, text=hint or "", font=(_ui.FONT_FAMILY, 11),
                 text_color=FG2, anchor="e")
             self._hint_lbl.pack(side="right", padx=(0, 12))
 
         self._chevron = ctk.CTkLabel(self._header, text="▶",
-                                      font=("Helvetica", 10), text_color=FG2, width=24)
+                                      font=(_ui.FONT_FAMILY, 10), text_color=FG2, width=24)
         if not card:
             self._chevron.pack(side="right", padx=(0, 12))
 

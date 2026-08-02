@@ -100,8 +100,10 @@ class Card(ctk.CTkFrame):
         if title:
             self._head = ctk.CTkFrame(self, fg_color="transparent")
             self._head.pack(fill="x", padx=T.S4, pady=(T.S3, 0))
-            ctk.CTkLabel(self._head, text=title, font=T.font(T.TEXT_XS, bold=True),
-                         text_color=T.FG, anchor="w").pack(side="left")
+            self.title_label = ctk.CTkLabel(
+                self._head, text=title, font=T.font(T.TEXT_XS, bold=True),
+                text_color=T.FG, anchor="w")
+            self.title_label.pack(side="left")
             if hint:
                 self.hint_label = ctk.CTkLabel(
                     self._head, text=hint, font=T.font(T.TEXT_XS),
@@ -116,6 +118,20 @@ class Card(ctk.CTkFrame):
         """Update the right-hand hint of the card header, if it has one."""
         if getattr(self, "hint_label", None) is not None:
             self.hint_label.configure(text=text)
+
+    def configure(self, **kw):
+        """`text` is the card's title, which lives in the header label.
+
+        Without this a card registered for translation raises inside the
+        caller's try/except on a language change and keeps its old title while
+        the controls below it change over.
+        """
+        if "text" in kw:
+            text = kw.pop("text")
+            if getattr(self, "title_label", None) is not None:
+                self.title_label.configure(text=text)
+        if kw:
+            super().configure(**kw)
 
 
 class Toolbar(ctk.CTkFrame):
@@ -137,6 +153,14 @@ class SectionLabel(ctk.CTkLabel):
         kw.setdefault("text_color", T.FG_FAINT)
         kw.setdefault("anchor", "w")
         super().__init__(parent, text=text.upper(), **kw)
+
+    def configure(self, **kw):
+        """Uppercase here too, not only in __init__. A language change relabels
+        through configure(), and without this the eyebrow would come back in
+        sentence case while every other one stayed uppercase."""
+        if "text" in kw:
+            kw["text"] = str(kw["text"]).upper()
+        super().configure(**kw)
 
 
 # ── Buttons ───────────────────────────────────────────────────────────────────
@@ -250,6 +274,19 @@ class NavItem(ctk.CTkFrame):
             w.bind("<Leave>", self._on_leave)
         if self._dot:
             self._dot.bind("<Button-1>", self._on_click)
+
+    def configure(self, **kw):
+        """`text` belongs to the inner label, not to the frame.
+
+        The shell relabels on a language change by calling configure(text=...)
+        on whatever it registered. Without this the call raises inside the
+        caller's try/except and the entry silently keeps the old language while
+        everything around it changes.
+        """
+        if "text" in kw:
+            self._label.configure(text=kw.pop("text"))
+        if kw:
+            super().configure(**kw)
 
     # ── behaviour ─────────────────────────────────────────────────────────────
 

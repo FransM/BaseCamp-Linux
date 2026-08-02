@@ -106,7 +106,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         """
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", pady=3)
-        self._reg(ctk.CTkLabel(row, text=self.T(label_key), font=("Helvetica", 11),
+        self._reg(ctk.CTkLabel(row, text=self.T(label_key), font=(UI.FONT_FAMILY, 11),
                                text_color=FG2, anchor="w"), label_key).pack(side="left")
         return row
 
@@ -159,7 +159,7 @@ class EverestMaxPanel(ctk.CTkFrame):
                                          font=("Courier", 24, "bold"), text_color=BLUE)
         self._clock_label.pack()
         self._date_label = ctk.CTkLabel(face, text="",
-                                        font=("Helvetica", 10), text_color=FG2)
+                                        font=(UI.FONT_FAMILY, 10), text_color=FG2)
         self._date_label.pack(pady=(2, 0))
 
         rows = ctk.CTkFrame(dash, fg_color="transparent")
@@ -170,7 +170,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             fmt_row, values=["24H", "12H"],
             variable=self._clock_format,
             command=lambda _: self._on_format_change(),
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             fg_color=BG3, selected_color=BLUE, selected_hover_color=BLUE,
             unselected_color=BG3, unselected_hover_color=BG2,
             text_color=FG, width=94, height=UI.CTRL_H_SM,
@@ -181,7 +181,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             style_row, values=list(STYLES.keys()),
             variable=self._current_style,
             command=lambda _: self._on_style_change(),
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             fg_color=BG3, selected_color=BLUE, selected_hover_color=BLUE,
             unselected_color=BG3, unselected_hover_color=BG2,
             text_color=FG, width=150, height=UI.CTRL_H_SM,
@@ -200,7 +200,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._lang_var = self._app._lang_var
         self._lang_combo = ctk.CTkComboBox(rows, variable=self._lang_var, values=[])
 
-        self._style_status = ctk.CTkLabel(rows, text="", font=("Helvetica", 10),
+        self._style_status = ctk.CTkLabel(rows, text="", font=(UI.FONT_FAMILY, 10),
                                           text_color=GRN, anchor="w")
         self._style_status.pack(fill="x", pady=(6, 0))
 
@@ -235,9 +235,9 @@ class EverestMaxPanel(ctk.CTkFrame):
             row = ctk.CTkFrame(b1, fg_color="transparent")
             row.pack(fill="x", pady=2)
             self._reg(ctk.CTkLabel(row, text=self.T(label_key), width=52,
-                                   font=("Helvetica", 10), text_color=FG2,
+                                   font=(UI.FONT_FAMILY, 10), text_color=FG2,
                                    anchor="w"), label_key).pack(side="left")
-            val = ctk.CTkLabel(row, text="0", width=44, font=("Helvetica", 10),
+            val = ctk.CTkLabel(row, text="0", width=44, font=(UI.FONT_FAMILY, 10),
                                text_color=FG, anchor="e")
             val.pack(side="right")
             bar = ctk.CTkProgressBar(row, height=5, corner_radius=3,
@@ -250,7 +250,7 @@ class EverestMaxPanel(ctk.CTkFrame):
                                          self._toggle_cpu)
         self._btn_cpu.pack(fill="x", pady=(10, 4))
 
-        self._cpu_status = ctk.CTkLabel(b1, text="", font=("Helvetica", 10),
+        self._cpu_status = ctk.CTkLabel(b1, text="", font=(UI.FONT_FAMILY, 10),
                                         text_color=FG2, anchor="w")
         self._cpu_status.pack(fill="x")
         self._meter_after = None
@@ -318,7 +318,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             values=self._mode_labels,
             command=lambda lbl: self._set_main_mode(self._mode_key_map[lbl]),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=170,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=170,
             height=UI.CTRL_H_SM)
         self._main_mode_menu.pack(side="right")
 
@@ -335,7 +335,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._main_bar.set(0)
         self._main_bar.pack(fill="x", padx=12, pady=(0, 2))
 
-        self._main_status = ctk.CTkLabel(b2, text="", font=("Helvetica", 11),
+        self._main_status = ctk.CTkLabel(b2, text="", font=(UI.FONT_FAMILY, 11),
                                           text_color=FG2)
         self._main_status.pack(pady=(0, 12))
 
@@ -346,7 +346,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         b3 = s3.content
 
         self._reg(
-            ctk.CTkLabel(b3, text="", font=("Helvetica", 10), text_color=FG2,
+            ctk.CTkLabel(b3, text="", font=(UI.FONT_FAMILY, 10), text_color=FG2,
                          anchor="w"),
             "numpad_subtitle"
         ).pack(fill="x", pady=(0, 6))
@@ -405,14 +405,14 @@ class EverestMaxPanel(ctk.CTkFrame):
 
             header_row = ctk.CTkFrame(card, fg_color="transparent")
             header_row.pack(fill="x", padx=8, pady=(6, 0))
-            ctk.CTkLabel(header_row, text=f"D{i+1}", font=("Helvetica", 10, "bold"),
+            ctk.CTkLabel(header_row, text=f"D{i+1}", font=(UI.FONT_FAMILY, 10, "bold"),
                          text_color=YLW).pack(side="left")
 
             action_row = ctk.CTkFrame(card, fg_color="transparent")
             action_row.pack(fill="x", padx=4, pady=(2, 6))
 
             self._reg(
-                ctk.CTkLabel(action_row, text="", font=("Helvetica", 10),
+                ctk.CTkLabel(action_row, text="", font=(UI.FONT_FAMILY, 10),
                              text_color=FG2, width=50, anchor="w"),
                 "action_label"
             ).pack(side="left", padx=(4, 2))
@@ -426,7 +426,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             type_menu = ctk.CTkOptionMenu(
                 action_row, values=labels,
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=88, height=30,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), width=88, height=30,
                 dynamic_resizing=False,
                 command=lambda val, ix=idx: self._on_btn_type_change(val, ix)
             )
@@ -436,13 +436,13 @@ class EverestMaxPanel(ctk.CTkFrame):
 
             entry = ctk.CTkEntry(action_row, textvariable=self._btn_action[i],
                          fg_color=BG2, text_color=FG, border_color=BORDER,
-                         font=("Helvetica", 11), height=30)
+                         font=(UI.FONT_FAMILY, 11), height=30)
             entry.pack(side="left", padx=4, expand=True, fill="x")
             self._action_entries.append(entry)
 
             obs_combo = ctk.CTkComboBox(
                 action_row, values=[], width=140, height=30,
-                font=("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11),
                 fg_color=BG2, button_color=BLUE, border_color=BORDER,
                 text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
                 dropdown_hover_color=BG3,
@@ -451,7 +451,7 @@ class EverestMaxPanel(ctk.CTkFrame):
 
             macro_combo = ctk.CTkComboBox(
                 action_row, values=[], width=140, height=30,
-                font=("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11),
                 fg_color=BG2, button_color=BLUE, border_color=BORDER,
                 text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
                 dropdown_hover_color=BG3,
@@ -503,12 +503,12 @@ class EverestMaxPanel(ctk.CTkFrame):
         # Clarify scope: this only clears app-set actions, not firmware-level key
         # remaps configured in Windows BaseCamp (issue #11).
         self._reg(
-            ctk.CTkLabel(b3, text="", font=("Helvetica", 10), text_color=FG2,
+            ctk.CTkLabel(b3, text="", font=(UI.FONT_FAMILY, 10), text_color=FG2,
                          wraplength=360, justify="left"),
             "reset_buttons_note"
         ).pack(fill="x", padx=8, pady=(4, 0))
 
-        self._numpad_info = ctk.CTkLabel(b3, text="", font=("Helvetica", 11),
+        self._numpad_info = ctk.CTkLabel(b3, text="", font=(UI.FONT_FAMILY, 11),
                                           text_color=GRN)
         self._numpad_info.pack(pady=(4, 10))
 
@@ -522,7 +522,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         rgb_mode_row = ctk.CTkFrame(c, fg_color="transparent")
         rgb_mode_row.pack(fill="x", padx=10, pady=(10, 2))
         self._reg(
-            ctk.CTkLabel(rgb_mode_row, text="", font=("Helvetica", 11), text_color=FG2),
+            ctk.CTkLabel(rgb_mode_row, text="", font=(UI.FONT_FAMILY, 11), text_color=FG2),
             "rgb_mode_label"
         ).pack(side="left", padx=(0, 6))
 
@@ -548,17 +548,17 @@ class EverestMaxPanel(ctk.CTkFrame):
             rgb_mode_row, variable=self._rgb_mode_var, values=_rgb_names,
             command=lambda _: self._rgb_update_controls(),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=180, height=32)
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=180, height=32)
         self._rgb_mode_menu.pack(side="left")
 
         def _labeled_slider(parent, label_key, from_=0, to=100, init=50):
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", padx=10, pady=2)
             lbl = self._reg(ctk.CTkLabel(row, text="", text_color=FG2,
-                                         font=("Helvetica", 11), width=120, anchor="w"), label_key)
+                                         font=(UI.FONT_FAMILY, 11), width=120, anchor="w"), label_key)
             lbl.pack(side="left")
             val_lbl = ctk.CTkLabel(row, text=str(init), text_color=FG,
-                                   font=("Helvetica", 11), width=30)
+                                   font=(UI.FONT_FAMILY, 11), width=30)
             val_lbl.pack(side="right")
             sl = ctk.CTkSlider(row, from_=from_, to=to, number_of_steps=to - from_,
                                fg_color=BG3, progress_color=BLUE, button_color=BLUE,
@@ -576,7 +576,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_color1 = (255, 0, 0)
         self._rgb_color2 = (0, 0, 255)
 
-        self._reg(ctk.CTkLabel(color_row, text="", text_color=FG2, font=("Helvetica", 11)),
+        self._reg(ctk.CTkLabel(color_row, text="", text_color=FG2, font=(UI.FONT_FAMILY, 11)),
                   "rgb_color1_label").pack(side="left", padx=(0, 4))
         self._rgb_c1_btn = ctk.CTkButton(color_row, text="", width=40, height=28,
                                           fg_color="#ff0000", hover_color="#ff0000", corner_radius=4,
@@ -584,7 +584,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_c1_btn.pack(side="left", padx=(0, 12))
 
         self._rgb_c2_lbl = self._reg(ctk.CTkLabel(color_row, text="", text_color=FG2,
-                                                   font=("Helvetica", 11)), "rgb_color2_label")
+                                                   font=(UI.FONT_FAMILY, 11)), "rgb_color2_label")
         self._rgb_c2_lbl.pack(side="left", padx=(0, 4))
         self._rgb_c2_btn = ctk.CTkButton(color_row, text="", width=40, height=28,
                                           fg_color="#0000ff", hover_color="#0000ff", corner_radius=4,
@@ -594,7 +594,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         dir_row = ctk.CTkFrame(c, fg_color="transparent")
         dir_row.pack(fill="x", padx=10, pady=2)
         self._rgb_dir_row = dir_row
-        self._reg(ctk.CTkLabel(dir_row, text="", text_color=FG2, font=("Helvetica", 11)),
+        self._reg(ctk.CTkLabel(dir_row, text="", text_color=FG2, font=(UI.FONT_FAMILY, 11)),
                   "rgb_direction_label").pack(side="left", padx=(0, 6))
         self._dir_wave    = ["→ L→R", "↓ T→B", "← R→L", "↑ B→T"]
         self._dir_tornado = ["↻ CW", "↺ CCW"]
@@ -604,7 +604,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_dir_menu = ctk.CTkOptionMenu(
             dir_row, variable=self._rgb_dir_var, values=self._dir_wave,
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=120, height=28)
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=120, height=28)
         self._rgb_dir_menu.pack(side="left")
 
         # Load saved RGB settings
@@ -634,7 +634,7 @@ class EverestMaxPanel(ctk.CTkFrame):
             "rgb_apply"
         ).pack(side="left")
         self._rgb_status = ctk.CTkLabel(rgb_apply_row, text="", text_color=FG2,
-                                         font=("Helvetica", 11))
+                                         font=(UI.FONT_FAMILY, 11))
         self._rgb_status.pack(side="left", padx=(10, 0))
 
         self._rgb_update_controls()
@@ -650,7 +650,7 @@ class EverestMaxPanel(ctk.CTkFrame):
 
         self._rgb_win      = None
         self._zone_status  = ctk.CTkLabel(c6, text="", text_color=FG2,
-                                          font=("Helvetica", 11))
+                                          font=(UI.FONT_FAMILY, 11))
 
         open_row = ctk.CTkFrame(c6, fg_color="transparent")
         open_row.pack(pady=(16, 16))
@@ -1033,7 +1033,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         search_entry = ctk.CTkEntry(
             dlg, textvariable=search_var, placeholder_text=self.T("app_picker_search"),
             fg_color=BG2, text_color=FG, border_color=BORDER,
-            font=("Helvetica", 12), height=34,
+            font=(UI.FONT_FAMILY, 12), height=34,
         )
         search_entry.pack(fill="x", padx=12, pady=(12, 6))
         search_entry.focus()
@@ -1061,7 +1061,7 @@ class EverestMaxPanel(ctk.CTkFrame):
                 b = ctk.CTkButton(
                     list_frame, text=name, anchor="w",
                     fg_color="transparent", text_color=FG,
-                    hover_color=BG3, font=("Helvetica", 11),
+                    hover_color=BG3, font=(UI.FONT_FAMILY, 11),
                     height=30, corner_radius=4,
                     command=lambda n=name, e=exec_cmd: _select(n, e),
                 )
@@ -1281,6 +1281,16 @@ class EverestMaxPanel(ctk.CTkFrame):
 
     def apply_lang(self):
         """Called by App when language changes to refresh button type menus."""
+        # The monitor button and its status line are written when monitoring
+        # starts and stops, so on a language change they keep whichever words
+        # were current at the time. Write them again from the state itself.
+        if hasattr(self, "_btn_cpu"):
+            running = getattr(self, "_cpu_proc", None) is not None \
+                and self._cpu_proc.poll() is None
+            self._btn_cpu.configure(
+                text=self.T("monitor_stop") if running else self.T("monitor_start"))
+            self._cpu_status.configure(
+                text=self.T("monitor_running") if running else self.T("monitor_stopped"))
         if hasattr(self, "_btn_type_menus"):
             new_labels = self._numpad_type_labels_fn()
             type_internal = self._numpad_type_internal_fn()

@@ -63,6 +63,9 @@ class PluginManagerPanel(ctk.CTkFrame):
     def T(self, key, **kw):
         return self._app.T(key, **kw)
 
+    def _reg(self, widget, key, attr="text"):
+        return self._app._reg(widget, key, attr)
+
     def _available_info(self, pid):
         """Look up a plugin entry in the cached available list by id."""
         for pinfo in self._available:
@@ -103,7 +106,7 @@ class PluginManagerPanel(ctk.CTkFrame):
         head.pack(fill="x", pady=(0, 4))
         self._title_lbl = UI.SectionLabel(head, text=self.T("pluginmgr_installed"))
         self._title_lbl.pack(side="left")
-        self._count_lbl = ctk.CTkLabel(head, text="", font=("Helvetica", 10),
+        self._count_lbl = ctk.CTkLabel(head, text="", font=(UI.FONT_FAMILY, 10),
                                        text_color=FG2)
         self._count_lbl.pack(side="right")
 
@@ -119,15 +122,16 @@ class PluginManagerPanel(ctk.CTkFrame):
                                            self._fetch_available, width=90,
                                            height=UI.CTRL_H_SM)
         self._refresh_btn.pack(side="right")
+        self._reg(self._refresh_btn, "pluginmgr_reload")
 
         self._avail_list = ctk.CTkFrame(left, fg_color="transparent")
         self._avail_list.pack(fill="x")
         self._avail_status = ctk.CTkLabel(
             self._avail_list, text=self.T("pluginmgr_loading"),
-            font=("Helvetica", 10), text_color=FG2, anchor="w")
+            font=(UI.FONT_FAMILY, 10), text_color=FG2, anchor="w")
         self._avail_status.pack(fill="x", pady=4)
 
-        self._restart_lbl = ctk.CTkLabel(left, text="", font=("Helvetica", 10),
+        self._restart_lbl = ctk.CTkLabel(left, text="", font=(UI.FONT_FAMILY, 10),
                                          text_color=YLW, anchor="w",
                                          wraplength=_PLUGIN_LIST_W - 20,
                                          justify="left")
@@ -138,13 +142,14 @@ class PluginManagerPanel(ctk.CTkFrame):
         self._manual_frame.pack(fill="x", pady=(12, 0))
         manual_toggle = ctk.CTkLabel(
             self._manual_frame, text=self.T("pluginmgr_manual_install"),
-            font=("Helvetica", 10), text_color=FG2, cursor="hand2", anchor="w")
+            font=(UI.FONT_FAMILY, 10), text_color=FG2, cursor="hand2", anchor="w")
+        self._reg(manual_toggle, "pluginmgr_manual_install")
         manual_toggle.pack(fill="x")
         self._manual_body = ctk.CTkFrame(self._manual_frame, fg_color="transparent")
         self._install_entry = ctk.CTkEntry(
             self._manual_body, placeholder_text=self.T("pluginmgr_install_url"),
             fg_color=BG3, border_color=BORDER, text_color=FG,
-            font=("Helvetica", 10), height=UI.CTRL_H_SM)
+            font=(UI.FONT_FAMILY, 10), height=UI.CTRL_H_SM)
         self._install_entry.pack(fill="x", pady=(6, 4))
         btn_row = ctk.CTkFrame(self._manual_body, fg_color="transparent")
         btn_row.pack(fill="x")
@@ -157,19 +162,19 @@ class PluginManagerPanel(ctk.CTkFrame):
                                            height=UI.CTRL_H_SM)
         self._install_btn.pack(side="right")
         self._install_status = ctk.CTkLabel(
-            self._manual_body, text="", font=("Helvetica", 10), text_color=FG2,
+            self._manual_body, text="", font=(UI.FONT_FAMILY, 10), text_color=FG2,
             anchor="w", wraplength=_PLUGIN_LIST_W - 20, justify="left")
         self._install_status.pack(fill="x", pady=(4, 0))
         self._manual_open = False
         manual_toggle.bind("<Button-1>", lambda e: self._toggle_manual())
 
         self._hint_lbl = ctk.CTkLabel(
-            left, text=self.T("pluginmgr_hint"), font=("Helvetica", 9),
+            left, text=self.T("pluginmgr_hint"), font=(UI.FONT_FAMILY, 9),
             text_color=FG_FAINT, anchor="w", justify="left",
             wraplength=_PLUGIN_LIST_W - 20)
         self._hint_lbl.pack(fill="x", pady=(12, 0))
         self._more_lbl = ctk.CTkLabel(
-            left, text=self.T("pluginmgr_more"), font=("Helvetica", 9),
+            left, text=self.T("pluginmgr_more"), font=(UI.FONT_FAMILY, 9),
             text_color=FG_FAINT, anchor="w", justify="left",
             wraplength=_PLUGIN_LIST_W - 20)
         self._more_lbl.pack(fill="x", pady=(4, 0))
@@ -202,7 +207,7 @@ class PluginManagerPanel(ctk.CTkFrame):
 
         if not manifests:
             ctk.CTkLabel(self._list_frame, text=self.T("pluginmgr_empty"),
-                         font=("Helvetica", 10), text_color=FG2, anchor="w",
+                         font=(UI.FONT_FAMILY, 10), text_color=FG2, anchor="w",
                          justify="left",
                          wraplength=_PLUGIN_LIST_W - 20).pack(fill="x", pady=6)
             self._count_lbl.configure(text="")
@@ -247,12 +252,12 @@ class PluginManagerPanel(ctk.CTkFrame):
             dot.bind("<Button-1>", lambda _e, p=pid: self._select(p, True))
 
         name = ctk.CTkLabel(row, text=info.get("name", pid),
-                            font=("Helvetica", 11, "bold" if selected else "normal"),
+                            font=(UI.FONT_FAMILY, 11, "bold" if selected else "normal"),
                             text_color=FG if selected else FG2, anchor="w")
         name.pack(side="left", fill="x", expand=True,
                   padx=(8 if not installed else 0, 4))
         ver = ctk.CTkLabel(row, text=f"v{info.get('version', '')}",
-                           font=("Helvetica", 9), text_color=FG_FAINT)
+                           font=(UI.FONT_FAMILY, 9), text_color=FG_FAINT)
         ver.pack(side="right", padx=8)
         for w in (row, name, ver):
             w.bind("<Button-1>", lambda _e, p=pid, i=installed: self._select(p, i))
@@ -283,7 +288,7 @@ class PluginManagerPanel(ctk.CTkFrame):
             w.destroy()
         if self._selected is None:
             ctk.CTkLabel(self._detail, text=self.T("pluginmgr_pick_hint"),
-                         font=("Helvetica", 11), text_color=FG2).pack(pady=40)
+                         font=(UI.FONT_FAMILY, 11), text_color=FG2).pack(pady=40)
             return
         pid, installed = self._selected
         pm = self._app._plugin_manager
@@ -295,10 +300,10 @@ class PluginManagerPanel(ctk.CTkFrame):
         head = ctk.CTkFrame(self._detail, fg_color="transparent")
         head.pack(fill="x")
         ctk.CTkLabel(head, text=info.get("name", pid),
-                     font=("Helvetica", 15, "bold"), text_color=FG,
+                     font=(UI.FONT_FAMILY, 15, "bold"), text_color=FG,
                      anchor="w").pack(side="left")
         ctk.CTkLabel(head, text=f"  v{info.get('version', '')}",
-                     font=("Helvetica", 11), text_color=FG_FAINT).pack(side="left")
+                     font=(UI.FONT_FAMILY, 11), text_color=FG_FAINT).pack(side="left")
         if installed:
             state = (self.T("pluginmgr_disabled") if pm.is_disabled(pid)
                      else self.T("pluginmgr_active") if pm.is_loaded(pid)
@@ -314,7 +319,7 @@ class PluginManagerPanel(ctk.CTkFrame):
             ptypes = [ptypes] if ptypes else []
         for ptype in ptypes:
             fg_c, bg_c = _TYPE_COLORS.get(ptype, (FG2, BG2))
-            ctk.CTkLabel(badges, text=ptype, font=("Helvetica", 9, "bold"),
+            ctk.CTkLabel(badges, text=ptype, font=(UI.FONT_FAMILY, 9, "bold"),
                          text_color=fg_c, fg_color=bg_c, corner_radius=6,
                          height=18, padx=8).pack(side="left", padx=(0, 6))
 
@@ -325,7 +330,7 @@ class PluginManagerPanel(ctk.CTkFrame):
             box.pack(fill="x", pady=(10, 0))
             ctk.CTkLabel(box, text=self.T("pluginmgr_update_to",
                                           ver=update_info.get("version", "")),
-                         font=("Helvetica", 11), text_color=FG,
+                         font=(UI.FONT_FAMILY, 11), text_color=FG,
                          anchor="w").pack(side="left", padx=10, pady=8)
             UI.PrimaryButton(box, self.T("pluginmgr_update_btn"),
                              lambda p=update_info: self._install_available(p),
@@ -363,7 +368,7 @@ class PluginManagerPanel(ctk.CTkFrame):
         desc = info.get("description", "")
         if desc:
             ctk.CTkLabel(
-                parent, text=desc, font=("Helvetica", 10),
+                parent, text=desc, font=(UI.FONT_FAMILY, 10),
                 text_color=FG2, anchor="w", justify="left"
             ).pack(fill="x", pady=(0, 4))
 
@@ -378,7 +383,7 @@ class PluginManagerPanel(ctk.CTkFrame):
             help_frame.pack(fill="x", pady=(0, 4))
             ctk.CTkLabel(
                 help_frame, text=help_text,
-                font=("Helvetica", 10), text_color=FG,
+                font=(UI.FONT_FAMILY, 10), text_color=FG,
                 anchor="w", justify="left", wraplength=620
             ).pack(fill="x", padx=10, pady=8)
 
@@ -399,19 +404,19 @@ class PluginManagerPanel(ctk.CTkFrame):
                 row,
                 text=self.T("pluginmgr_requires_ok", pkg=pkg) if ok
                 else self.T("pluginmgr_requires_missing", pkg=pkg),
-                font=("Helvetica", 10), text_color=FG2 if ok else YLW,
+                font=(UI.FONT_FAMILY, 10), text_color=FG2 if ok else YLW,
                 anchor="w", justify="left", wraplength=620).pack(side="left")
 
         author = info.get("author", "")
         if author:
             ctk.CTkLabel(
                 parent, text=f"Author: {author}",
-                font=("Helvetica", 9), text_color=FG2, anchor="w"
+                font=(UI.FONT_FAMILY, 9), text_color=FG2, anchor="w"
             ).pack(fill="x")
 
         if error:
             ctk.CTkLabel(
-                parent, text=error, font=("Helvetica", 9),
+                parent, text=error, font=(UI.FONT_FAMILY, 9),
                 text_color=RED, anchor="w", wraplength=400, justify="left"
             ).pack(fill="x", pady=(4, 0))
 
@@ -529,7 +534,7 @@ class PluginManagerPanel(ctk.CTkFrame):
         rows = [p for p in self._available if p.get("id") not in pm._manifests]
         if not rows:
             ctk.CTkLabel(self._avail_list, text=self.T("pluginmgr_no_available"),
-                         font=("Helvetica", 10), text_color=FG2,
+                         font=(UI.FONT_FAMILY, 10), text_color=FG2,
                          anchor="w").pack(fill="x", pady=4)
         for pinfo in rows:
             self._list_row(self._avail_list, pinfo["id"], pinfo, installed=False)
@@ -543,7 +548,7 @@ class PluginManagerPanel(ctk.CTkFrame):
             w.destroy()
         ctk.CTkLabel(
             self._avail_list, text=f"Could not load plugins: {err}",
-            font=("Helvetica", 9), text_color=RED
+            font=(UI.FONT_FAMILY, 9), text_color=RED
         ).pack(pady=8)
 
     def _install_available(self, pinfo):

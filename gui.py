@@ -176,6 +176,28 @@ class SettingsPanel(ctk.CTkFrame):
     def __init__(self, parent, app):
         super().__init__(parent, fg_color=BG)
         self._app = app
+        self._build()
+
+    def apply_lang(self):
+        """Build the screen again instead of relabelling it widget by widget.
+
+        As a dialog this screen was created fresh every time it was opened, so
+        a language change reached it for free. As a screen it is built once and
+        kept, and every label on it would stay in the old language. There is no
+        device state here to lose, and refresh() puts the two late-arriving
+        pieces back, so rebuilding is both the shortest and the safest way to
+        keep the cards, their titles and their hints in step.
+        """
+        for child in self.winfo_children():
+            child.destroy()
+        self._build()
+        try:
+            self.refresh()
+        except Exception as e:
+            print(f"[UI] settings refresh after language change failed: {e}")
+
+    def _build(self):
+        app = self._app
 
         outer = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
         outer.pack(fill="both", expand=True)
@@ -191,7 +213,7 @@ class SettingsPanel(ctk.CTkFrame):
         self._update_lbl = ctk.CTkLabel(
             upd.body, text=getattr(app, "_update_message", "")
             or app.T("settings_update_current", ver=APP_VERSION),
-            font=("Helvetica", 11), text_color=FG, anchor="w",
+            font=(UI.FONT_FAMILY, 11), text_color=FG, anchor="w",
             justify="left", wraplength=520)
         self._update_lbl.pack(side="left", fill="x", expand=True)
         # The button cannot be built here: this screen exists from startup,
@@ -211,7 +233,7 @@ class SettingsPanel(ctk.CTkFrame):
         active   = get_active_profile()
         self._profile_combo = ctk.CTkComboBox(
             profile_row, values=profiles or [app.T("settings_profile_none")],
-            width=200, height=30, font=("Helvetica", 11),
+            width=200, height=30, font=(UI.FONT_FAMILY, 11),
             fg_color=BG2, button_color=BLUE, text_color=FG)
         if active and active in profiles:
             self._profile_combo.set(active)
@@ -232,7 +254,7 @@ class SettingsPanel(ctk.CTkFrame):
         self._new_profile_var = ctk.StringVar()
         ctk.CTkEntry(save_row, textvariable=self._new_profile_var,
                      placeholder_text=app.T("settings_profile_name_hint"),
-                     height=30, font=("Helvetica", 11),
+                     height=30, font=(UI.FONT_FAMILY, 11),
                      fg_color=BG2, text_color=FG).pack(
             side="left", padx=(0, 4), fill="x", expand=True)
         UI.GhostButton(save_row, app.T("settings_profile_save"),
@@ -245,12 +267,12 @@ class SettingsPanel(ctk.CTkFrame):
         lang_row = ctk.CTkFrame(appc.body, fg_color="transparent")
         lang_row.pack(fill="x", pady=(0, 6))
         ctk.CTkLabel(lang_row, text=app.T("settings_language"),
-                     font=("Helvetica", 11), text_color=FG2,
+                     font=(UI.FONT_FAMILY, 11), text_color=FG2,
                      anchor="w").pack(side="left")
         lang_names = list(app._avail_langs.values())
         self._lang_combo = ctk.CTkComboBox(
             lang_row, values=lang_names or [""], command=self._do_change_lang,
-            width=150, height=UI.CTRL_H_SM, font=("Helvetica", 11),
+            width=150, height=UI.CTRL_H_SM, font=(UI.FONT_FAMILY, 11),
             fg_color=BG2, button_color=BLUE, text_color=FG)
         self._lang_combo.set(app._avail_langs.get(app._lang_code, ""))
         self._lang_combo.pack(side="right")
@@ -266,7 +288,7 @@ class SettingsPanel(ctk.CTkFrame):
                               self._do_toggle_splash)):
             row = ctk.CTkFrame(appc.body, fg_color="transparent")
             row.pack(fill="x", pady=3)
-            ctk.CTkLabel(row, text=app.T(key), font=("Helvetica", 11),
+            ctk.CTkLabel(row, text=app.T(key), font=(UI.FONT_FAMILY, 11),
                          text_color=FG2, anchor="w").pack(side="left")
             ctk.CTkSwitch(row, text="", variable=var, command=cb,
                           width=40, progress_color=BLUE).pack(side="right")
@@ -274,7 +296,7 @@ class SettingsPanel(ctk.CTkFrame):
         pick_row = ctk.CTkFrame(appc.body, fg_color="transparent")
         pick_row.pack(fill="x", pady=(6, 0))
         ctk.CTkLabel(pick_row, text=app.T("settings_picker_section"),
-                     font=("Helvetica", 11), text_color=FG2,
+                     font=(UI.FONT_FAMILY, 11), text_color=FG2,
                      anchor="w").pack(side="left")
         UI.GhostButton(pick_row, app.T("settings_picker_reset"),
                        self._do_reset_pickers, width=140,
@@ -284,7 +306,7 @@ class SettingsPanel(ctk.CTkFrame):
         bak = UI.Card(grid, title=app.T("settings_backup_section"))
         bak.grid(row=2, column=0, sticky="nsew", padx=(0, UI.S3))
         ctk.CTkLabel(bak.body, text=app.T("settings_backup_hint"),
-                     font=("Helvetica", 10), text_color=FG2, anchor="w",
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2, anchor="w",
                      justify="left", wraplength=330).pack(fill="x", pady=(0, 8))
         bak_row = ctk.CTkFrame(bak.body, fg_color="transparent")
         bak_row.pack(fill="x")
@@ -305,14 +327,14 @@ class SettingsPanel(ctk.CTkFrame):
                 ("settings_about_socket", "")):
             row = ctk.CTkFrame(about.body, fg_color="transparent")
             row.pack(fill="x", pady=2)
-            ctk.CTkLabel(row, text=app.T(key), font=("Helvetica", 11),
+            ctk.CTkLabel(row, text=app.T(key), font=(UI.FONT_FAMILY, 11),
                          text_color=FG2, anchor="w").pack(side="left")
-            val = ctk.CTkLabel(row, text=str(value), font=("Helvetica", 11),
+            val = ctk.CTkLabel(row, text=str(value), font=(UI.FONT_FAMILY, 11),
                                text_color=FG, anchor="e")
             val.pack(side="right")
             self._about_values[key] = val
 
-        self._status = ctk.CTkLabel(grid, text="", font=("Helvetica", 11),
+        self._status = ctk.CTkLabel(grid, text="", font=(UI.FONT_FAMILY, 11),
                                     text_color=FG2, anchor="w")
         self._status.grid(row=3, column=0, columnspan=2, sticky="ew",
                           pady=(UI.S3, 0))
@@ -531,14 +553,14 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
             pass
 
         ctk.CTkLabel(self, text=app.T("update_dialog_title"),
-                     font=("Helvetica", 14, "bold")).pack(pady=(16, 4))
+                     font=(UI.FONT_FAMILY, 14, "bold")).pack(pady=(16, 4))
         ctk.CTkLabel(self,
                      text=app.T("update_dialog_body",
                                 ver=getattr(app, "_update_version", "")),
-                     font=("Helvetica", 11), wraplength=380,
+                     font=(UI.FONT_FAMILY, 11), wraplength=380,
                      justify="center").pack(pady=(0, 6), padx=12)
 
-        self._status = ctk.CTkLabel(self, text="", font=("Helvetica", 10),
+        self._status = ctk.CTkLabel(self, text="", font=(UI.FONT_FAMILY, 10),
                                      text_color=FG2, wraplength=380, justify="center")
         self._status.pack(pady=(0, 6))
 
@@ -995,6 +1017,16 @@ class App(ctk.CTk):
                     panel.apply_lang()
                 except Exception as e:
                     print(f"[UI] apply_lang failed: {e}")
+        if only is None:
+            # The sidebar entries and the header are written from the language
+            # file every time they are refreshed, so re-running that is all a
+            # language change needs; registering each of them separately would
+            # only duplicate what these two already do.
+            for refresh in (self._refresh_sidebar, self._refresh_screen_header):
+                try:
+                    refresh()
+                except Exception as e:
+                    print(f"[UI] {refresh.__name__} failed: {e}")
 
     def _on_lang_change(self, val=None):
         selected_name = val if val is not None else self._lang_var.get()
@@ -1024,7 +1056,7 @@ class App(ctk.CTk):
         preview_label.pack(pady=(12, 2), padx=16)
 
         info_label = ctk.CTkLabel(dlg, text="", fg_color="transparent",
-                                   text_color=FG2, font=("Helvetica", 11))
+                                   text_color=FG2, font=(UI.FONT_FAMILY, 11))
         info_label.pack()
 
         gif_img = Image.open(path)
@@ -1066,11 +1098,11 @@ class App(ctk.CTk):
 
         ctk.CTkButton(btn_row, text=self.T("ui_ok"), command=_ok,
                       fg_color=BLUE, text_color=FG, hover_color="#0884be",
-                      font=("Helvetica", 11, "bold"), height=30, width=70,
+                      font=(UI.FONT_FAMILY, 11, "bold"), height=30, width=70,
                       corner_radius=6).pack(side="left", padx=4)
         ctk.CTkButton(btn_row, text=self.T("gif_frame_cancel"), command=_cancel,
                       fg_color=BG3, text_color=FG, hover_color=BG2,
-                      font=("Helvetica", 11), height=30, width=70,
+                      font=(UI.FONT_FAMILY, 11), height=30, width=70,
                       corner_radius=6).pack(side="left")
 
         dlg.wait_window()
@@ -1094,20 +1126,21 @@ class App(ctk.CTk):
 
         brand = ctk.CTkFrame(side, fg_color="transparent")
         brand.pack(fill="x", padx=UI.S3, pady=(UI.S4, UI.S2))
-        ctk.CTkLabel(brand, text="Base", font=("Helvetica", 14, "bold"),
+        ctk.CTkLabel(brand, text="Base", font=(UI.FONT_FAMILY, 14, "bold"),
                      text_color=FG).pack(side="left")
-        ctk.CTkLabel(brand, text="Camp", font=("Helvetica", 14, "bold"),
+        ctk.CTkLabel(brand, text="Camp", font=(UI.FONT_FAMILY, 14, "bold"),
                      text_color=BLUE).pack(side="left")
 
         # Devices. Only what is actually plugged in shows up here, so the list
         # is about this desk and not about the product range.
         self._nav_devices_label = UI.SectionLabel(side, text=self.T("nav_devices"))
+        self._reg(self._nav_devices_label, "nav_devices")
         self._nav_devices_label.pack(fill="x", padx=UI.S3, pady=(UI.S3, UI.S1))
         self._nav_devices_box = ctk.CTkFrame(side, fg_color="transparent")
         self._nav_devices_box.pack(fill="x")
         self._nav_empty = ctk.CTkLabel(
             self._nav_devices_box, text=self.T("nav_no_devices"),
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             text_color=FG2, anchor="w", justify="left", wraplength=_SIDEBAR_W - 24)
         self._reg(self._nav_empty, "nav_no_devices")
 
@@ -1115,22 +1148,30 @@ class App(ctk.CTk):
         self._nav_items["keyboard"] = UI.NavItem(
             self._nav_devices_box, text=self.T("switcher_keyboard"), state="off",
             command=lambda: self._switch_device(self._kb_panel_id))
+        self._reg(self._nav_items["keyboard"], "switcher_keyboard")
         self._nav_items["makalu67"] = UI.NavItem(
             self._nav_devices_box, text=self.T("switcher_mouse"), state="off",
             command=lambda: self._switch_device("makalu67"))
+        self._reg(self._nav_items["makalu67"], "switcher_mouse")
         self._nav_items["displaypad"] = UI.NavItem(
             self._nav_devices_box, text="DisplayPad", state="off",
             command=lambda: self._switch_device("displaypad"))
 
         self._nav_tools_label = UI.SectionLabel(side, text=self.T("nav_tools"))
+        self._reg(self._nav_tools_label, "nav_tools")
         self._nav_tools_label.pack(fill="x", padx=UI.S3, pady=(UI.S4, UI.S1))
         self._nav_tools_box = ctk.CTkFrame(side, fg_color="transparent")
         self._nav_tools_box.pack(fill="x")
-        for dev_id, label_key, literal in (("macros", None, "Macros"),
+        # "Plugins" and "OBS Studio" are the same word in both languages, one a
+        # borrowed term and one a product name, so they carry no key.
+        for dev_id, label_key, literal in (("macros", "macro_title", None),
                                            ("plugins", None, "Plugins"),
                                            ("obs", None, "OBS Studio")):
-            item = UI.NavItem(self._nav_tools_box, text=literal,
+            item = UI.NavItem(self._nav_tools_box,
+                              text=self.T(label_key) if label_key else literal,
                               command=lambda d=dev_id: self._switch_device(d))
+            if label_key:
+                self._reg(item, label_key)
             item.pack(fill="x")
             self._nav_items[dev_id] = item
 
@@ -1138,8 +1179,10 @@ class App(ctk.CTk):
         foot.pack(side="bottom", fill="x", pady=(0, UI.S2))
         self._settings_btn = UI.NavItem(
             foot, text=self.T("ui_settings"), command=self._open_settings)
+        self._reg(self._settings_btn, "ui_settings")
         self._settings_btn.pack(fill="x")
         self._nav_quit = UI.NavItem(foot, text=self.T("ui_quit"), command=self._quit)
+        self._reg(self._nav_quit, "ui_quit")
         self._nav_quit.pack(fill="x")
 
         # ── Content column: one header strip, then the screen ──
@@ -1154,7 +1197,7 @@ class App(ctk.CTk):
         head.pack(fill="x")
         head.pack_propagate(False)
         self._screen_title = ctk.CTkLabel(
-            head, text="", font=("Helvetica", 14, "bold"), text_color=FG, anchor="w")
+            head, text="", font=(UI.FONT_FAMILY, 14, "bold"), text_color=FG, anchor="w")
         self._screen_title.pack(side="left", padx=(UI.S4, UI.S3))
         self._screen_state = UI.StatusPill(head, text="", state="off")
         self._screen_actions = ctk.CTkFrame(head, fg_color="transparent")
@@ -1169,10 +1212,10 @@ class App(ctk.CTk):
         _nd_inner = ctk.CTkFrame(self._no_device_frame, fg_color="transparent")
         _nd_inner.place(relx=0.5, rely=0.45, anchor="center")
         self._no_device_title = ctk.CTkLabel(
-            _nd_inner, text="", font=("Helvetica", 16, "bold"), text_color=FG)
+            _nd_inner, text="", font=(UI.FONT_FAMILY, 16, "bold"), text_color=FG)
         self._no_device_title.pack()
         self._no_device_hint = ctk.CTkLabel(
-            _nd_inner, text="", font=("Helvetica", 11), text_color=FG2,
+            _nd_inner, text="", font=(UI.FONT_FAMILY, 11), text_color=FG2,
             wraplength=320, justify="center")
         self._no_device_hint.pack(pady=(6, 0))
 
@@ -1504,8 +1547,10 @@ class App(ctk.CTk):
     # Kept so older call sites keep working while the panels are migrated.
     _refresh_switcher_colors = _refresh_sidebar
 
+    # Literal where both languages agree (a product name, a borrowed term),
+    # a language key where they do not.
     _SCREEN_TITLES = {
-        "obs": "OBS Studio", "macros": "Macros", "plugins": "Plugins",
+        "obs": "OBS Studio", "macros": ("key", "macro_title"), "plugins": "Plugins",
         "settings": None,   # filled from the language file at refresh time
     }
 
@@ -1527,6 +1572,8 @@ class App(ctk.CTk):
             title = self.T("settings_title")
         elif dev in self._SCREEN_TITLES:
             title = self._SCREEN_TITLES[dev]
+            if isinstance(title, tuple):
+                title = self.T(title[1])
         else:
             item = self._nav_items.get(dev)
             title = item._label.cget("text") if item is not None else ""

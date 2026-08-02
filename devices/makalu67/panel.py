@@ -120,7 +120,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._banner_lbl = ctk.CTkLabel(
             self._banner,
             text=self.T("makalu_not_connected"),
-            font=("Helvetica", 11), text_color=RED,
+            font=(UI.FONT_FAMILY, 11), text_color=RED,
         )
         self._reg(self._banner_lbl, "makalu_not_connected")
         self._banner_lbl.pack(pady=8, padx=16)
@@ -161,7 +161,7 @@ class Makalu67Panel(ctk.CTkFrame):
         mode_row = ctk.CTkFrame(parent, fg_color="transparent")
         mode_row.pack(fill="x", padx=10, pady=(10, 2))
         _lbl = ctk.CTkLabel(mode_row, text=self.T("makalu_rgb_effect"),
-                            font=("Helvetica", 11), text_color=FG2)
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2)
         _lbl.pack(side="left", padx=(0, 6))
         self._reg(_lbl, "makalu_rgb_effect")
         self._rgb_mode_var = tk.StringVar(value=_EFFECT_NAMES[0])
@@ -169,14 +169,14 @@ class Makalu67Panel(ctk.CTkFrame):
             mode_row, variable=self._rgb_mode_var, values=_EFFECT_NAMES,
             command=lambda _: self._rgb_update_controls(),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=180, height=32,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=180, height=32,
         ).pack(side="left")
 
         # ── Speed buttons ─────────────────────────────────────────────────────
         self._rgb_speed_row = ctk.CTkFrame(parent, fg_color="transparent")
         self._rgb_speed_row.pack(fill="x", padx=10, pady=2)
         _lbl = ctk.CTkLabel(self._rgb_speed_row, text=self.T("makalu_rgb_speed"),
-                            font=("Helvetica", 11), text_color=FG2, width=120, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=120, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_rgb_speed")
         self._rgb_speed_var = tk.StringVar(value="Medium")
@@ -186,14 +186,14 @@ class Makalu67Panel(ctk.CTkFrame):
             command=lambda _: self._apply_rgb(),
             fg_color=BG3, selected_color=BLUE, selected_hover_color="#0284c7",
             unselected_color=BG3, unselected_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), height=28)
+            text_color=FG, font=(UI.FONT_FAMILY, 11), height=28)
         self._rgb_speed_seg.pack(side="left")
 
         # ── Direction buttons ─────────────────────────────────────────────────
         self._rgb_dir_row = ctk.CTkFrame(parent, fg_color="transparent")
         self._rgb_dir_row.pack(fill="x", padx=10, pady=2)
         _lbl = ctk.CTkLabel(self._rgb_dir_row, text=self.T("makalu_rgb_direction"),
-                            font=("Helvetica", 11), text_color=FG2, width=120, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=120, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_rgb_direction")
         self._rgb_dir_var = tk.StringVar(value="→")
@@ -203,14 +203,14 @@ class Makalu67Panel(ctk.CTkFrame):
             command=lambda _: self._apply_rgb(),
             fg_color=BG3, selected_color=BLUE, selected_hover_color="#0284c7",
             unselected_color=BG3, unselected_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), height=28)
+            text_color=FG, font=(UI.FONT_FAMILY, 11), height=28)
         self._rgb_dir_seg.pack(side="left")
 
         # ── Brightness dropdown ──────────────────────────────────────────────
         self._rgb_bri_row = ctk.CTkFrame(parent, fg_color="transparent")
         self._rgb_bri_row.pack(fill="x", padx=10, pady=2)
         _lbl = ctk.CTkLabel(self._rgb_bri_row, text=self.T("makalu_rgb_brightness"),
-                            font=("Helvetica", 11), text_color=FG2, width=120, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=120, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_rgb_brightness")
         self._rgb_bri_var = tk.StringVar(value="100%")
@@ -219,7 +219,7 @@ class Makalu67Panel(ctk.CTkFrame):
             values=["0%", "25%", "50%", "75%", "100%"],
             command=lambda _: self._apply_rgb(),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=120, height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=120, height=28,
         ).pack(side="left")
 
         # ── Color buttons ────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._rgb_color2 = (255, 0, 0)
 
         _lbl = ctk.CTkLabel(color_row, text=self.T("makalu_rgb_color1"),
-                            font=("Helvetica", 11), text_color=FG2)
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2)
         _lbl.pack(side="left", padx=(0, 4))
         self._reg(_lbl, "makalu_rgb_color1")
         self._rgb_c1_btn = ctk.CTkButton(
@@ -240,7 +240,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._rgb_c1_btn.pack(side="left", padx=(0, 12))
 
         self._rgb_c2_lbl = ctk.CTkLabel(color_row, text=self.T("makalu_rgb_color2"),
-                                         font=("Helvetica", 11), text_color=FG2)
+                                         font=(UI.FONT_FAMILY, 11), text_color=FG2)
         self._reg(self._rgb_c2_lbl, "makalu_rgb_color2")
         self._rgb_c2_btn = ctk.CTkButton(
             color_row, text="", width=40, height=28, corner_radius=4,
@@ -258,7 +258,7 @@ class Makalu67Panel(ctk.CTkFrame):
         preset_row = self._rgb_preset_row
         preset_row.pack(fill="x", padx=10, pady=(2, 4))
         _lbl = ctk.CTkLabel(preset_row, text=self.T("makalu_rgb_presets"),
-                            font=("Helvetica", 11), text_color=FG2, width=120, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=120, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_rgb_presets")
         swatch_frame = ctk.CTkFrame(preset_row, fg_color="transparent")
@@ -279,7 +279,7 @@ class Makalu67Panel(ctk.CTkFrame):
         _btn.pack(side="left")
         self._reg(_btn, "makalu_apply")
         self._rgb_status = ctk.CTkLabel(self._rgb_apply_row, text="",
-                                         text_color=FG2, font=("Helvetica", 11))
+                                         text_color=FG2, font=(UI.FONT_FAMILY, 11))
         self._rgb_status.pack(side="left", padx=(10, 0))
 
         self._build_custom_content(parent)
@@ -293,7 +293,7 @@ class Makalu67Panel(ctk.CTkFrame):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=(8, 10))
         ctk.CTkLabel(row, text=self.T("makalu_custom_title"),
-                     font=("Helvetica", 11), text_color=FG2,
+                     font=(UI.FONT_FAMILY, 11), text_color=FG2,
                      anchor="w").pack(side="left")
         _btn = UI.GhostButton(row, self.T("makalu_custom_open"),
                               self._open_custom_rgb, width=200,
@@ -337,7 +337,7 @@ class Makalu67Panel(ctk.CTkFrame):
         for i in range(5):
             btn = ctk.CTkButton(
                 prof_row, text=f"L{i+1}\n—",
-                font=("Helvetica", 10), width=54, height=46, corner_radius=6,
+                font=(UI.FONT_FAMILY, 10), width=54, height=46, corner_radius=6,
                 fg_color=BLUE if i == 0 else BG3,
                 hover_color="#0284c7",
                 text_color=FG,
@@ -362,7 +362,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._dpi_entry_var = tk.StringVar(value=str(self._dpi_values[0]))
         self._dpi_entry = ctk.CTkEntry(
             slider_row, textvariable=self._dpi_entry_var,
-            width=72, height=26, font=("Helvetica", 11, "bold"),
+            width=72, height=26, font=(UI.FONT_FAMILY, 11, "bold"),
             fg_color=BG2, text_color=FG, border_color=BG3,
             justify="center",
         )
@@ -379,14 +379,14 @@ class Makalu67Panel(ctk.CTkFrame):
         self._reg(_btn, "makalu_apply")
         _btn = ctk.CTkButton(
             apply_row, text=self.T("makalu_reset_btn"),
-            font=("Helvetica", 11), fg_color=BG3, hover_color=BG2,
+            font=(UI.FONT_FAMILY, 11), fg_color=BG3, hover_color=BG2,
             text_color=FG2, width=60, height=28, corner_radius=5,
             command=self._reset_dpi,
         )
         _btn.pack(side="left", padx=(6, 0))
         self._reg(_btn, "makalu_reset_btn")
         self._dpi_status = ctk.CTkLabel(apply_row, text="",
-                                         font=("Helvetica", 10), text_color=FG2)
+                                         font=(UI.FONT_FAMILY, 10), text_color=FG2)
         self._dpi_status.pack(side="left", padx=(8, 0))
 
         self._dpi_update_btn_labels()
@@ -587,7 +587,7 @@ class Makalu67Panel(ctk.CTkFrame):
             btn = ctk.CTkButton(
                 btn_grid,
                 text=self._remap_btn_text(key, assignment_val),
-                font=("Helvetica", 10), width=96, height=46, corner_radius=6,
+                font=(UI.FONT_FAMILY, 10), width=96, height=46, corner_radius=6,
                 fg_color=BLUE if key == self._remap_active else BG2,
                 hover_color="#0284c7", text_color=FG,
                 command=lambda k=key: self._remap_select_btn(k),
@@ -603,7 +603,7 @@ class Makalu67Panel(ctk.CTkFrame):
         cat_row = ctk.CTkFrame(assign_card, fg_color="transparent")
         cat_row.pack(fill="x", padx=12, pady=(10, 4))
         _lbl = ctk.CTkLabel(cat_row, text=self.T("makalu_remap_category"),
-                            font=("Helvetica", 11), text_color=FG2, width=72, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=72, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_remap_category")
         cat_keys = list(self._REMAP_CATEGORIES.keys())
@@ -613,7 +613,7 @@ class Makalu67Panel(ctk.CTkFrame):
             cat_row, variable=self._remap_cat_var,
             values=cat_labels,
             command=self._on_remap_cat,
-            width=180, height=30, font=("Helvetica", 11),
+            width=180, height=30, font=(UI.FONT_FAMILY, 11),
             fg_color=BG2, button_color=BG2, button_hover_color=BG,
             text_color=FG, dropdown_fg_color=BG2,
         )
@@ -623,7 +623,7 @@ class Makalu67Panel(ctk.CTkFrame):
         fn_row = ctk.CTkFrame(assign_card, fg_color="transparent")
         fn_row.pack(fill="x", padx=12, pady=(0, 4))
         _lbl = ctk.CTkLabel(fn_row, text=self.T("makalu_remap_function"),
-                            font=("Helvetica", 11), text_color=FG2, width=72, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=72, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_remap_function")
         init_fn_labels = [self._t_fn(k) for k in self._remap_current_fn_keys]
@@ -631,7 +631,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._remap_fn_dd = ctk.CTkOptionMenu(
             fn_row, variable=self._remap_fn_var,
             values=init_fn_labels,
-            width=180, height=30, font=("Helvetica", 11),
+            width=180, height=30, font=(UI.FONT_FAMILY, 11),
             fg_color=BG2, button_color=BG2, button_hover_color=BG,
             text_color=FG, dropdown_fg_color=BG2,
         )
@@ -641,7 +641,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._sniper_row = ctk.CTkFrame(assign_card, fg_color="transparent")
         self._sniper_row.pack(fill="x", padx=12, pady=(0, 4))
         _lbl = ctk.CTkLabel(self._sniper_row, text=self.T("makalu_remap_sniper_dpi"),
-                            font=("Helvetica", 11), text_color=FG2, width=72, anchor="w")
+                            font=(UI.FONT_FAMILY, 11), text_color=FG2, width=72, anchor="w")
         _lbl.pack(side="left")
         self._reg(_lbl, "makalu_remap_sniper_dpi")
         self._sniper_dpi = 400
@@ -658,7 +658,7 @@ class Makalu67Panel(ctk.CTkFrame):
         self._sniper_entry_var = tk.StringVar(value="400")
         self._sniper_entry = ctk.CTkEntry(
             self._sniper_row, textvariable=self._sniper_entry_var,
-            width=66, height=28, font=("Helvetica", 11, "bold"),
+            width=66, height=28, font=(UI.FONT_FAMILY, 11, "bold"),
             fg_color=BG2, text_color=FG, border_color=BG3, justify="center",
         )
         self._sniper_entry.pack(side="left", padx=(8, 0))
@@ -676,14 +676,14 @@ class Makalu67Panel(ctk.CTkFrame):
         self._reg(_btn, "makalu_apply")
         _btn = ctk.CTkButton(
             apply_row, text=self.T("makalu_reset_btn"),
-            font=("Helvetica", 11), fg_color=BG2, hover_color=BG,
+            font=(UI.FONT_FAMILY, 11), fg_color=BG2, hover_color=BG,
             text_color=FG2, width=60, height=28, corner_radius=5,
             command=self._reset_remap,
         )
         _btn.pack(side="left", padx=(6, 0))
         self._reg(_btn, "makalu_reset_btn")
         self._remap_status = ctk.CTkLabel(apply_row, text="",
-                                           font=("Helvetica", 10), text_color=FG2)
+                                           font=(UI.FONT_FAMILY, 10), text_color=FG2)
         self._remap_status.pack(side="left", padx=(10, 0))
 
         # Set dropdowns to current assignment of button 1
@@ -820,7 +820,7 @@ class Makalu67Panel(ctk.CTkFrame):
         lbl = ctk.CTkLabel(
             dlg,
             text=self.T("makalu_remap_keep_text").format(n=seconds),
-            font=("Helvetica", 12), text_color=FG, wraplength=280,
+            font=(UI.FONT_FAMILY, 12), text_color=FG, wraplength=280,
         )
         lbl.pack(pady=(20, 12))
 
@@ -896,7 +896,7 @@ class Makalu67Panel(ctk.CTkFrame):
         """Returns (card_frame, right_frame, label_widget)."""
         card = ctk.CTkFrame(parent, fg_color=BG3, corner_radius=6)
         card.pack(fill="x", padx=10, pady=pady)
-        lbl = ctk.CTkLabel(card, text=label, font=("Helvetica", 11, "bold"),
+        lbl = ctk.CTkLabel(card, text=label, font=(UI.FONT_FAMILY, 11, "bold"),
                            text_color=FG2, width=130, anchor="w")
         lbl.pack(side="left", padx=(10, 6), pady=10)
         right = ctk.CTkFrame(card, fg_color="transparent")
@@ -904,7 +904,7 @@ class Makalu67Panel(ctk.CTkFrame):
         return card, right, lbl
 
     def _status_lbl(self, parent):
-        lbl = ctk.CTkLabel(parent, text="", font=("Helvetica", 10),
+        lbl = ctk.CTkLabel(parent, text="", font=(UI.FONT_FAMILY, 10),
                            text_color=FG2, width=60, anchor="w")
         lbl.pack(side="left", padx=(6, 4))
         return lbl
@@ -922,7 +922,7 @@ class Makalu67Panel(ctk.CTkFrame):
     def _build_settings_content(self, parent):
         # ── Section header: Mouse Hardware ────────────────────────────────────
         _hdr = ctk.CTkLabel(parent, text="  " + self.T("makalu_setting_header"),
-                            font=("Helvetica", 9, "bold"), text_color=FG2)
+                            font=(UI.FONT_FAMILY, 9, "bold"), text_color=FG2)
         _hdr.pack(anchor="w", padx=12, pady=(10, 2))
         self._settings_header_lbl = _hdr
 
@@ -935,7 +935,7 @@ class Makalu67Panel(ctk.CTkFrame):
             variable=self._poll_var,
             fg_color=BG2, selected_color=BLUE, selected_hover_color="#0284c7",
             unselected_color=BG2, unselected_hover_color=BG3,
-            text_color=FG, font=("Helvetica", 11), height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), height=28,
         ).pack(side="left")
         self._apply_btn(r, self._apply_polling_rate)
         self._poll_status = self._status_lbl(r)
@@ -953,7 +953,7 @@ class Makalu67Panel(ctk.CTkFrame):
             progress_color=BLUE, fg_color=BG2,
         ).pack(side="left", padx=(0, 6))
         self._debounce_val_lbl = ctk.CTkLabel(r, text="2 ms", width=38,
-                                               font=("Helvetica", 11), text_color=FG)
+                                               font=(UI.FONT_FAMILY, 11), text_color=FG)
         self._debounce_val_lbl.pack(side="left")
         self._apply_btn(r, self._apply_debounce)
         self._debounce_status = self._status_lbl(r)
@@ -968,7 +968,7 @@ class Makalu67Panel(ctk.CTkFrame):
             command=lambda _: self._apply_angle_snapping(),
             fg_color=BG2, selected_color=BLUE, selected_hover_color="#0284c7",
             unselected_color=BG2, unselected_hover_color=BG3,
-            text_color=FG, font=("Helvetica", 11), height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), height=28,
         ).pack(side="left")
         self._angle_snap_status = self._status_lbl(r)
 
@@ -982,7 +982,7 @@ class Makalu67Panel(ctk.CTkFrame):
             command=lambda _: self._apply_liftoff(),
             fg_color=BG2, selected_color=BLUE, selected_hover_color="#0284c7",
             unselected_color=BG2, unselected_hover_color=BG3,
-            text_color=FG, font=("Helvetica", 11), height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), height=28,
         ).pack(side="left")
         self._liftoff_status = self._status_lbl(r)
 
@@ -1241,7 +1241,7 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
         self._fill_swatch.pack(side="left", padx=(8, 2), pady=6)
         ctk.CTkButton(strip, text=self._T("custom_rgb_pick"), width=50, height=28,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._pick_fill).pack(side="left", padx=(0, 8))
         for hex_c, rgb in _QUICK_COLORS:
             btn = tk.Canvas(strip, width=20, height=20, bg=hex_c,
@@ -1250,7 +1250,7 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
             btn.pack(side="left", padx=2, pady=8)
             btn.bind("<Button-1>", lambda e, c=rgb: self._set_fill(c))
         self._sel_lbl = ctk.CTkLabel(strip, text=self._T("makalu_rgb_selected", n=0),
-                                     text_color=FG2, font=("Helvetica", 11))
+                                     text_color=FG2, font=(UI.FONT_FAMILY, 11))
         self._sel_lbl.pack(side="right", padx=10)
 
         # Action buttons
@@ -1258,56 +1258,56 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
         act.pack(fill="x", padx=PAD, pady=4)
         ctk.CTkButton(act, text=self._T("custom_rgb_fill"), width=110, height=30,
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._fill_selected).pack(side="left", padx=(0, 4))
         ctk.CTkButton(act, text=self._T("custom_rgb_select_all"), width=90, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._select_all).pack(side="left", padx=4)
         ctk.CTkButton(act, text=self._T("custom_rgb_deselect"), width=80, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._deselect_all).pack(side="left", padx=4)
         ctk.CTkButton(act, text=self._T("custom_rgb_all_black"), width=80, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=lambda: self._fill_all((0, 0, 0))).pack(side="left", padx=4)
         ctk.CTkButton(act, text=self._T("custom_rgb_all_white"), width=80, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=lambda: self._fill_all((255, 255, 255))).pack(side="left", padx=4)
         ctk.CTkButton(act, text=self._T("custom_rgb_undo"), width=70, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._undo).pack(side="right", padx=(4, 0))
         ctk.CTkLabel(act, text=self._T("makalu_rgb_eyedropper"), text_color=FG2,
-                     font=("Helvetica", 10)).pack(side="right", padx=8)
+                     font=(UI.FONT_FAMILY, 10)).pack(side="right", padx=8)
 
         # Presets
         pre = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
         pre.pack(fill="x", padx=PAD, pady=(0, 4))
         ctk.CTkLabel(pre, text=self._T("custom_rgb_presets"), text_color=FG2,
-                     font=("Helvetica", 11)).pack(side="left", padx=(8, 4), pady=6)
+                     font=(UI.FONT_FAMILY, 11)).pack(side="left", padx=(8, 4), pady=6)
         self._preset_var = tk.StringVar()
         self._preset_combo = ctk.CTkComboBox(
             pre, variable=self._preset_var, values=[], width=180, height=28,
             fg_color=BG3, border_color=BORDER, button_color=BLUE,
-            dropdown_fg_color=BG2, text_color=FG, font=("Helvetica", 11))
+            dropdown_fg_color=BG2, text_color=FG, font=(UI.FONT_FAMILY, 11))
         self._preset_combo.pack(side="left", padx=(0, 4), pady=6)
         ctk.CTkButton(pre, text=self._T("custom_rgb_load"), width=60, height=28,
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._preset_load).pack(side="left", padx=2)
         ctk.CTkButton(pre, text=self._T("custom_rgb_save_as"), width=80, height=28,
                       fg_color="#166534", hover_color="#14532d", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._preset_save_as).pack(side="left", padx=2)
         ctk.CTkButton(pre, text=self._T("custom_rgb_delete"), width=68, height=28,
                       fg_color="#7f1d1d", hover_color="#6b1a1a", text_color=FG,
-                      font=("Helvetica", 11),
+                      font=(UI.FONT_FAMILY, 11),
                       command=self._preset_delete).pack(side="left", padx=2)
         self._preset_status = ctk.CTkLabel(pre, text="", text_color=FG2,
-                                           font=("Helvetica", 10))
+                                           font=(UI.FONT_FAMILY, 10))
         self._preset_status.pack(side="left", padx=8)
         self._preset_refresh()
 
@@ -1315,7 +1315,7 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
         bot = ctk.CTkFrame(self, fg_color="transparent")
         bot.pack(fill="x", padx=PAD, pady=(4, PAD))
         ctk.CTkLabel(bot, text=self._T("custom_rgb_brightness"), text_color=FG2,
-                     font=("Helvetica", 11)).pack(side="left")
+                     font=(UI.FONT_FAMILY, 11)).pack(side="left")
         _bri_levels = [0, 25, 50, 75, 100]
         bri_safe = min(_bri_levels, key=lambda x: abs(x - self._bri))
         self._bri_var = tk.StringVar(value=f"{bri_safe}%")
@@ -1323,14 +1323,14 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
             bot, variable=self._bri_var,
             values=["0%", "25%", "50%", "75%", "100%"],
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=100, height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=100, height=28,
         ).pack(side="left", padx=(4, 16))
         ctk.CTkButton(bot, text=self._T("makalu_rgb_apply"), width=130, height=32,
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                      font=("Helvetica", 11, "bold"),
+                      font=(UI.FONT_FAMILY, 11, "bold"),
                       command=self._apply).pack(side="left", padx=(0, 4))
         self._status = ctk.CTkLabel(bot, text="", text_color=FG2,
-                                    font=("Helvetica", 11))
+                                    font=(UI.FONT_FAMILY, 11))
         self._status.pack(side="left", padx=10)
 
     # ── Canvas ────────────────────────────────────────────────────────────────
@@ -1362,8 +1362,8 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
                                   fill="#2a2a36", outline="#444")
 
         # Side labels
-        self._cv.create_text(42, 36, text=self._T("makalu_rgb_left"),  fill="#555", font=("Helvetica", 9))
-        self._cv.create_text(258, 36, text=self._T("makalu_rgb_right"), fill="#555", font=("Helvetica", 9))
+        self._cv.create_text(42, 36, text=self._T("makalu_rgb_left"),  fill="#555", font=(UI.FONT_FAMILY, 9))
+        self._cv.create_text(258, 36, text=self._T("makalu_rgb_right"), fill="#555", font=(UI.FONT_FAMILY, 9))
 
         # LED squares
         labels = ["L0", "L1", "L2", "L3", "R4", "R5", "R6", "R7"]
@@ -1378,7 +1378,7 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
             self._led_items[i] = item
             self._cv.create_text(
                 (lx1 + lx2) // 2, (ly1 + ly2) // 2,
-                text=labels[i], fill="#cccccc", font=("Helvetica", 9))
+                text=labels[i], fill="#cccccc", font=(UI.FONT_FAMILY, 9))
 
     def _refresh_led(self, idx):
         item = self._led_items.get(idx)
@@ -1560,11 +1560,11 @@ class MakaluCustomRGBWindow(ctk.CTkFrame):
         dlg.grab_set()
         dlg.configure(fg_color=BG)
         ctk.CTkLabel(dlg, text=self._T("custom_rgb_preset_name"), text_color=FG,
-                     font=("Helvetica", 12)).pack(pady=(14, 4))
+                     font=(UI.FONT_FAMILY, 12)).pack(pady=(14, 4))
         var = tk.StringVar(value=self._preset_var.get())
         entry = ctk.CTkEntry(dlg, textvariable=var, width=200, height=30,
                              fg_color=BG2, text_color=FG, border_color=BORDER,
-                             font=("Helvetica", 12))
+                             font=(UI.FONT_FAMILY, 12))
         entry.pack()
         entry.focus()
         def _save():
@@ -1668,11 +1668,11 @@ class _PlaceholderSection:
         # its own colour into a system that has a rule for every colour, and
         # left a missing-glyph box on machines without one.
         if icon:
-            ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
+            ctk.CTkLabel(self._header, text=icon, font=(UI.FONT_FAMILY, 14),
                          text_color=YLW, width=30).pack(side="left", padx=(8, 4))
 
         self._title_lbl = ctk.CTkLabel(self._header, text=title,
-                     font=("Helvetica", 11, "bold"),
+                     font=(UI.FONT_FAMILY, 11, "bold"),
                      text_color=FG, anchor="w")
         self._title_lbl.pack(side="left", fill="x", expand=True, padx=4, pady=12)
 
@@ -1681,12 +1681,12 @@ class _PlaceholderSection:
         self._hint_lbl = None
         if card:
             self._hint_lbl = ctk.CTkLabel(
-                self._header, text=hint or "", font=("Helvetica", 11),
+                self._header, text=hint or "", font=(UI.FONT_FAMILY, 11),
                 text_color=FG2, anchor="e")
             self._hint_lbl.pack(side="right", padx=(0, 12))
 
         self._chevron = ctk.CTkLabel(self._header, text="▶",
-                                      font=("Helvetica", 10), text_color=FG2, width=24)
+                                      font=(UI.FONT_FAMILY, 10), text_color=FG2, width=24)
         if not card:
             self._chevron.pack(side="right", padx=(0, 12))
 

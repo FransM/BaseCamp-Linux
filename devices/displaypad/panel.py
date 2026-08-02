@@ -712,7 +712,7 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         header.pack(fill="x", padx=16, pady=(14, 10))
 
         ctk.CTkLabel(header, text=self._app.T("dp_dialog_title"),
-                     font=("Helvetica", 13, "bold"), text_color=FG,
+                     font=(UI.FONT_FAMILY, 13, "bold"), text_color=FG,
                      fg_color="transparent").pack(side="left")
 
         # Page selector, sorted by name (#66). The main page stays first
@@ -729,19 +729,19 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         self._page_selector = ctk.CTkOptionMenu(
             header, values=page_labels + [newlbl],
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-            text_color=FG, font=("Helvetica", 11), width=100, height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=100, height=28,
             command=self._on_page_change)
         cur = self._panel._current_page
         self._page_selector.set(self._panel._get_page_name(cur))
         self._page_selector.pack(side="right")
         ctk.CTkButton(
             header, text=self._app.T("dp_rename_page_btn"), width=92, height=28,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             fg_color=BG2, hover_color="#333a44", text_color=FG,
             command=self._on_rename_page).pack(side="right", padx=(0, 6))
         ctk.CTkButton(
             header, text=self._app.T("dp_delete_page_btn"), width=72, height=28,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             fg_color=BG2, hover_color="#4a2222", text_color=RED,
             command=self._on_delete_page).pack(side="right", padx=(0, 6))
 
@@ -761,7 +761,7 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             tile.pack_propagate(False)
 
             ctk.CTkLabel(tile, text=f"K{idx + 1}",
-                         font=("Helvetica", 10, "bold"),
+                         font=(UI.FONT_FAMILY, 10, "bold"),
                          text_color=YLW, fg_color="transparent").pack(pady=(6, 0))
 
             path = self._panel._images.get(str(idx))
@@ -797,7 +797,7 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
 
         # Hint
         ctk.CTkLabel(self, text=self._app.T("dp_dialog_hint"),
-                     font=("Helvetica", 10), text_color=FG2,
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2,
                      fg_color="transparent").pack(pady=(0, 4))
 
         # Min. ms/Frame row — own StringVar, synced to panel on change
@@ -806,19 +806,19 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         fps_row = ctk.CTkFrame(self, fg_color="transparent")
         fps_row.pack(fill="x", padx=16, pady=(0, 6))
         ctk.CTkLabel(fps_row, text=self._app.T("dp_min_ms_frame"),
-                     font=("Helvetica", 11), text_color=FG2,
+                     font=(UI.FONT_FAMILY, 11), text_color=FG2,
                      fg_color="transparent").pack(side="left")
         ctk.CTkEntry(fps_row, textvariable=self._min_ms_var,
-                     width=60, height=26, font=("Helvetica", 11),
+                     width=60, height=26, font=(UI.FONT_FAMILY, 11),
                      fg_color=BG3, border_color=BORDER, text_color=FG,
                      ).pack(side="left", padx=(6, 0))
         ctk.CTkLabel(fps_row, text=self._app.T("dp_gif_speed"),
-                     font=("Helvetica", 10), text_color=FG2,
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2,
                      fg_color="transparent").pack(side="left", padx=(8, 0))
 
         # Status line
         self._status_lbl = ctk.CTkLabel(self, text="",
-                                         font=("Helvetica", 11), text_color=FG2,
+                                         font=(UI.FONT_FAMILY, 11), text_color=FG2,
                                          fg_color="transparent")
         self._status_lbl.pack(pady=(0, 4))
 
@@ -829,21 +829,21 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             btn_row, text=self._app.T("dp_close"),
             fg_color=BG3, hover_color=BG2, text_color=FG,
-            font=("Helvetica", 11), height=34, corner_radius=6, width=110,
+            font=(UI.FONT_FAMILY, 11), height=34, corner_radius=6, width=110,
             command=self.destroy,
         ).pack(side="right", padx=(6, 0))
 
         ctk.CTkButton(
             btn_row, text=self._app.T("dp_clear_all"),
             fg_color=BG3, hover_color=BG2, text_color=FG2,
-            font=("Helvetica", 11), height=34, corner_radius=6, width=100,
+            font=(UI.FONT_FAMILY, 11), height=34, corner_radius=6, width=100,
             command=self._clear_all,
         ).pack(side="right", padx=(6, 0))
 
         ctk.CTkButton(
             btn_row, text=self._app.T("dp_fullscreen"),
             fg_color=BG3, hover_color=BG2, text_color=FG,
-            font=("Helvetica", 11), height=34, corner_radius=6, width=100,
+            font=(UI.FONT_FAMILY, 11), height=34, corner_radius=6, width=100,
             command=self._pick_fullscreen,
         ).pack(side="left")
 
@@ -1429,7 +1429,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         header.pack(fill="x", padx=16, pady=(14, 4))
 
         ctk.CTkLabel(header, text=self._app.T("dp_actions_title"),
-                     font=("Helvetica", 13, "bold"), text_color=FG,
+                     font=(UI.FONT_FAMILY, 13, "bold"), text_color=FG,
                      fg_color="transparent").pack(side="left")
 
         # Page selector
@@ -1439,17 +1439,17 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._page_selector = ctk.CTkOptionMenu(
             header, values=page_labels + [newlbl],
             fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-            text_color=FG, font=("Helvetica", 11), width=100, height=28,
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=100, height=28,
             command=self._on_page_change)
         self._page_selector.pack(side="right")
         ctk.CTkButton(
             header, text=self._app.T("dp_rename_page_btn"), width=92, height=28,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             fg_color=BG2, hover_color="#333a44", text_color=FG,
             command=self._on_rename_page).pack(side="right", padx=(0, 6))
         ctk.CTkButton(
             header, text=self._app.T("dp_delete_page_btn"), width=72, height=28,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             fg_color=BG2, hover_color="#4a2222", text_color=RED,
             command=self._on_delete_page).pack(side="right", padx=(0, 6))
         self._page_list = pages
@@ -1460,12 +1460,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         to_row = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
         to_row.pack(fill="x", padx=12, pady=(0, 6))
         ctk.CTkLabel(to_row, text=self._app.T("dp_panel_timeout"),
-                     font=("Helvetica", 10), text_color=FG2).pack(
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2).pack(
                          side="left", padx=(10, 4), pady=6)
         self._to_mode_menu = ctk.CTkOptionMenu(
             to_row, values=self._timeout_mode_labels(),
             fg_color=BG3, button_color=BLUE, button_hover_color="#0884be",
-            text_color=FG, font=("Helvetica", 10), width=96, height=26,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=96, height=26,
             dynamic_resizing=False,
             command=lambda v: self._on_timeout_change())
         self._to_mode_menu.pack(side="left", padx=2)
@@ -1473,16 +1473,16 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._to_secs_entry = ctk.CTkEntry(
             to_row, textvariable=self._to_secs_var, width=44, height=26,
             fg_color=BG3, text_color=FG, border_color=BORDER,
-            font=("Helvetica", 10))
+            font=(UI.FONT_FAMILY, 10))
         self._to_secs_entry.pack(side="left", padx=(4, 1))
         self._to_secs_entry.bind("<Return>",   lambda e: self._on_timeout_change())
         self._to_secs_entry.bind("<FocusOut>", lambda e: self._on_timeout_change())
         ctk.CTkLabel(to_row, text=self._app.T("dp_timeout_secs"),
-                     font=("Helvetica", 10), text_color=FG2).pack(side="left", padx=(0, 2))
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2).pack(side="left", padx=(0, 2))
         self._to_target_menu = ctk.CTkOptionMenu(
             to_row, values=[""],
             fg_color=BG3, button_color=BLUE, button_hover_color="#0884be",
-            text_color=FG, font=("Helvetica", 10), width=110, height=26,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=110, height=26,
             dynamic_resizing=False,
             command=lambda v: self._on_timeout_change())
         self._to_target_menu.pack(side="left", padx=(2, 10))
@@ -1502,20 +1502,20 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             card.pack(fill="x", padx=4, pady=2)
             self._cards.append(card)
 
-            ctk.CTkLabel(card, text=f"K{i+1}", font=("Helvetica", 10, "bold"),
+            ctk.CTkLabel(card, text=f"K{i+1}", font=(UI.FONT_FAMILY, 10, "bold"),
                          text_color=YLW).pack(anchor="w", padx=8, pady=(5, 0))
 
             row = ctk.CTkFrame(card, fg_color="transparent")
             row.pack(fill="x", padx=4, pady=(2, 6))
 
             ctk.CTkLabel(row, text=self._app.T("action_label"),
-                         font=("Helvetica", 10), text_color=FG2,
+                         font=(UI.FONT_FAMILY, 10), text_color=FG2,
                          width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
 
             type_menu = ctk.CTkOptionMenu(
                 row, values=self._type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=30,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), width=_ROW_MENU_W, height=30,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_type_change(val, ix))
             type_menu.pack(side="left", padx=(2, 2))
@@ -1523,7 +1523,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
             entry = ctk.CTkEntry(row, textvariable=self._act_cmd[i],
                          fg_color=BG2, text_color=FG, border_color=BORDER,
-                         font=("Helvetica", 11), height=30)
+                         font=(UI.FONT_FAMILY, 11), height=30)
             entry.pack(side="left", padx=4, expand=True, fill="x")
             entry.bind("<Return>", lambda e, ix=i: self._apply(ix))
             entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
@@ -1533,7 +1533,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             # OBS action combo (hidden by default, shown when type=obs)
             obs_combo = ctk.CTkComboBox(
                 row, values=[], width=140, height=30,
-                font=("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11),
                 fg_color=BG2, button_color=BLUE, border_color=BORDER,
                 text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
                 dropdown_hover_color=BG3,
@@ -1542,7 +1542,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
             macro_combo = ctk.CTkComboBox(
                 row, values=[], width=140, height=30,
-                font=("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11),
                 fg_color=BG2, button_color=BLUE, border_color=BORDER,
                 text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
                 dropdown_hover_color=BG3,
@@ -1555,14 +1555,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             page_combo = ctk.CTkOptionMenu(
                 row, values=[""], width=110, height=30,
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_page_target_select(val, ix))
             self._page_combos.append(page_combo)
             # not packed yet — shown only when 'page' type selected
 
             hue_combo = ctk.CTkComboBox(
                 row, values=[], width=140, height=30,
-                font=("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11),
                 fg_color=BG2, button_color=BLUE, border_color=BORDER,
                 text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
                 dropdown_hover_color=BG3,
@@ -1571,7 +1571,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
             plugin_combo = ctk.CTkComboBox(
                 row, values=[], width=160, height=30,
-                font=("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11),
                 fg_color=BG2, button_color=BLUE, border_color=BORDER,
                 text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
                 dropdown_hover_color=BG3,
@@ -1602,19 +1602,19 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             sec_row = ctk.CTkFrame(card, fg_color="transparent")
             sec_row.pack(fill="x", padx=4, pady=(0, 6))
             ctk.CTkLabel(sec_row, text=self._app.T("dp_also_on_press"),
-                         font=("Helvetica", 10), text_color=FG2,
+                         font=(UI.FONT_FAMILY, 10), text_color=FG2,
                          width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
             sec_menu = ctk.CTkOptionMenu(
                 sec_row, values=self._sec_type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=28,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), width=_ROW_MENU_W, height=28,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_sec_type_change(val, ix))
             sec_menu.pack(side="left", padx=(2, 2))
             self._sec_menus.append(sec_menu)
             sec_entry = ctk.CTkEntry(sec_row, textvariable=self._sec_cmd[i],
                          fg_color=BG2, text_color=FG, border_color=BORDER,
-                         font=("Helvetica", 11), height=28)
+                         font=(UI.FONT_FAMILY, 11), height=28)
             sec_entry.pack(side="left", padx=4, expand=True, fill="x")
             sec_entry.bind("<Return>",   lambda e, ix=i: self._apply(ix))
             sec_entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
@@ -1624,7 +1624,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             sec_page_combo = ctk.CTkOptionMenu(
                 sec_row, values=[""], width=140, height=28,
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_sec_page_select(val, ix))
             self._sec_page_combos.append(sec_page_combo)
             # not packed yet — shown only when 'page' type selected
@@ -1635,19 +1635,19 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             dbl_row = ctk.CTkFrame(card, fg_color="transparent")
             dbl_row.pack(fill="x", padx=4, pady=(0, 6))
             ctk.CTkLabel(dbl_row, text=self._app.T("dp_on_double_click"),
-                         font=("Helvetica", 10), text_color=FG2,
+                         font=(UI.FONT_FAMILY, 10), text_color=FG2,
                          width=_ROW_LABEL_W, anchor="w").pack(side="left", padx=(4, 2))
             dbl_menu = ctk.CTkOptionMenu(
                 dbl_row, values=self._sec_type_labels(),
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), width=_ROW_MENU_W, height=28,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), width=_ROW_MENU_W, height=28,
                 dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_dbl_type_change(val, ix))
             dbl_menu.pack(side="left", padx=(2, 2))
             self._dbl_menus.append(dbl_menu)
             dbl_entry = ctk.CTkEntry(dbl_row, textvariable=self._dbl_cmd[i],
                          fg_color=BG2, text_color=FG, border_color=BORDER,
-                         font=("Helvetica", 11), height=28)
+                         font=(UI.FONT_FAMILY, 11), height=28)
             dbl_entry.pack(side="left", padx=4, expand=True, fill="x")
             dbl_entry.bind("<Return>",   lambda e, ix=i: self._apply(ix))
             dbl_entry.bind("<FocusOut>", lambda e, ix=i: self._apply(ix))
@@ -1657,19 +1657,19 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             dbl_page_combo = ctk.CTkOptionMenu(
                 dbl_row, values=[""], width=140, height=28,
                 fg_color=BG2, button_color=BLUE, button_hover_color="#0884be",
-                text_color=FG, font=("Helvetica", 11), dynamic_resizing=False,
+                text_color=FG, font=(UI.FONT_FAMILY, 11), dynamic_resizing=False,
                 command=lambda val, ix=i: self._on_dbl_page_select(val, ix))
             self._dbl_page_combos.append(dbl_page_combo)
             # not packed yet — shown only when 'page' type selected
 
         self._info_lbl = ctk.CTkLabel(self, text="",
-                                      font=("Helvetica", 11), text_color=GRN)
+                                      font=(UI.FONT_FAMILY, 11), text_color=GRN)
         self._info_lbl.pack(pady=(0, 4))
 
         ctk.CTkButton(
             self, text=self._app.T("dp_close"),
             fg_color=BG3, hover_color=BG2, text_color=FG,
-            font=("Helvetica", 11), height=34, corner_radius=6,
+            font=(UI.FONT_FAMILY, 11), height=34, corner_radius=6,
             command=self._apply_all_and_close,
         ).pack(fill="x", padx=12, pady=(0, 12))
 
@@ -2203,7 +2203,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         ctk.CTkEntry(dlg, textvariable=search_var,
                      placeholder_text=self._app.T("app_picker_search"),
                      fg_color=BG2, text_color=FG, border_color=BORDER,
-                     font=("Helvetica", 12), height=34,
+                     font=(UI.FONT_FAMILY, 12), height=34,
                      ).pack(fill="x", padx=12, pady=(12, 6))
 
         list_frame = ctk.CTkScrollableFrame(dlg, fg_color=BG2, corner_radius=6)
@@ -2227,7 +2227,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     continue
                 b = ctk.CTkButton(list_frame, text=name, anchor="w",
                                   fg_color="transparent", text_color=FG,
-                                  hover_color=BG3, font=("Helvetica", 11),
+                                  hover_color=BG3, font=(UI.FONT_FAMILY, 11),
                                   height=30, corner_radius=4,
                                   command=lambda e=exec_cmd: _select(e))
                 b.pack(fill="x", pady=1)
@@ -2518,7 +2518,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         # Kept for the language refresh; the screen header shows the name.
         self._heading_lbl = ctk.CTkLabel(
             head_row, text=self.T("dp_title"),
-            font=("Helvetica", 14, "bold"), text_color=FG,
+            font=(UI.FONT_FAMILY, 14, "bold"), text_color=FG,
             fg_color="transparent", anchor="w")
 
         # ── Page tabs ──────────────────────────────────────────────────────
@@ -2571,11 +2571,11 @@ class DisplayPadPanel(ctk.CTkFrame):
                 w.bind("<Button-3>", lambda _e, i=idx: self._clear_slot(i))
 
             ctk.CTkLabel(overview, text=f"K{idx + 1}",
-                         font=("Helvetica", 9), text_color=FG2,
+                         font=(UI.FONT_FAMILY, 9), text_color=FG2,
                          fg_color="transparent").grid(row=row * 2 + 1, column=col)
 
         hint = ctk.CTkLabel(grid_wrap, text=self.T("dp_grid_hint"),
-                            font=("Helvetica", 10), text_color=FG2)
+                            font=(UI.FONT_FAMILY, 10), text_color=FG2)
         hint.pack(pady=(10, 0))
         self._reg(hint, "dp_grid_hint")
 
@@ -2584,7 +2584,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         # Info label, kept for status text from the upload worker
         self._info_label = ctk.CTkLabel(
             content, text="",
-            font=("Helvetica", 11), text_color=FG2, fg_color="transparent")
+            font=(UI.FONT_FAMILY, 11), text_color=FG2, fg_color="transparent")
         self._info_label.pack(pady=(8, 8))
 
         self._rebuild_page_tabs()
@@ -2606,37 +2606,37 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._inspector = insp
 
         self._insp_title = ctk.CTkLabel(
-            insp, text="", font=("Helvetica", 12, "bold"), text_color=FG, anchor="w")
+            insp, text="", font=(UI.FONT_FAMILY, 12, "bold"), text_color=FG, anchor="w")
         self._insp_title.pack(fill="x", padx=12, pady=(12, 8))
 
         self._insp_type_lbl = ctk.CTkLabel(insp, text=self.T("dp_insp_action"),
-                                           font=("Helvetica", 10), text_color=FG2,
+                                           font=(UI.FONT_FAMILY, 10), text_color=FG2,
                                            anchor="w")
         self._insp_type_lbl.pack(fill="x", padx=12)
         self._reg(self._insp_type_lbl, "dp_insp_action")
         self._insp_type = ctk.CTkOptionMenu(
             insp, values=action_type_labels(self._app), width=_INSPECTOR_W - 24,
-            height=28, font=("Helvetica", 11), fg_color=BG3, button_color=BORDER,
+            height=28, font=(UI.FONT_FAMILY, 11), fg_color=BG3, button_color=BORDER,
             button_hover_color=BORDER, text_color=FG,
             command=self._on_insp_type_change)
         self._insp_type.pack(padx=12, pady=(2, 8))
 
         self._insp_value_lbl = ctk.CTkLabel(insp, text=self.T("dp_insp_value"),
-                                            font=("Helvetica", 10), text_color=FG2,
+                                            font=(UI.FONT_FAMILY, 10), text_color=FG2,
                                             anchor="w")
         self._insp_value_lbl.pack(fill="x", padx=12)
         self._reg(self._insp_value_lbl, "dp_insp_value")
         self._insp_value_var = tk.StringVar()
         self._insp_value = ctk.CTkEntry(
             insp, textvariable=self._insp_value_var, width=_INSPECTOR_W - 24,
-            height=28, font=("Helvetica", 11), fg_color=BG3, text_color=FG,
+            height=28, font=(UI.FONT_FAMILY, 11), fg_color=BG3, text_color=FG,
             border_color=BORDER)
         self._insp_value.pack(padx=12, pady=(2, 4))
         self._insp_value.bind("<FocusOut>", lambda _e: self._save_inspector())
         self._insp_value.bind("<Return>", lambda _e: self._save_inspector())
         self._insp_page = ctk.CTkOptionMenu(
             insp, values=[""], width=_INSPECTOR_W - 24, height=28,
-            font=("Helvetica", 11), fg_color=BG3, button_color=BORDER,
+            font=(UI.FONT_FAMILY, 11), fg_color=BG3, button_color=BORDER,
             button_hover_color=BORDER, text_color=FG,
             command=lambda _v: self._save_inspector())
 
@@ -2645,22 +2645,27 @@ class DisplayPadPanel(ctk.CTkFrame):
             width=_INSPECTOR_W - 24, height=UI.CTRL_H_SM)
 
         self._insp_img_lbl = ctk.CTkLabel(insp, text=self.T("dp_insp_image"),
-                                          font=("Helvetica", 10), text_color=FG2,
+                                          font=(UI.FONT_FAMILY, 10), text_color=FG2,
                                           anchor="w")
         self._insp_img_lbl.pack(fill="x", padx=12, pady=(8, 2))
         self._reg(self._insp_img_lbl, "dp_insp_image")
         img_row = ctk.CTkFrame(insp, fg_color="transparent")
         img_row.pack(fill="x", padx=12)
-        UI.GhostButton(img_row, self.T("dp_insp_pick_image"),
-                       self._insp_pick_image, width=_INSPECTOR_W - 96,
-                       height=UI.CTRL_H_SM).pack(side="left")
-        UI.DangerButton(img_row, self.T("dp_insp_clear"),
-                        lambda: self._clear_slot(self._selected_key),
-                        width=64, height=UI.CTRL_H_SM).pack(side="right")
+        pick = UI.GhostButton(img_row, self.T("dp_insp_pick_image"),
+                              self._insp_pick_image, width=_INSPECTOR_W - 96,
+                              height=UI.CTRL_H_SM)
+        self._reg(pick, "dp_insp_pick_image")
+        pick.pack(side="left")
+        clear = UI.DangerButton(img_row, self.T("dp_insp_clear"),
+                                lambda: self._clear_slot(self._selected_key),
+                                width=64, height=UI.CTRL_H_SM)
+        self._reg(clear, "dp_insp_clear")
+        clear.pack(side="right")
 
         self._insp_more = UI.GhostButton(
             insp, self.T("dp_insp_more"), self._open_actions_dialog,
             width=_INSPECTOR_W - 24, height=UI.CTRL_H_SM)
+        self._reg(self._insp_more, "dp_insp_more")
         self._insp_more.pack(side="bottom", padx=12, pady=12, fill="x")
 
     def _select_key(self, idx):
@@ -2817,7 +2822,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         for pid in order:
             active = pid == self._current_page
             btn = ctk.CTkButton(
-                self._pagebar, text=names[pid], font=("Helvetica", 11,
+                self._pagebar, text=names[pid], font=(UI.FONT_FAMILY, 11,
                                                       "bold" if active else "normal"),
                 fg_color=BG2 if active else "transparent",
                 hover_color=BG2, text_color=FG if active else FG2,
@@ -2828,7 +2833,7 @@ class DisplayPadPanel(ctk.CTkFrame):
             btn.pack(side="left", padx=(0, 4))
             self._page_tabs[pid] = btn
         add = ctk.CTkButton(
-            self._pagebar, text=self.T("dp_new_page"), font=("Helvetica", 11),
+            self._pagebar, text=self.T("dp_new_page"), font=(UI.FONT_FAMILY, 11),
             fg_color="transparent", hover_color=BG2, text_color=FG2,
             height=UI.CTRL_H_SM, corner_radius=5, width=90,
             command=self._on_new_page)
@@ -2864,7 +2869,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._rot_menu = ctk.CTkOptionMenu(
             parent, values=["0°", "90°", "180°", "270°"],
             fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
-            text_color=FG, font=("Helvetica", 10), width=64,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=64,
             height=UI.CTRL_H_SM, command=self._on_rotation_change)
         self._rot_menu.set(f"{self._rotation}°")
         self._rot_menu.pack(side="right", padx=(UI.S2, 0))
@@ -2872,22 +2877,22 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._bri_menu = ctk.CTkOptionMenu(
             parent, values=["0%", "25%", "50%", "75%", "100%"],
             fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
-            text_color=FG, font=("Helvetica", 10), width=76,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=76,
             height=UI.CTRL_H_SM, command=self._on_brightness_change)
         self._bri_menu.set(f"{self._brightness}%")
         self._bri_menu.pack(side="right", padx=(UI.S2, 0))
         ctk.CTkLabel(parent, text=self.T("dp_brightness_label"),
-                     font=("Helvetica", 10), text_color=FG2).pack(side="right")
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2).pack(side="right")
 
         self._deb_menu = ctk.CTkOptionMenu(
             parent, values=["0.2s", "0.4s", "0.6s", "0.8s", "1.0s"],
             fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
-            text_color=FG, font=("Helvetica", 10), width=76,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=76,
             height=UI.CTRL_H_SM, command=self._on_debounce_change)
         self._deb_menu.set(f"{self._debounce}s")
         self._deb_menu.pack(side="right", padx=(UI.S2, 0))
         ctk.CTkLabel(parent, text=self.T("dp_debounce_label"),
-                     font=("Helvetica", 10), text_color=FG2).pack(side="right")
+                     font=(UI.FONT_FAMILY, 10), text_color=FG2).pack(side="right")
 
     def refresh(self):
         """Shown again: the page tabs and the inspector may be stale after a
@@ -4044,7 +4049,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         for name in names:
             ctk.CTkButton(box, text=name, anchor="w", height=28,
                           fg_color=BG2, hover_color=BG3, text_color=FG,
-                          font=("Helvetica", 11),
+                          font=(UI.FONT_FAMILY, 11),
                           command=lambda n=name: _take(n)).pack(fill="x", pady=1)
         dlg.after(20, dlg.grab_set)
 

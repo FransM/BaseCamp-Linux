@@ -52,7 +52,16 @@ HOVER_SOFT = "#2a2a3d"   # tile / row hover
 # Four sizes. TEXT_XS is for uppercase labels and metadata only, never for
 # anything the user has to read in a sentence.
 
-FONT_FAMILY = "Helvetica"
+# Not "Helvetica". That is an alias, and where it resolves to Nimbus Sans the
+# umlauts on capitals are lost: GERÄTE renders as GERATE, Über as Uber, on
+# labels and on buttons alike. CustomTkinter sizes the inner tk label to the
+# font's line height, and Nimbus Sans puts those dots above its own ascent, so
+# they fall outside and are cut. Liberation Sans measures identically, average
+# and worst case both 100.0% against a sample of our German strings, but
+# carries an ascent of 13px against 10px, which is where the dots live. Where
+# it is missing Tk substitutes on its own; every common substitute has room for
+# them too.
+FONT_FAMILY = "Liberation Sans"
 TEXT_XS = 11
 TEXT_SM = 13
 TEXT_MD = 16

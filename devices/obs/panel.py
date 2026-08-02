@@ -78,31 +78,32 @@ class OBSPanel(ctk.CTkFrame):
         # The screen header says OBS Studio, so no second title here. One
         # card, because 188 lines of connection settings do not fill a screen.
         card = UI.Card(scroll, title=self.T("obs_connection"))
+        self._reg(card, "obs_connection")
         card.pack(fill="x", padx=16, pady=(12, 4))
         conn = card.body
 
         row1 = ctk.CTkFrame(conn, fg_color="transparent")
         row1.pack(pady=(8, 2))
         ctk.CTkLabel(row1, text=self.T("obs_host_label"), text_color=FG2,
-                     font=("Helvetica", 11)).pack(side="left")
+                     font=(UI.FONT_FAMILY, 11)).pack(side="left")
         ctk.CTkEntry(row1, textvariable=self._obs_host, width=120, height=30,
                      fg_color=BG2, text_color=FG, border_color=BORDER,
-                     font=("Helvetica", 11)).pack(side="left", padx=(2, 8))
+                     font=(UI.FONT_FAMILY, 11)).pack(side="left", padx=(2, 8))
         ctk.CTkLabel(row1, text=self.T("obs_port_label"), text_color=FG2,
-                     font=("Helvetica", 11)).pack(side="left")
+                     font=(UI.FONT_FAMILY, 11)).pack(side="left")
         ctk.CTkEntry(row1, textvariable=self._obs_port, width=62, height=30,
                      fg_color=BG2, text_color=FG, border_color=BORDER,
-                     font=("Helvetica", 11)).pack(side="left", padx=2)
+                     font=(UI.FONT_FAMILY, 11)).pack(side="left", padx=2)
 
         row2 = ctk.CTkFrame(conn, fg_color="transparent")
         row2.pack(pady=2)
         self._reg(
-            ctk.CTkLabel(row2, text="", text_color=FG2, font=("Helvetica", 11)),
+            ctk.CTkLabel(row2, text="", text_color=FG2, font=(UI.FONT_FAMILY, 11)),
             "obs_password"
         ).pack(side="left")
         ctk.CTkEntry(row2, textvariable=self._obs_password, width=180, height=30,
                      fg_color=BG2, text_color=FG, border_color=BORDER,
-                     font=("Helvetica", 11), show="*").pack(side="left", padx=4)
+                     font=(UI.FONT_FAMILY, 11), show="*").pack(side="left", padx=4)
 
         btn_row = ctk.CTkFrame(conn, fg_color="transparent")
         btn_row.pack(pady=(6, 8))
@@ -115,7 +116,7 @@ class OBSPanel(ctk.CTkFrame):
             "obs_disconnect"
         ).pack(side="left", padx=(6, 0))
 
-        self._status = ctk.CTkLabel(conn, text="", font=("Helvetica", 11),
+        self._status = ctk.CTkLabel(conn, text="", font=(UI.FONT_FAMILY, 11),
                                     text_color=FG2, wraplength=300)
         self._status.pack(pady=(0, 8))
 

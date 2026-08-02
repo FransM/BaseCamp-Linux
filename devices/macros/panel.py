@@ -130,10 +130,9 @@ class MacroPanel(ctk.CTkFrame):
             return _orig(*args)
         _c.yview = _capped
 
-        # The screen header carries the name; this is kept for apply_lang.
-        self._title_lbl = ctk.CTkLabel(left, text=self.T("macro_title"))
-        UI.SectionLabel(left, text=self.T("macro_title")).pack(
-            fill="x", pady=(10, 4))
+        self._title_lbl = UI.SectionLabel(left, text=self.T("macro_title"))
+        self._reg(self._title_lbl, "macro_title")
+        self._title_lbl.pack(fill="x", pady=(10, 4))
         self._new_btn = UI.PrimaryButton(
             left, self.T("macro_new"), self._new_macro, width=_MACRO_LIST_W - 12)
         self._new_btn.pack(fill="x", pady=(0, 6))
@@ -156,7 +155,7 @@ class MacroPanel(ctk.CTkFrame):
 
         self._empty_lbl = ctk.CTkLabel(
             self._list_inner, text=self.T("macro_no_macros"),
-            font=("Helvetica", 11), text_color=FG2)
+            font=(UI.FONT_FAMILY, 11), text_color=FG2)
 
         # Editor area
         self._editor_frame = ctk.CTkFrame(scroll, fg_color=BG2, corner_radius=7,
@@ -166,7 +165,7 @@ class MacroPanel(ctk.CTkFrame):
         # Where does this macro actually sit? The answer lives in the device
         # configs, and until now nobody could see it from here.
         self._assign_lbl = ctk.CTkLabel(
-            self._editor_frame, text="", font=("Helvetica", 10),
+            self._editor_frame, text="", font=(UI.FONT_FAMILY, 10),
             text_color=FG2, anchor="w", justify="left")
         self._assign_lbl.pack(fill="x", padx=8, pady=(8, 0))
 
@@ -174,12 +173,12 @@ class MacroPanel(ctk.CTkFrame):
         name_row = ctk.CTkFrame(self._editor_frame, fg_color="transparent")
         name_row.pack(fill="x", padx=8, pady=(8, 2))
         ctk.CTkLabel(name_row, text=self.T("macro_name_label"),
-                     font=("Helvetica", 11), text_color=FG2).pack(side="left")
+                     font=(UI.FONT_FAMILY, 11), text_color=FG2).pack(side="left")
         self._name_var = tk.StringVar()
         self._name_entry = ctk.CTkEntry(
             name_row, textvariable=self._name_var, width=240, height=28,
             fg_color=BG2, text_color=FG, border_color=BORDER,
-            font=("Helvetica", 11))
+            font=(UI.FONT_FAMILY, 11))
         self._name_entry.pack(side="left", padx=(4, 0))
         self._name_entry.bind("<FocusOut>", lambda e: self._auto_save_current())
         self._name_entry.bind("<Return>", lambda e: self._auto_save_current())
@@ -187,31 +186,36 @@ class MacroPanel(ctk.CTkFrame):
         # Repeat row
         rep_row = ctk.CTkFrame(self._editor_frame, fg_color="transparent")
         rep_row.pack(fill="x", padx=8, pady=(2, 2))
-        ctk.CTkLabel(rep_row, text=self.T("macro_repeat_label"),
-                     font=("Helvetica", 11), text_color=FG2).pack(side="left")
+        _l = ctk.CTkLabel(rep_row, text=self.T("macro_repeat_label"),
+                          font=(UI.FONT_FAMILY, 11), text_color=FG2)
+        self._reg(_l, "macro_repeat_label")
+        _l.pack(side="left")
         self._repeat_var = tk.StringVar(value="once")
         self._repeat_menu = ctk.CTkOptionMenu(
             rep_row, variable=self._repeat_var,
             values=self._repeat_labels(),
             width=100, height=28,
             fg_color=BG2, text_color=FG, button_color=BG2,
-            font=("Helvetica", 11),
+            font=(UI.FONT_FAMILY, 11),
             command=lambda _: self._on_repeat_change())
         self._repeat_menu.pack(side="left", padx=(4, 8))
 
-        ctk.CTkLabel(rep_row, text=self.T("macro_count_label"),
-                     font=("Helvetica", 11), text_color=FG2).pack(side="left")
+        _l = ctk.CTkLabel(rep_row, text=self.T("macro_count_label"),
+                          font=(UI.FONT_FAMILY, 11), text_color=FG2)
+        self._reg(_l, "macro_count_label")
+        _l.pack(side="left")
         self._count_var = tk.StringVar(value="1")
         self._count_entry = ctk.CTkEntry(
             rep_row, textvariable=self._count_var, width=50, height=28,
             fg_color=BG2, text_color=FG, border_color=BORDER,
-            font=("Helvetica", 11))
+            font=(UI.FONT_FAMILY, 11))
         self._count_entry.pack(side="left", padx=(4, 0))
 
         # Actions label
-        ctk.CTkLabel(self._editor_frame, text=self.T("macro_actions_label"),
-                     font=("Helvetica", 12, "bold"), text_color=FG
-                     ).pack(padx=8, pady=(6, 2), anchor="w")
+        _l = ctk.CTkLabel(self._editor_frame, text=self.T("macro_actions_label"),
+                          font=(UI.FONT_FAMILY, 12, "bold"), text_color=FG)
+        self._reg(_l, "macro_actions_label")
+        _l.pack(padx=8, pady=(6, 2), anchor="w")
 
         # Actions container
         self._actions_frame = ctk.CTkFrame(self._editor_frame, fg_color="transparent")
@@ -223,16 +227,17 @@ class MacroPanel(ctk.CTkFrame):
 
         self._add_action_btn = ctk.CTkButton(
             self._btn_row, text="+ " + self.T("macro_add_action"),
-            font=("Helvetica", 11), fg_color=BG2, hover_color="#333348",
+            font=(UI.FONT_FAMILY, 11), fg_color=BG2, hover_color="#333348",
             text_color=FG, height=28, corner_radius=4, width=130,
             command=self._add_action)
         self._add_action_btn.pack(side="left", padx=(0, 4))
 
         self._rec_mouse_btn = ctk.CTkButton(
             self._btn_row, text=self.T("macro_rec_mouse"),
-            font=("Helvetica", 11), fg_color=BG2, hover_color="#333348",
+            font=(UI.FONT_FAMILY, 11), fg_color=BG2, hover_color="#333348",
             text_color=FG, height=28, corner_radius=4, width=130,
             command=self._start_mouse_record)
+        self._reg(self._rec_mouse_btn, "macro_rec_mouse")
         self._rec_mouse_btn.pack(side="left")
 
         # Bottom buttons
@@ -241,30 +246,33 @@ class MacroPanel(ctk.CTkFrame):
 
         self._del_btn = ctk.CTkButton(
             bottom, text=self.T("macro_delete"),
-            font=("Helvetica", 11, "bold"), fg_color=RED, hover_color="#cc3333",
+            font=(UI.FONT_FAMILY, 11, "bold"), fg_color=RED, hover_color="#cc3333",
             text_color=FG, height=28, corner_radius=4, width=80,
             command=self._delete_macro)
         self._del_btn.pack(side="left", padx=(0, 4))
 
         self._dup_btn = ctk.CTkButton(
             bottom, text=self.T("macro_duplicate"),
-            font=("Helvetica", 11), fg_color=BG2, hover_color="#333348",
+            font=(UI.FONT_FAMILY, 11), fg_color=BG2, hover_color="#333348",
             text_color=FG, height=28, corner_radius=4, width=80,
             command=self._duplicate_macro)
+        self._reg(self._dup_btn, "macro_duplicate")
         self._dup_btn.pack(side="left", padx=(0, 4))
 
         self._export_btn = ctk.CTkButton(
             bottom, text=self.T("macro_export"),
-            font=("Helvetica", 11), fg_color=BG2, hover_color="#333348",
+            font=(UI.FONT_FAMILY, 11), fg_color=BG2, hover_color="#333348",
             text_color=FG, height=28, corner_radius=4, width=70,
             command=self._export_macro)
+        self._reg(self._export_btn, "macro_export")
         self._export_btn.pack(side="left", padx=(0, 4))
 
         self._import_btn = ctk.CTkButton(
             bottom, text=self.T("macro_import"),
-            font=("Helvetica", 11), fg_color=BG2, hover_color="#333348",
+            font=(UI.FONT_FAMILY, 11), fg_color=BG2, hover_color="#333348",
             text_color=FG, height=28, corner_radius=4, width=70,
             command=self._import_macro)
+        self._reg(self._import_btn, "macro_import")
         self._import_btn.pack(side="left")
 
         # Initially hide editor if no macros
@@ -313,7 +321,7 @@ class MacroPanel(ctk.CTkFrame):
         if not self._macros:
             self._empty_lbl = ctk.CTkLabel(
                 self._list_inner, text=self.T("macro_no_macros"),
-                font=("Helvetica", 11), text_color=FG2)
+                font=(UI.FONT_FAMILY, 11), text_color=FG2)
             self._empty_lbl.pack(pady=6)
             self._editor_frame.pack_forget()
             return
@@ -325,7 +333,7 @@ class MacroPanel(ctk.CTkFrame):
             row.pack(fill="x", padx=2, pady=1)
             btn = ctk.CTkButton(
                 row, text=name, anchor="w",
-                font=("Helvetica", 11, "bold") if is_sel else ("Helvetica", 11),
+                font=(UI.FONT_FAMILY, 11, "bold") if is_sel else (UI.FONT_FAMILY, 11),
                 fg_color=BLUE if is_sel else BG2,
                 hover_color="#0884be" if is_sel else "#333348",
                 text_color=FG, height=28, corner_radius=4,
@@ -334,7 +342,7 @@ class MacroPanel(ctk.CTkFrame):
             ctk.CTkButton(
                 row, text="✕", width=28, height=28, corner_radius=4,
                 fg_color=RED, hover_color="#cc3333", text_color=FG,
-                font=("Helvetica", 10),
+                font=(UI.FONT_FAMILY, 10),
                 command=lambda u=uid: self._quick_delete(u)
             ).pack(side="right", padx=(2, 0))
 
@@ -442,7 +450,7 @@ class MacroPanel(ctk.CTkFrame):
         r1.pack(fill="x", padx=4, pady=(4, 0))
 
         num_lbl = ctk.CTkLabel(r1, text=f"{idx + 1}.",
-                               font=("Helvetica", 11, "bold"), text_color=FG2,
+                               font=(UI.FONT_FAMILY, 11, "bold"), text_color=FG2,
                                width=24)
         num_lbl.pack(side="left")
 
@@ -451,7 +459,7 @@ class MacroPanel(ctk.CTkFrame):
         type_menu = ctk.CTkOptionMenu(
             r1, variable=type_var, values=type_labels,
             width=90, height=26, fg_color=BG3, text_color=FG,
-            button_color=BG3, font=("Helvetica", 10),
+            button_color=BG3, font=(UI.FONT_FAMILY, 10),
             command=lambda val, i=idx: self._on_action_type_change(i, val))
         type_menu.pack(side="left", padx=(2, 4))
 
@@ -468,7 +476,7 @@ class MacroPanel(ctk.CTkFrame):
             r1, textvariable=value_var,
             width=90 if has_btn else 110,
             height=26, fg_color=BG3, text_color=FG,
-            border_color=BORDER, font=("Helvetica", 10),
+            border_color=BORDER, font=(UI.FONT_FAMILY, 10),
             placeholder_text=placeholder)
         if is_mouse_path:
             value_widget.configure(state="readonly")
@@ -480,34 +488,34 @@ class MacroPanel(ctk.CTkFrame):
             rec_btn = ctk.CTkButton(
                 r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 9),
+                font=(UI.FONT_FAMILY, 9),
                 command=lambda i=idx: self._start_key_record(i))
             rec_btn.pack(side="left", padx=(0, 2))
         elif is_mouse_click:
             rec_btn = ctk.CTkButton(
                 r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 9),
+                font=(UI.FONT_FAMILY, 9),
                 command=lambda i=idx: self._start_click_record(i))
             rec_btn.pack(side="left", padx=(0, 2))
         elif is_mouse_path:
             rec_btn = ctk.CTkButton(
                 r1, text="...", width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 9),
+                font=(UI.FONT_FAMILY, 9),
                 command=lambda i=idx: self._pick_mouse_path(i))
             rec_btn.pack(side="left", padx=(0, 2))
 
         # Delay (hidden for "delay" type)
         delay_frame = ctk.CTkFrame(r1, fg_color="transparent")
         delay_frame.pack(side="left", padx=(0, 2))
-        ctk.CTkLabel(delay_frame, text=self.T("macro_ms_label"), font=("Helvetica", 10),
+        ctk.CTkLabel(delay_frame, text=self.T("macro_ms_label"), font=(UI.FONT_FAMILY, 10),
                      text_color=FG2).pack(side="left")
         delay_var = tk.StringVar(value=str(act_data.get("delay", 0)))
         delay_entry = ctk.CTkEntry(
             delay_frame, textvariable=delay_var, width=45, height=26,
             fg_color=BG3, text_color=FG, border_color=BORDER,
-            font=("Helvetica", 10))
+            font=(UI.FONT_FAMILY, 10))
         delay_entry.pack(side="left", padx=2)
 
         # Save on focus-out or Enter for value and delay fields
@@ -526,21 +534,21 @@ class MacroPanel(ctk.CTkFrame):
         ctk.CTkButton(
             r2, text="▲", width=30, height=22, corner_radius=3,
             fg_color=BG3, hover_color="#333348", text_color=FG2,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             command=lambda i=idx: self._move_action(i, -1)
         ).pack(side="left", padx=(24, 2))
 
         ctk.CTkButton(
             r2, text="▼", width=30, height=22, corner_radius=3,
             fg_color=BG3, hover_color="#333348", text_color=FG2,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             command=lambda i=idx: self._move_action(i, 1)
         ).pack(side="left", padx=(0, 2))
 
         ctk.CTkButton(
             r2, text="✕", width=30, height=22, corner_radius=3,
             fg_color=RED, hover_color="#cc3333", text_color=FG,
-            font=("Helvetica", 10),
+            font=(UI.FONT_FAMILY, 10),
             command=lambda i=idx: self._remove_action(i)
         ).pack(side="left", padx=(0, 2))
 
@@ -583,7 +591,7 @@ class MacroPanel(ctk.CTkFrame):
             r1, textvariable=row["value_var"],
             width=90 if has_btn else 110,
             height=26, fg_color=BG3, text_color=FG,
-            border_color=BORDER, font=("Helvetica", 10),
+            border_color=BORDER, font=(UI.FONT_FAMILY, 10),
             placeholder_text=placeholder)
         if is_mouse_path:
             new_widget.configure(state="readonly")
@@ -595,7 +603,7 @@ class MacroPanel(ctk.CTkFrame):
             rec_btn = ctk.CTkButton(
                 r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 9),
+                font=(UI.FONT_FAMILY, 9),
                 command=lambda i=idx: self._start_key_record(i))
             rec_btn.pack(side="left", padx=(0, 2), after=new_widget)
             row["rec_btn"] = rec_btn
@@ -603,7 +611,7 @@ class MacroPanel(ctk.CTkFrame):
             rec_btn = ctk.CTkButton(
                 r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 9),
+                font=(UI.FONT_FAMILY, 9),
                 command=lambda i=idx: self._start_click_record(i))
             rec_btn.pack(side="left", padx=(0, 2), after=new_widget)
             row["rec_btn"] = rec_btn
@@ -611,7 +619,7 @@ class MacroPanel(ctk.CTkFrame):
             rec_btn = ctk.CTkButton(
                 r1, text="...", width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 9),
+                font=(UI.FONT_FAMILY, 9),
                 command=lambda i=idx: self._pick_mouse_path(i))
             rec_btn.pack(side="left", padx=(0, 2), after=new_widget)
             row["rec_btn"] = rec_btn
@@ -674,7 +682,7 @@ class MacroPanel(ctk.CTkFrame):
         dlg.grab_set()
 
         ctk.CTkLabel(dlg, text=self.T("macro_rec_click_hint"),
-                     font=("Helvetica", 11), text_color=FG).pack(pady=(10, 6))
+                     font=(UI.FONT_FAMILY, 11), text_color=FG).pack(pady=(10, 6))
 
         # Quick-pick buttons for side buttons that tkinter can't capture
         side_row = ctk.CTkFrame(dlg, fg_color="transparent")
@@ -683,7 +691,7 @@ class MacroPanel(ctk.CTkFrame):
             ctk.CTkButton(
                 side_row, text=name, width=60, height=24, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
-                font=("Helvetica", 10),
+                font=(UI.FONT_FAMILY, 10),
                 command=lambda n=name: _pick(n)
             ).pack(side="left", padx=2)
 
@@ -871,17 +879,17 @@ class MacroPanel(ctk.CTkFrame):
 
         self._rec_status_lbl = tk.Label(
             info_frame, text=self.T("macro_rec_press_space"),
-            font=("Helvetica", 11), fg="white", bg="#1a1a2e")
+            font=(UI.FONT_FAMILY, 11), fg="white", bg="#1a1a2e")
         self._rec_status_lbl.pack()
 
         tk.Label(info_frame, text=self.T("macro_rec_space_hint"),
-                 font=("Helvetica", 9), fg="#888", bg="#1a1a2e").pack()
+                 font=(UI.FONT_FAMILY, 9), fg="#888", bg="#1a1a2e").pack()
 
         self._rec_click_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
             info_frame, text=self.T("macro_rec_add_click"),
             variable=self._rec_click_var,
-            font=("Helvetica", 9), fg="white", bg="#1a1a2e",
+            font=(UI.FONT_FAMILY, 9), fg="white", bg="#1a1a2e",
             selectcolor="#333", activebackground="#1a1a2e",
             activeforeground="white").pack(pady=(4, 0))
 
@@ -921,7 +929,7 @@ class MacroPanel(ctk.CTkFrame):
         dlg.attributes("-topmost", True)
         dlg.configure(fg_color=BG)
         dlg.resizable(False, False)
-        ctk.CTkLabel(dlg, text=msg, font=("Helvetica", 11), text_color=FG,
+        ctk.CTkLabel(dlg, text=msg, font=(UI.FONT_FAMILY, 11), text_color=FG,
                      wraplength=290).pack(pady=(12, 6))
         ctk.CTkButton(dlg, text=self.T("ui_ok"), width=60, height=28,
                       fg_color=BG3, hover_color="#333348", text_color=FG,
@@ -936,7 +944,7 @@ class MacroPanel(ctk.CTkFrame):
         dlg.configure(fg_color=BG)
         dlg.resizable(False, False)
         ctk.CTkLabel(dlg, text=self.T("macro_no_tool"),
-                     font=("Helvetica", 11), text_color=RED,
+                     font=(UI.FONT_FAMILY, 11), text_color=RED,
                      wraplength=290).pack(pady=(12, 6))
         ctk.CTkButton(dlg, text=self.T("ui_ok"), width=60, height=28,
                       fg_color=BG3, hover_color="#333348", text_color=FG,
@@ -1011,7 +1019,7 @@ class MacroPanel(ctk.CTkFrame):
                 row.pack(fill="x", pady=1)
                 ctk.CTkButton(
                     row, text=display, anchor="w",
-                    font=("Helvetica", 11), fg_color="transparent",
+                    font=(UI.FONT_FAMILY, 11), fg_color="transparent",
                     hover_color=BG3, text_color=FG,
                     height=28, corner_radius=4,
                     command=lambda f=filename: self._select_recording(idx, f, dlg)
@@ -1019,7 +1027,7 @@ class MacroPanel(ctk.CTkFrame):
                 ctk.CTkButton(
                     row, text="✕", width=28, height=28, corner_radius=4,
                     fg_color=RED, hover_color="#cc3333", text_color=FG,
-                    font=("Helvetica", 10),
+                    font=(UI.FONT_FAMILY, 10),
                     command=lambda f=filename: _delete_rec(f)
                 ).pack(side="right", padx=(2, 0))
 

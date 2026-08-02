@@ -5,6 +5,7 @@ import threading
 import tkinter as tk
 import customtkinter as ctk
 
+import shared.ui as UI
 from shared.ui_helpers import (CardColumns, BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER,
                                cap_scroll_speed)
 from shared.config import (CONFIG_DIR, load_rgb_config, save_rgb_config,
@@ -100,7 +101,7 @@ class Everest60Panel(ctk.CTkFrame):
         self._banner_lbl = ctk.CTkLabel(
             self._banner,
             text=self.T("device_not_connected", model=self._model_name),
-            font=("Helvetica", 11), text_color=RED)
+            font=(UI.FONT_FAMILY, 11), text_color=RED)
         self._banner_lbl.pack(pady=8, padx=16)
         if not self._connected:
             self._banner.pack(fill="x", padx=12, pady=(8, 4))
@@ -167,20 +168,20 @@ class Everest60Panel(ctk.CTkFrame):
         # Effect row
         mode_row = ctk.CTkFrame(parent, fg_color="transparent")
         mode_row.pack(fill="x", padx=10, pady=(10, 2))
-        self._reg(ctk.CTkLabel(mode_row, text="", font=("Helvetica", 11),
+        self._reg(ctk.CTkLabel(mode_row, text="", font=(UI.FONT_FAMILY, 11),
                                text_color=FG2), "rgb_mode_label").pack(side="left", padx=(0, 6))
         self._rgb_mode_var = tk.StringVar(value=_rgb_names[0])
         ctk.CTkOptionMenu(
             mode_row, variable=self._rgb_mode_var, values=_rgb_names,
             command=lambda _: self._on_rgb_mode_change(),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=180, height=32
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=180, height=32
         ).pack(side="left")
 
         # Color-mode row (Single / Dual / Rainbow) — only shown when the effect
         # offers a choice (issue #32).
         self._rgb_cmode_row = ctk.CTkFrame(parent, fg_color="transparent")
-        self._reg(ctk.CTkLabel(self._rgb_cmode_row, text="", font=("Helvetica", 11),
+        self._reg(ctk.CTkLabel(self._rgb_cmode_row, text="", font=(UI.FONT_FAMILY, 11),
                                text_color=FG2), "rgb_colormode_label").pack(side="left", padx=(0, 6))
         self._rgb_cmode_var = tk.StringVar(value=self._cmode_labels["dual"])
         self._rgb_cmode_menu = ctk.CTkOptionMenu(
@@ -188,7 +189,7 @@ class Everest60Panel(ctk.CTkFrame):
             values=list(self._cmode_labels.values()),
             command=lambda _: self._on_rgb_cmode_change(),
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=140, height=32)
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=140, height=32)
         self._rgb_cmode_menu.pack(side="left")
 
         # Speed / brightness sliders
@@ -196,9 +197,9 @@ class Everest60Panel(ctk.CTkFrame):
             row = ctk.CTkFrame(par, fg_color="transparent")
             row.pack(fill="x", padx=10, pady=2)
             self._reg(ctk.CTkLabel(row, text="", text_color=FG2,
-                                   font=("Helvetica", 11), width=120, anchor="w"), key).pack(side="left")
+                                   font=(UI.FONT_FAMILY, 11), width=120, anchor="w"), key).pack(side="left")
             val_lbl = ctk.CTkLabel(row, text=str(init), text_color=FG,
-                                   font=("Helvetica", 11), width=30)
+                                   font=(UI.FONT_FAMILY, 11), width=30)
             val_lbl.pack(side="right")
             sl = ctk.CTkSlider(row, from_=0, to=100, number_of_steps=100,
                                fg_color=BG3, progress_color=BLUE,
@@ -219,7 +220,7 @@ class Everest60Panel(ctk.CTkFrame):
         self._rgb_color2 = (0, 0, 255)
         self._rgb_c1_lbl = self._reg(ctk.CTkLabel(
             self._rgb_color_row, text="", text_color=FG2,
-            font=("Helvetica", 11)), "rgb_color1_label")
+            font=(UI.FONT_FAMILY, 11)), "rgb_color1_label")
         self._rgb_c1_lbl.pack(side="left", padx=(0, 4))
         self._rgb_c1_btn = ctk.CTkButton(
             self._rgb_color_row, text="", width=40, height=28,
@@ -228,7 +229,7 @@ class Everest60Panel(ctk.CTkFrame):
         self._rgb_c1_btn.pack(side="left", padx=(0, 12))
         self._rgb_c2_lbl = self._reg(ctk.CTkLabel(
             self._rgb_color_row, text="", text_color=FG2,
-            font=("Helvetica", 11)), "rgb_color2_label")
+            font=(UI.FONT_FAMILY, 11)), "rgb_color2_label")
         self._rgb_c2_lbl.pack(side="left", padx=(0, 4))
         self._rgb_c2_btn = ctk.CTkButton(
             self._rgb_color_row, text="", width=40, height=28,
@@ -241,7 +242,7 @@ class Everest60Panel(ctk.CTkFrame):
         dir_row.pack(fill="x", padx=10, pady=2)
         self._rgb_dir_row = dir_row
         self._reg(ctk.CTkLabel(dir_row, text="", text_color=FG2,
-                               font=("Helvetica", 11)), "rgb_direction_label").pack(side="left", padx=(0, 6))
+                               font=(UI.FONT_FAMILY, 11)), "rgb_direction_label").pack(side="left", padx=(0, 6))
         self._dir_wave    = ["→ L→R", "↓ T→B", "← R→L", "↑ B→T"]
         self._dir_tornado = ["↻ CW", "↺ CCW"]
         self._rgb_dir_map = {"→ L→R": 0, "↓ T→B": 2, "← R→L": 4, "↑ B→T": 6,
@@ -250,23 +251,23 @@ class Everest60Panel(ctk.CTkFrame):
         self._rgb_dir_menu = ctk.CTkOptionMenu(
             dir_row, variable=self._rgb_dir_var, values=self._dir_wave,
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
-            text_color=FG, font=("Helvetica", 11), width=120, height=28)
+            text_color=FG, font=(UI.FONT_FAMILY, 11), width=120, height=28)
         self._rgb_dir_menu.pack(side="left")
 
         # Status + Apply
-        self._rgb_status = ctk.CTkLabel(parent, text="", font=("Helvetica", 11),
+        self._rgb_status = ctk.CTkLabel(parent, text="", font=(UI.FONT_FAMILY, 11),
                                         text_color=FG2, fg_color="transparent")
         self._rgb_status.pack(pady=(4, 0))
         self._rgb_apply_btn = self._reg(ctk.CTkButton(
             parent, text="", height=32, corner_radius=4,
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
-            font=("Helvetica", 11), command=self._apply_rgb), "rgb_apply")
+            font=(UI.FONT_FAMILY, 11), command=self._apply_rgb), "rgb_apply")
         self._rgb_apply_btn.pack(fill="x", padx=10, pady=(4, 10))
         # Editor launcher, shown only when the "Custom" effect is selected (#34).
         self._rgb_custom_btn = self._reg(ctk.CTkButton(
             parent, text="", height=32, corner_radius=4,
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
-            font=("Helvetica", 11), command=self._open_custom_rgb), "custom_rgb_open")
+            font=(UI.FONT_FAMILY, 11), command=self._open_custom_rgb), "custom_rgb_open")
 
         # Version line at the very bottom of the form (FransM's request in #32:
         # a build marker so screenshots/reports can be tied to a version).
@@ -276,7 +277,7 @@ class Everest60Panel(ctk.CTkFrame):
             _ver = "?"
         self._rgb_build_lbl = ctk.CTkLabel(
             parent, text=self.T("rgb_build_label", ver=_ver),
-            font=("Helvetica", 9), text_color=FG2, fg_color="transparent")
+            font=(UI.FONT_FAMILY, 9), text_color=FG2, fg_color="transparent")
         self._rgb_build_ver = _ver  # refreshed in apply_lang (takes a format arg)
 
         # Restore saved settings
@@ -320,7 +321,7 @@ class Everest60Panel(ctk.CTkFrame):
         row.pack(fill="x", padx=10, pady=(10, 2))
         self._reg(ctk.CTkLabel(
             row, text="", text_color=FG2,
-            font=("Helvetica", 11)), "side_leds_color_label").pack(side="left", padx=(0, 4))
+            font=(UI.FONT_FAMILY, 11)), "side_leds_color_label").pack(side="left", padx=(0, 4))
         self._side_led_color = (255, 0, 67)  # Mountain brand magenta default
         self._side_led_btn = ctk.CTkButton(
             row, text="", width=40, height=28,
@@ -332,10 +333,10 @@ class Everest60Panel(ctk.CTkFrame):
         bri_row = ctk.CTkFrame(s.content, fg_color="transparent")
         bri_row.pack(fill="x", padx=10, pady=2)
         self._reg(ctk.CTkLabel(bri_row, text="", text_color=FG2,
-                               font=("Helvetica", 11), width=120, anchor="w"),
+                               font=(UI.FONT_FAMILY, 11), width=120, anchor="w"),
                   "rgb_brightness_label").pack(side="left")
         val_lbl = ctk.CTkLabel(bri_row, text="100", text_color=FG,
-                               font=("Helvetica", 11), width=30)
+                               font=(UI.FONT_FAMILY, 11), width=30)
         val_lbl.pack(side="right")
         self._side_bri_sl = ctk.CTkSlider(
             bri_row, from_=0, to=100, number_of_steps=100,
@@ -348,20 +349,20 @@ class Everest60Panel(ctk.CTkFrame):
             command=lambda v, l=val_lbl: l.configure(text=str(int(v))))
 
         self._side_leds_status = ctk.CTkLabel(
-            s.content, text="", font=("Helvetica", 11),
+            s.content, text="", font=(UI.FONT_FAMILY, 11),
             text_color=FG2, fg_color="transparent")
         self._side_leds_status.pack(pady=(4, 0))
 
         self._reg(ctk.CTkButton(
             s.content, text="", height=32, corner_radius=4,
             fg_color=BLUE, hover_color="#0884be",
-            text_color=FG, font=("Helvetica", 11),
+            text_color=FG, font=(UI.FONT_FAMILY, 11),
             command=self._apply_side_leds), "side_leds_apply"
         ).pack(fill="x", padx=10, pady=(4, 10))
 
         self._reg(ctk.CTkLabel(
             s.content, text="",
-            font=("Helvetica", 9), text_color=FG2,
+            font=(UI.FONT_FAMILY, 9), text_color=FG2,
             wraplength=380, justify="left"), "side_leds_hint"
         ).pack(fill="x", padx=10, pady=(0, 8))
 
@@ -708,22 +709,22 @@ class _Section:
         # its own colour into a system that has a rule for every colour, and
         # left a missing-glyph box on machines without one.
         if icon:
-            ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
+            ctk.CTkLabel(self._header, text=icon, font=(UI.FONT_FAMILY, 14),
                          text_color=YLW, width=30).pack(side="left", padx=(8, 4))
         self._title_lbl = ctk.CTkLabel(self._header, text=title,
-                                       font=("Helvetica", 11, "bold"), text_color=FG, anchor="w")
+                                       font=(UI.FONT_FAMILY, 11, "bold"), text_color=FG, anchor="w")
         self._title_lbl.pack(side="left", fill="x", expand=True, padx=4, pady=12)
         # Right-hand hint in the card header: the current value, so a card
         # says what it is set to without being opened or read in full.
         self._hint_lbl = None
         if card:
             self._hint_lbl = ctk.CTkLabel(
-                self._header, text=hint or "", font=("Helvetica", 11),
+                self._header, text=hint or "", font=(UI.FONT_FAMILY, 11),
                 text_color=FG2, anchor="e")
             self._hint_lbl.pack(side="right", padx=(0, 12))
 
         self._chevron = ctk.CTkLabel(self._header, text="▶",
-                                     font=("Helvetica", 10), text_color=FG2, width=24)
+                                     font=(UI.FONT_FAMILY, 10), text_color=FG2, width=24)
         if not card:
             self._chevron.pack(side="right", padx=(0, 12))
 
