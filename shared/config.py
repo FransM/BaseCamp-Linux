@@ -91,6 +91,7 @@ AUTOSTART_FILE   = os.path.join(
     _real_home, ".config", "autostart", "basecamp-linux.desktop"
 )
 SPLASH_FILE      = os.path.join(CONFIG_DIR, "splash")
+WINDOW_FILE      = os.path.join(CONFIG_DIR, "window")
 ZONE_FILE        = os.path.join(CONFIG_DIR, "zone_colors.json")
 RGB_FILE         = os.path.join(CONFIG_DIR, "rgb_settings.json")
 PER_KEY_FILE     = os.path.join(CONFIG_DIR, "per_key_colors.json")
@@ -1571,3 +1572,28 @@ def load_macros():
 def save_macros(data):
     with open(MACROS_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+# ── Window geometry ────────────────────────────────────────────────────────────
+
+def load_window_geometry():
+    """Remembered "WxH+X+Y" of the main window, or None on first run.
+
+    Kept as a plain string because that is exactly what Tk hands out and takes
+    back. Anything unparsable is treated as absent rather than as an error:
+    a broken geometry file must never stop the app from opening.
+    """
+    try:
+        with open(WINDOW_FILE) as f:
+            geo = f.read().strip()
+    except OSError:
+        return None
+    return geo if re.match(r"^\d+x\d+([+-]-?\d+[+-]-?\d+)?$", geo) else None
+
+
+def save_window_geometry(geo):
+    try:
+        with open(WINDOW_FILE, "w") as f:
+            f.write(geo)
+    except OSError:
+        pass

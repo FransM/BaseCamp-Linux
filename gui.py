@@ -53,6 +53,7 @@ from shared.config import (
     load_obs_config, save_obs_config,
     load_autostart_enabled, save_autostart_enabled,
     load_splash_enabled, save_splash_enabled,
+    load_window_geometry, save_window_geometry,
     load_zone_config, save_zone_config, load_zone_colors, save_zone_colors,
     load_rgb_settings, save_rgb_settings,
     load_rgb_config, save_rgb_config,
@@ -524,6 +525,11 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 APP_VERSION = "2.1.8"
 
+# Window size. The minimum is what the widest screen needs: sidebar plus a
+# 6x2 key grid plus the inspector column, measured rather than guessed.
+_MIN_W, _MIN_H         = 900, 620
+_DEFAULT_W, _DEFAULT_H = 1100, 720
+
 
 class App(ctk.CTk):
     # VID/PID constants for supported devices
@@ -540,9 +546,16 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("BaseCamp Linux")
-        self.resizable(False, False)
         self.configure(fg_color=BG)
-        self.geometry("480x760")
+        # The window was nailed to 480x760 and not resizable, which is what
+        # pushed every wide thing (the 12-key grid, the keyboard, the macro
+        # editor) into a window of its own. It resizes now, remembers the size
+        # it was left at, and refuses to go so small that a screen breaks.
+        self.resizable(True, True)
+        self.minsize(_MIN_W, _MIN_H)
+        self.geometry(load_window_geometry() or f"{_DEFAULT_W}x{_DEFAULT_H}")
+        self.bind("<Configure>", self._on_window_configure, add="+")
+        self._geo_save_id = None
 
         # Enable drag & drop globally — soft-fails if tkinterdnd2 is missing.
         self._dnd_available = False
@@ -751,6 +764,34 @@ class App(ctk.CTk):
                     pass
             self.after(0, refresh)
         return {"ok": True}
+
+    def _on_window_configure(self, event):
+        """Remember the window geometry, but only after it stops changing.
+
+        <Configure> fires for every pixel of a drag and for child widgets too,
+        so writing on each event would mean hundreds of file writes while
+        someone resizes. Debounced by half a second, and only for events that
+        are about the window itself.
+        """
+        if event.widget is not self:
+            return
+        if self._geo_save_id is not None:
+            try:
+                self.after_cancel(self._geo_save_id)
+            except Exception:
+                pass
+        self._geo_save_id = self.after(500, self._save_window_geometry)
+
+    def _save_window_geometry(self):
+        self._geo_save_id = None
+        # A withdrawn or iconified window reports a useless geometry, and
+        # saving that would reopen the app somewhere off screen next time.
+        try:
+            if self.state() != "normal":
+                return
+        except Exception:
+            return
+        save_window_geometry(self.geometry())
 
     def _control_dp_state(self):
         """DisplayPad key pages for the `list` reply: {id: name} plus the page
