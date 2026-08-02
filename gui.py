@@ -521,7 +521,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "2.1.7"
+APP_VERSION = "2.1.8"
 
 
 class App(ctk.CTk):
@@ -675,7 +675,8 @@ class App(ctk.CTk):
             return {"ok": True, "app": "BaseCamp Linux", "version": APP_VERSION}
         if cmd == "list":
             return {"ok": True, "pages": list(self._panels.keys()),
-                    "active": self._active_device, "present": dict(self._dev_present)}
+                    "active": self._active_device, "present": dict(self._dev_present),
+                    "displaypad": self._control_dp_state()}
         if cmd == "page":
             page = obj.get("page", "")
             if page not in self._panels:
@@ -704,6 +705,8 @@ class App(ctk.CTk):
                 self._cmd_for_device(device, "upload", str(button), path))
         if cmd == "set_key":
             return self._control_set_key(obj)
+        if cmd == "dp_page":
+            return self._control_dp_page(obj)
         return {"ok": False, "error": f"unknown cmd '{cmd}'"}
 
     def _run_control_cmd(self, cmdline):
@@ -747,6 +750,82 @@ class App(ctk.CTk):
                     pass
             self.after(0, refresh)
         return {"ok": True}
+
+    def _control_dp_state(self):
+        """DisplayPad key pages for the `list` reply: {id: name} plus the page
+        the pad is on right now, so a script can discover the names before it
+        sends `dp_page`. Read-only and best effort, `list` has to keep working
+        without a DisplayPad and must not create or rename anything."""
+        panel = getattr(self, "_displaypad_panel", None)
+        if panel is None:
+            return {}
+        try:
+            from shared.config import _load_displaypad_page_names
+            return {"pages": {str(pid): name for pid, name
+                              in _load_displaypad_page_names().items()},
+                    "current": panel._current_page}
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+
+    def _control_dp_page(self, obj):
+        """Switch the DisplayPad's active key page from outside the GUI.
+
+        `cmd:"page"` only switches the GUI tab, so until now there was no way
+        to put the pad itself on a given page from a script (e.g. an editor
+        wrapper that flips to a page of code snippets on launch). Targets are
+        given the same way a 'page' button action gives them: by name, with a
+        raw page id and "prev" accepted as well."""
+        panel = getattr(self, "_displaypad_panel", None)
+        if panel is None:
+            return {"ok": False, "error": "dp_page: no DisplayPad panel"}
+        want = obj.get("page")
+        if isinstance(want, str):
+            want = want.strip()
+        if want is None or want == "":
+            return {"ok": False, "error": "dp_page: 'page' required"}
+        if isinstance(want, bool):  # JSON true/false: int(True) would mean page 1
+            return {"ok": False, "error": f"dp_page: bad page '{want}'"}
+
+        try:
+            from shared.config import _load_displaypad_page_names
+            known = _load_displaypad_page_names()
+        except Exception as e:
+            return {"ok": False, "error": f"dp_page: {type(e).__name__}: {e}"}
+
+        if isinstance(want, str) and want.lower() == "prev":
+            target = panel._prev_page
+        elif isinstance(want, str):
+            target = next((pid for pid, name in known.items() if name == want), None)
+            if target is None:
+                # A name wins over a number, so a page literally called "3"
+                # stays reachable; only fall back to id lookup if nothing
+                # matched by name.
+                try:
+                    target = int(want)
+                except ValueError:
+                    return {"ok": False,
+                            "error": f"dp_page: no page named '{want}'",
+                            "pages": sorted(known.values())}
+        else:
+            try:
+                target = int(want)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": f"dp_page: bad page '{want}'"}
+
+        if target not in known:
+            return {"ok": False, "error": f"dp_page: no page with id {target}",
+                    "pages": sorted(known.values())}
+        if target == panel._current_page:
+            # Not an error: a script that flips to a page on every window focus
+            # would otherwise report a failure for every repeat activation.
+            return {"ok": True, "page": target, "name": known[target],
+                    "changed": False}
+        # _switch_to_page() touches Tk widgets and the device worker, and we're
+        # on the IPC server thread here, so hand it to the main loop. It may
+        # defer itself further while an upload or animation is running, hence
+        # "accepted" rather than a completion promise.
+        self.after(0, lambda p=target: panel._switch_to_page(p))
+        return {"ok": True, "page": target, "name": known[target], "changed": True}
 
     # ── i18n ──────────────────────────────────────────────────────────────────
 
@@ -1758,7 +1837,8 @@ def run():
     # to the already-running GUI and print its reply. Lets scripts drive the app
     # without a separate binary, e.g.:
     #   basecamp --ctl '{"cmd":"rgb","device":"everest60","args":["side-static","255","0","0"]}'
-    #   basecamp --ctl '{"cmd":"page","page":"displaypad"}'
+    #   basecamp --ctl '{"cmd":"page","page":"displaypad"}'      # GUI tab
+    #   basecamp --ctl '{"cmd":"dp_page","page":"Editor"}'       # DisplayPad key page
     if "--ctl" in sys.argv:
         i = sys.argv.index("--ctl")
         payload = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""

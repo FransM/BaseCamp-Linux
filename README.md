@@ -59,7 +59,7 @@ Upload a single image or animated GIF that is **automatically split across all 1
 
 ### Button Actions (K1–K12)
 
-- **Action types:** Shell command, URL, Folder, App, Page navigation, OBS (Scene/Record/Stream), Macro, Keypress, Text
+- **Action types:** Shell command, URL, Folder, App, Page navigation, OBS (Scene/Record/Stream), Macro, Keypress, Text, and **Redefine key** (one key rewrites another key's action). Installed plugins can add their own types to this list
 - **Three slots per key:** the action itself, an optional second action that runs with it ("also on press"), and an optional **double-click** action on a quick second press
 - The **Text** action types out any string when you press the button (great for Everest 60 owners who miss F-keys, or for snippets you find yourself typing all the time)
 - Keypress and Text both work on X11 and Wayland (the app picks `xdotool` or `ydotool` automatically), including F13-F24 for shortcuts no physical key can trigger
@@ -76,6 +76,10 @@ You can drag a PNG, JPG, GIF or WebP straight from your file manager onto a butt
 - Rotate all button icons by **0° / 90° / 180° / 270°** for mounting the pad in any orientation (e.g. SimRacing setups)
 - Preview thumbnails rotate live in the GUI
 - Rotation setting persists across restarts
+
+### Brightness & key debounce
+
+Next to the rotation dropdown in the panel header sit two more: **☀ brightness** (0 / 25 / 50 / 75 / 100 %, applied to the pad immediately and re-applied on every reconnect) and **⏱ debounce** (0.2 s to 1.0 s), the minimum gap between two presses of the same key before the action fires again. Turn debounce down if your keys feel sluggish, up if a single press occasionally triggers twice. Keys that have a double-click action are exempt and use a short fixed anti-bounce instead, otherwise a one-second debounce would swallow the second tap. Both settings persist across restarts.
 
 ---
 
@@ -186,7 +190,11 @@ BaseCamp Linux has a **plugin system** that lets you extend the app without modi
 
 The **Plugins** tab in the app shows all installed plugins with status, type badges and an enable/disable toggle. No restart needed to disable a plugin.
 
-The Plugin Manager also checks for updates. When a plugin you have installed has a newer version on GitHub, a green pill appears on its card (visible even when collapsed) and an explicit update button shows up when you expand it. One click downloads the new version and replaces the plugin folder. A small restart of the app is needed so the new code is actually loaded.
+Below that, **Available plugins** lists everything published in the community repository [basecamp-plugins](https://github.com/ramisotti13-eng/basecamp-plugins), fetched on startup and refreshable with the reload button. One click installs a plugin into your config folder. Current entries are DisplayPad Clock, System Monitor, Philips Hue, Snippets, DisplayPad Pipe Text and DisplayPad Video. You can also install from a GitHub URL or a local folder through the manual install row, so a plugin you are still writing does not have to be published first.
+
+The Plugin Manager also checks for updates. When a plugin you have installed has a newer version in the index, a green pill appears on its card (visible even when collapsed) and an explicit update button shows up when you expand it. One click downloads the new version and replaces the plugin folder. A small restart of the app is needed so the new code is actually loaded.
+
+> Plugins that need a third-party Python package (for example DisplayPad Video, which uses `opencv-python`) only work on a source install. The AppImage ships its own bundled interpreter and cannot see packages you installed with the system `pip`.
 
 ### Included: Now Playing
 
@@ -205,19 +213,40 @@ See **[PLUGINS.md](PLUGINS.md)** for the full plugin development guide with API 
 
 ## Control interface & action chains
 
-While the app is running it exposes a local control socket so external programs can drive lighting, switch pages, push images and redefine keys — e.g. turn the keyboard red when a meeting is near. Keys can also chain several actions, jump to a page, or redefine another key.
+While the app is running it exposes a local control socket (`$XDG_RUNTIME_DIR/basecamp-control.sock`) so external programs can drive lighting, switch pages, push images and redefine keys, e.g. turn the keyboard red when a meeting is near. Keys can also chain several actions, jump to a page, or redefine another key.
 
 ```sh
+# Everest 60 side ring to red
 basecamp --ctl '{"cmd":"rgb","device":"everest60","args":["side-static","255","0","0"]}'
+
+# Put the DisplayPad on a page, by the name you gave it
+basecamp --ctl '{"cmd":"dp_page","page":"Editor"}'
+
+# Back to the page you came from
+basecamp --ctl '{"cmd":"dp_page","page":"prev"}'
+
+# What is there? Devices, GUI tabs, DisplayPad pages and the page it is on
+basecamp --ctl '{"cmd":"list"}'
 ```
 
-See **[docs/CONTROL_INTERFACE.md](docs/CONTROL_INTERFACE.md)** for the full command list and the new `page` / `set_key` action types.
+`dp_page` makes the pad follow whatever you are doing. A wrapper script that flips to a page of code snippets while your editor is open, and back when it exits, is three lines:
+
+```sh
+#!/bin/sh
+basecamp --ctl '{"cmd":"dp_page","page":"Editor"}'
+"$@"
+basecamp --ctl '{"cmd":"dp_page","page":"prev"}'
+```
+
+Note that `page` and `dp_page` are two different things: `page` switches the GUI tab (`displaypad`, `everest60`, `macros`, ...), `dp_page` switches the pad's own key page. The app does not have to be visible for either, minimized to tray is fine.
+
+See **[docs/CONTROL_INTERFACE.md](docs/CONTROL_INTERFACE.md)** for the full command list and the `page` / `set_key` action types.
 
 ---
 
 ## Settings
 
-The cog icon in the top-right corner of the app opens a small settings dialog with three useful features.
+The cog icon in the top-right corner of the app opens a small settings dialog.
 
 ### Backup and Restore
 
@@ -275,7 +304,7 @@ The keyboard panel is split into a persistent **dashboard** at the top and colla
 - **Dashboard** — Live clock display with 24H/12H toggle, language switcher (DE/EN + custom), Analog/Digital display style, splash screen and autostart toggles
 - **Monitor Mode** — Start/stop live keyboard display with CPU%, GPU%, RAM%, HDD% and Network MB/s metrics
 - **Main Display** — Switch between image and clock mode, upload any image to the keyboard's main display — automatically converted to the correct format
-- **Numpad Keys** — Assign actions (Shell, URL, Folder, App, OBS, Macro, Keypress, Text) and custom button images (including GIF frame picker) to D1–D4 — automatically converted to the correct format
+- **Numpad Keys** — Assign actions (Shell, URL, Folder, App, OBS, Macro, Keypress, Text, Page navigation, Redefine key) and custom button images (including GIF frame picker) to D1–D4 — automatically converted to the correct format
 - **RGB Lighting** — Control keyboard RGB effects (Wave, Tornado, Reactive, Yeti, Matrix, and more) with speed, brightness, color and direction — settings saved automatically
 - **Custom RGB Mode** — Per-key color editor: click or drag-select keys, assign colors, use the eyedropper (Alt+click), undo (Ctrl+Z), and save/load named presets — side LEDs fully selectable around both keyboard and numpad bezels (see [Custom RGB Mode — Keyboard](#custom-rgb-mode--keyboard) below)
 
@@ -284,7 +313,7 @@ The keyboard panel is split into a persistent **dashboard** at the top and colla
 - **Display styles** — Switch between Analog and Digital clock on the keyboard display
 - **24H / 12H** — Toggle clock format
 - **Monitor mode** — Live metrics on the keyboard display: CPU%, GPU%, RAM%, HDD%, Network MB/s
-- **Button actions (D1–D4)** — Assign Shell commands, URLs, folders, installed apps, OBS actions, Macros, Keypresses or arbitrary Text to D1–D4 with a native folder picker, searchable app picker and OBS scene selector. Actions save immediately on change. Use **Reset Buttons Flash** after first setup or when switching from Mountain Base Camp. BaseCamp may have stored its own actions in the keyboard's flash memory, which can cause two actions to fire on a single button press. Reset Buttons Flash overwrites all four slots with your configured actions, clearing any leftover BaseCamp data.
+- **Button actions (D1–D4)** — Assign Shell commands, URLs, folders, installed apps, OBS actions, Macros, Keypresses, arbitrary Text, a jump to another tab or a redefine of another key to D1–D4, with a native folder picker, searchable app picker and OBS scene selector. Actions save immediately on change. Use **Reset Buttons Flash** after first setup or when switching from Mountain Base Camp. BaseCamp may have stored its own actions in the keyboard's flash memory, which can cause two actions to fire on a single button press. Reset Buttons Flash overwrites all four slots with your configured actions, clearing any leftover BaseCamp data.
 - **Image upload (D1–D4)** — Upload images to D-buttons via the **Upload Images** dialog or individual per-slot upload buttons — automatically converted and resized (GIF frame picker included). Images are saved to the **Image Library** for quick reuse.
 - **Image Library** — All uploaded images are stored locally as thumbnails. Pick from previously used images with one click instead of browsing the file system every time. Images can be deleted from the library individually.
 - **Main display upload** — Upload any image to the keyboard's main display — with Image Library support for quick reuse
@@ -528,6 +557,12 @@ python3 gui.py
 
 The GUI starts with a splash screen and auto-activates Monitor mode. The app minimizes to the system tray when closed.
 
+| Flag | Effect |
+|------|--------|
+| `--minimized` | Start straight to the tray, no splash screen (what the autostart entry uses) |
+| `--install` | Install the icon and desktop entry to `~/.local/share/`, then exit (AppImage) |
+| `--ctl '<json>'` | Send one command to the running instance, print the JSON reply and exit 0 on success, 1 on failure |
+
 ---
 
 ## Installation
@@ -581,6 +616,8 @@ cd BaseCamp-Linux
 pip install customtkinter pillow psutil obsws-python pystray hid pyusb
 python3 gui.py
 ```
+
+Two packages are optional and only unlock extras: `tkinterdnd2` for dragging image files onto button tiles, and `python-xlib` as a fallback for reading the cursor position on X11 when `xdotool` is not installed. Both soft-fail, the app starts fine without them.
 
 > **GPU monitoring** requires `nvidia-smi` (NVIDIA only).
 
