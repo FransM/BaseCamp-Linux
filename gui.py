@@ -622,6 +622,10 @@ class App(ctk.CTk):
         self.minsize(_MIN_W, _MIN_H)
         self.geometry(load_window_geometry() or f"{_DEFAULT_W}x{_DEFAULT_H}")
         self.bind("<Configure>", self._on_window_configure, add="+")
+        # An open dropdown must not survive a switch to another program (#66).
+        # Bound on the app itself so it does not depend on which screen has
+        # been built, and every dialog binds it for its own window.
+        UI.bind_dropdown_autoclose(self)
         self._geo_save_id = None
 
         # Enable drag & drop globally — soft-fails if tkinterdnd2 is missing.

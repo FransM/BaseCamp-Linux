@@ -546,34 +546,13 @@ def _make_placeholder(size):
 
 
 def _close_all_dropdowns(widget):
-    """Recursively close any CTkOptionMenu's popup menu found under
-    `widget`. CTkOptionMenu keeps its DropdownMenu (a tkinter.Menu) on
-    `_dropdown_menu`; closing it just calls tkinter's own unpost()."""
-    dd = getattr(widget, "_dropdown_menu", None)
-    if dd is not None:
-        try:
-            dd.close()
-        except Exception:
-            pass
-    try:
-        children = widget.winfo_children()
-    except Exception:
-        children = []
-    for c in children:
-        _close_all_dropdowns(c)
+    """Kept as the name the dialogs in this file use; the work lives in the
+    design system now so every window gets the same behaviour."""
+    UI.close_dropdowns(widget)
 
 
 def _bind_dropdown_autoclose(toplevel):
-    """Work around a Tk/X11 quirk: a CTkOptionMenu's popup is an
-    override-redirect window, so the window manager doesn't include it in
-    normal focus/stacking handling -- it can stay rendered on top of every
-    other application (e.g. switching to a browser) even after this window
-    itself loses focus, because nothing tells it to close. Force any open
-    dropdown in this window closed the moment the window loses focus."""
-    def _on_focus_out(event):
-        if event.widget is toplevel:
-            _close_all_dropdowns(toplevel)
-    toplevel.bind("<FocusOut>", _on_focus_out, add="+")
+    UI.bind_dropdown_autoclose(toplevel)
 
 
 def _prompt_page_name(app, prompt_key, title_key, initial=""):
@@ -742,8 +721,14 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
                      font=("Helvetica", 13, "bold"), text_color=FG,
                      fg_color="transparent").pack(side="left")
 
-        # Page selector
+        # Page selector, sorted by name (#66). The main page stays first
+        # because it is the one page that always exists and is where the
+        # device starts; the rest is alphabetical, which is what you scan for
+        # once there are more than a handful.
         pages = self._panel._get_available_pages()
+        pages = ([0] if 0 in pages else []) + sorted(
+            (p for p in pages if p != 0),
+            key=lambda p: self._panel._get_page_name(p).casefold())
         page_labels = [self._panel._get_page_name(p) for p in pages]
         self._page_list = pages
         newlbl = self._app.T("dp_new_page")
@@ -1829,17 +1814,24 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         entry — used by the also-on-press / double-click page pickers, which
         can only jump to a page that already exists (issue #16/#47)."""
         mapping, labels = {}, []
-        for p in self._panel._get_available_pages():
+        for p in self._sorted_pages():
             lbl = self._panel._get_page_name(p)
             labels.append(lbl)
             mapping[lbl] = p
         return labels, mapping
 
+    def _sorted_pages(self):
+        """Page ids with the main page first and the rest by name (#66)."""
+        pages = self._panel._get_available_pages()
+        return ([0] if 0 in pages else []) + sorted(
+            (p for p in pages if p != 0),
+            key=lambda p: self._panel._get_page_name(p).casefold())
+
     def _page_target_options(self):
         """(labels, {label: target}) for the page-target picker: every existing
         page, plus a 'New page' entry that mints a fresh one (#30)."""
         mapping, labels = {}, []
-        for p in self._panel._get_available_pages():
+        for p in self._sorted_pages():
             lbl = self._panel._get_page_name(p)
             labels.append(lbl)
             mapping[lbl] = p
@@ -2826,7 +2818,9 @@ class DisplayPadPanel(ctk.CTkFrame):
             if getattr(w, "_is_tab_extra", False):
                 w.destroy()
         names = _load_displaypad_page_names()
-        for pid in sorted(names):
+        order = ([0] if 0 in names else []) + sorted(
+            (p for p in names if p != 0), key=lambda p: names[p].casefold())
+        for pid in order:
             active = pid == self._current_page
             btn = ctk.CTkButton(
                 self._pagebar, text=names[pid], font=("Helvetica", 11,

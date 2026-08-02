@@ -34,6 +34,47 @@ def resolve_t(widget):
     return lambda key, **kw: key
 
 
+# ── Dropdown behaviour ────────────────────────────────────────────────────────
+
+def close_dropdowns(widget):
+    """Close every open option-menu popup under `widget`.
+
+    A CustomTkinter dropdown is an override-redirect window, so the window
+    manager leaves it out of normal stacking: it can stay painted on top of
+    every other application after this window loses focus, because nothing
+    tells it to go away (#66).
+
+    The popup is a tkinter.Menu, so `unpost()` is what closes it. An earlier
+    attempt called `close()`, which this DropdownMenu does not have; inside a
+    try/except that silently did nothing, which is why the bug looked handled
+    and was not.
+    """
+    dd = getattr(widget, "_dropdown_menu", None)
+    if dd is not None:
+        try:
+            dd.grab_release()
+        except Exception:
+            pass
+        try:
+            dd.unpost()
+        except Exception:
+            pass
+    try:
+        children = widget.winfo_children()
+    except Exception:
+        children = []
+    for child in children:
+        close_dropdowns(child)
+
+
+def bind_dropdown_autoclose(toplevel):
+    """Close open dropdowns whenever this window loses focus."""
+    def _on_focus_out(event):
+        if event.widget is toplevel:
+            close_dropdowns(toplevel)
+    toplevel.bind("<FocusOut>", _on_focus_out, add="+")
+
+
 # ── Containers ────────────────────────────────────────────────────────────────
 
 class Card(ctk.CTkFrame):
