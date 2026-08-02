@@ -16,7 +16,6 @@ import queue
 import threading
 import subprocess
 import tkinter as tk
-from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
@@ -579,14 +578,16 @@ def _bind_dropdown_autoclose(toplevel):
 def _prompt_page_name(app, prompt_key, title_key, initial=""):
     """Modal one-line text prompt for a page name (#52), used both to create
     a brand-new standalone page and to rename an existing one. Returns the
-    entered name, or None if cancelled / left blank."""
-    dlg = ctk.CTkInputDialog(text=app.T(prompt_key), title=app.T(title_key))
-    try:
-        val = dlg.get_input()
-    except Exception:
-        val = None
-    val = (val or "").strip()
-    return val or None
+    entered name, or None if cancelled / left blank.
+
+    Uses our own PromptDialog rather than CTkInputDialog: that one brings its
+    own styling and its own untranslated buttons, so it stood out as a fourth
+    dialog language inside a dark app."""
+    from shared.ui import ask_text
+    ok = app.T("ui_rename") if initial else app.T("ui_create")
+    val = ask_text(app, app.T(title_key), app.T(prompt_key),
+                   ok, app.T("ui_cancel"), initial=initial)
+    return (val or "").strip() or None
 
 
 _REF_KIND_LABELS = {
@@ -602,16 +603,19 @@ def _confirm_delete_page(app, panel, page_id):
     targets it by name, list exactly what and where so the person can
     decide whether to fix those first or delete anyway. Returns True if the
     person confirmed the delete."""
+    from shared.ui import ask_yes_no, show_error
     if page_id == 0:
-        messagebox.showerror(app.T("dp_delete_page_title"), app.T("dp_delete_page_main_error"))
+        show_error(app, app.T("dp_delete_page_title"),
+                   app.T("dp_delete_page_main_error"), app.T("ui_ok"))
         return False
 
     page_name = panel._get_page_name(page_id)
     refs = panel._find_page_references(page_id)
     if not refs:
-        return messagebox.askyesno(
-            app.T("dp_delete_page_title"),
-            app.T("dp_delete_page_confirm", name=page_name))
+        return ask_yes_no(
+            app, app.T("dp_delete_page_title"),
+            app.T("dp_delete_page_confirm", name=page_name),
+            app.T("ui_delete"), app.T("ui_cancel"), danger=True)
 
     lines = []
     for r in refs[:10]:
@@ -624,9 +628,13 @@ def _confirm_delete_page(app, panel, page_id):
     extra = len(refs) - len(lines)
     if extra > 0:
         lines.append(app.T("dp_delete_page_more", count=extra))
-    msg = app.T("dp_delete_page_referenced_warning", name=page_name, count=len(refs)) \
-        + "\n\n" + "\n".join(lines)
-    return messagebox.askyesno(app.T("dp_delete_page_title"), msg, icon="warning")
+    # The list of referring keys goes into the detail box instead of being
+    # glued onto the question, so the question stays one readable line.
+    return ask_yes_no(
+        app, app.T("dp_delete_page_title"),
+        app.T("dp_delete_page_referenced_warning", name=page_name, count=len(refs)),
+        app.T("ui_delete"), app.T("ui_cancel"), danger=True,
+        detail="\n".join(lines))
 
 
 # ── Image management dialog ───────────────────────────────────────────────────

@@ -313,11 +313,10 @@ class SettingsDialog(ctk.CTkToplevel):
         from shared.config import load_profile, list_profiles
         if name not in list_profiles():
             return
-        from tkinter import messagebox
-        if not messagebox.askyesno(
-                self._app.T("settings_profiles"),
-                self._app.T("settings_profile_load_confirm", name=name),
-                parent=self):
+        from shared.ui import ask_yes_no
+        if not ask_yes_no(self, self._app.T("settings_profiles"),
+                          self._app.T("settings_profile_load_confirm", name=name),
+                          self._app.T("ui_load"), self._app.T("ui_cancel")):
             return
         try:
             count = load_profile(name)
@@ -334,11 +333,11 @@ class SettingsDialog(ctk.CTkToplevel):
         from shared.config import delete_profile, list_profiles
         if name not in list_profiles():
             return
-        from tkinter import messagebox
-        if not messagebox.askyesno(
-                self._app.T("settings_profiles"),
-                self._app.T("settings_profile_delete_confirm", name=name),
-                parent=self):
+        from shared.ui import ask_yes_no
+        if not ask_yes_no(self, self._app.T("settings_profiles"),
+                          self._app.T("settings_profile_delete_confirm", name=name),
+                          self._app.T("ui_delete"), self._app.T("ui_cancel"),
+                          danger=True):
             return
         delete_profile(name)
         self._refresh_profile_combo()
@@ -384,7 +383,8 @@ class SettingsDialog(ctk.CTkToplevel):
                 text_color=RED)
 
     def _do_restore(self):
-        from tkinter import filedialog, messagebox
+        from tkinter import filedialog
+        from shared.ui import ask_yes_no
         from shared.config import import_backup, _load_last_dir, _save_last_dir
         path = filedialog.askopenfilename(
             parent=self,
@@ -394,9 +394,10 @@ class SettingsDialog(ctk.CTkToplevel):
         if not path:
             return
         _save_last_dir("backup", path)
-        if not messagebox.askyesno(
-                self._app.T("settings_restore"),
-                self._app.T("settings_restore_confirm"), parent=self):
+        if not ask_yes_no(self, self._app.T("settings_restore"),
+                          self._app.T("settings_restore_confirm"),
+                          self._app.T("ui_continue"), self._app.T("ui_cancel"),
+                          danger=True, detail=os.path.basename(path)):
             return
         try:
             count = import_backup(path)
