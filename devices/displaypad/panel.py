@@ -3915,8 +3915,12 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._gui_next.pop(key_index, None)
         self._refresh_panel_tile(key_index)
         if self._animating:
-            bgr = None if frames else _image_to_bgr102(path)
-            self._upload_queue.put((key_index, bgr, frames))
+            try:
+                bgr = None if frames else _image_to_bgr102(path)
+            except Exception as e:
+                print(f"[DisplayPad] key {key_index + 1}: cannot read {path!r} ({e})")
+            else:
+                self._upload_queue.put((key_index, bgr, frames))
         elif not self._uploading:
             self.after(100, self._start_upload)
 
@@ -4215,9 +4219,19 @@ class DisplayPadPanel(ctk.CTkFrame):
                 if k not in assigned:
                     _upload_button(usb_dev, hid_dev, k, _blank_bgr)
 
-            static   = {k: _image_to_bgr102(v, rot)
-                        for k, v in assigned.items()
-                        if k not in self._gif_frames and v is not None}
+            # One unreadable file used to take the whole upload down, and the
+            # pad kept whatever it was showing while a red toast repeated the
+            # library's error message. A key whose image cannot be read is
+            # skipped and named on the console instead; the others still go up,
+            # and the key is left blank by the loop above.
+            static = {}
+            for k, v in assigned.items():
+                if k in self._gif_frames or v is None:
+                    continue
+                try:
+                    static[k] = _image_to_bgr102(v, rot)
+                except Exception as e:
+                    print(f"[DisplayPad] key {k + 1}: cannot read {v!r} ({e})")
             animated = {k: self._gif_frames[k]
                         for k in assigned if k in self._gif_frames}
 
