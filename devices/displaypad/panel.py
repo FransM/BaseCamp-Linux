@@ -4330,10 +4330,14 @@ class DisplayPadPanel(ctk.CTkFrame):
         # A page switch waiting on this upload (see _switch_to_page) can stop
         # yielding the device to the plugin worker now that it's done.
         self._page_switch_waiting = False
+        # A result is news, not state: it goes as a toast and leaves the
+        # layout alone instead of parking the last message under the grid for
+        # the rest of the session.
+        self._info_label.configure(text="")
         if success:
-            self._info_label.configure(text=self.T("dp_done"), text_color=GRN)
+            self._app.toast(self.T("dp_done"), kind="ok", ms=2000)
         else:
-            self._info_label.configure(text=self.T("dp_error", err=err), text_color=RED)
+            self._app.toast(self.T("dp_error", err=err), kind="bad", ms=6000)
         # Any plugin images that queued up while this upload held the device
         # get picked up by the persistent plugin worker on its next poll
         # (at most 0.2s later) — nothing to kick off explicitly here anymore.

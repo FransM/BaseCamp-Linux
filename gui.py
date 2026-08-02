@@ -377,9 +377,8 @@ class SettingsPanel(ctk.CTkFrame):
                 text=self._app.T("settings_profile_saved", name=safe, n=count),
                 text_color=GRN)
         except Exception as e:
-            self._status.configure(
-                text=self._app.T("settings_profile_err", err=str(e)[:60]),
-                text_color=RED)
+            self._app.toast(
+                self._app.T("settings_profile_err", err=str(e)[:60]), kind="bad")
 
     def _do_load_profile(self):
         name = self._profile_combo.get()
@@ -393,13 +392,12 @@ class SettingsPanel(ctk.CTkFrame):
             return
         try:
             count = load_profile(name)
-            self._status.configure(
-                text=self._app.T("settings_profile_loaded", name=name, n=count),
-                text_color=GRN)
+            self._app.toast(
+                self._app.T("settings_profile_loaded", name=name, n=count),
+                kind="ok")
         except Exception as e:
-            self._status.configure(
-                text=self._app.T("settings_profile_err", err=str(e)[:60]),
-                text_color=RED)
+            self._app.toast(
+                self._app.T("settings_profile_err", err=str(e)[:60]), kind="bad")
 
     def _do_delete_profile(self):
         name = self._profile_combo.get()
@@ -414,9 +412,7 @@ class SettingsPanel(ctk.CTkFrame):
             return
         delete_profile(name)
         self._refresh_profile_combo()
-        self._status.configure(
-            text=self._app.T("settings_profile_deleted", name=name),
-            text_color=FG2)
+        self._app.toast(self._app.T("settings_profile_deleted", name=name))
 
     def _do_change_lang(self, val):
         """Change UI language from the settings dialog (issue #35). Keeps the
@@ -474,12 +470,10 @@ class SettingsPanel(ctk.CTkFrame):
             return
         try:
             count = import_backup(path)
-            self._status.configure(
-                text=self._app.T("settings_restore_ok", n=count), text_color=GRN)
+            self._app.toast(self._app.T("settings_restore_ok", n=count), kind="ok")
         except Exception as e:
-            self._status.configure(
-                text=self._app.T("settings_restore_err", err=str(e)[:60]),
-                text_color=RED)
+            self._app.toast(
+                self._app.T("settings_restore_err", err=str(e)[:60]), kind="bad")
 
     def _do_update(self):
         """Trigger the shared App-level download. UI updates land in our
@@ -1915,6 +1909,20 @@ class App(ctk.CTk):
         item = getattr(self, "_nav_items", {}).get("plugins")
         if item is not None:
             item.set_text(f"Plugins ({count})" if count else "Plugins")
+
+    def toast(self, text, kind="info", ms=3500):
+        """Say something briefly, over the current screen.
+
+        Panels used to keep a coloured label in their layout for this, which
+        took a row permanently and kept the last message on screen for the
+        rest of the session.
+        """
+        if not text:
+            return
+        try:
+            UI.Toast(self._panel_area, text, kind=kind, ms=ms)
+        except Exception:
+            pass
 
     def open_screen(self, screen_id, factory, title=None):
         """Register and show a screen that is built the first time it is used.

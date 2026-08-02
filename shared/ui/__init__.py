@@ -19,7 +19,7 @@ from shared.ui.tokens import (
 from shared.ui.widgets import (
     Card, SectionLabel, Toolbar, NavItem,
     PrimaryButton, GhostButton, DangerButton,
-    StatusDot, StatusPill, Field, resolve_t,
+    StatusDot, StatusPill, Field, Toast, resolve_t,
     ConfirmDialog, PromptDialog, ask_yes_no, ask_text, show_error,
 )
 
@@ -31,6 +31,6 @@ __all__ = [
     "S1", "S2", "S3", "S4", "S5", "RADIUS", "RADIUS_SM", "CTRL_H", "CTRL_H_SM",
     "Card", "SectionLabel", "Toolbar", "NavItem",
     "PrimaryButton", "GhostButton", "DangerButton",
-    "StatusDot", "StatusPill", "Field", "resolve_t",
+    "StatusDot", "StatusPill", "Field", "Toast", "resolve_t",
     "ConfirmDialog", "PromptDialog", "ask_yes_no", "ask_text", "show_error",
 ]

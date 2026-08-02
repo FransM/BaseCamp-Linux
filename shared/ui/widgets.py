@@ -264,6 +264,39 @@ class Field(ctk.CTkFrame):
         self.var.set(value)
 
 
+class Toast(ctk.CTkFrame):
+    """A short message that appears over the screen and goes away by itself.
+
+    Replaces the coloured status labels that sat in the layout permanently,
+    occupying a row whether or not there was anything to say, and staying on
+    screen long after the thing they described. `kind` is ok, warn, bad or
+    info and only tints the left edge, so the text itself stays readable.
+    """
+
+    _EDGE = {"ok": T.OK, "warn": T.WARN, "bad": T.DANGER, "info": T.ACCENT}
+
+    def __init__(self, parent, text, kind="info", ms=3500, **kw):
+        kw.setdefault("fg_color", T.SURFACE)
+        kw.setdefault("corner_radius", T.RADIUS)
+        kw.setdefault("border_width", T.BORDER_W)
+        kw.setdefault("border_color", T.LINE)
+        super().__init__(parent, **kw)
+        tk.Frame(self, bg=self._EDGE.get(kind, T.ACCENT), width=3).pack(
+            side="left", fill="y")
+        ctk.CTkLabel(self, text=text, font=T.font(T.TEXT_XS), text_color=T.FG,
+                     anchor="w", justify="left", wraplength=520).pack(
+            side="left", padx=T.S3, pady=T.S3)
+        self.place(relx=0.5, rely=1.0, anchor="s", y=-T.S4)
+        self.lift()
+        self.after(ms, self._close)
+
+    def _close(self):
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
 # ── Dialogs ───────────────────────────────────────────────────────────────────
 
 class _ModalBase(ctk.CTkToplevel):
