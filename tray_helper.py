@@ -29,6 +29,7 @@ def main():
 
     # Optional 3rd argument: path to lang JSON file
     open_label, quit_label = "Open", "Quit"
+    pages_label = "DisplayPad page"
     if len(sys.argv) >= 3:
         lang_file = sys.argv[2]
         lang_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang")
@@ -39,10 +40,41 @@ def main():
                 lang = json.load(f)
             open_label = lang.get("tray_open", open_label)
             quit_label = lang.get("tray_quit", quit_label)
+            pages_label = lang.get("tray_pages", pages_label)
         except Exception:
             pass
 
     state = {"run": True}  # cleared on explicit Quit so we don't re-dock after
+
+    def _ctl(payload):
+        """One line of JSON to the running app over its control socket.
+
+        The tray is a separate process, so it talks to the app through the
+        same public interface a user script would. Silent on failure: the tray
+        must never raise, and a missing socket only means the app is not
+        listening yet.
+        """
+        import socket
+        runtime = os.environ.get("XDG_RUNTIME_DIR")
+        path = (os.path.join(runtime, "basecamp-control.sock") if runtime
+                else f"/tmp/basecamp-control-{os.getuid()}.sock")
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2)
+                sock.connect(path)
+                sock.sendall((json.dumps(payload) + "\n").encode())
+                return json.loads(sock.makefile().readline() or "{}")
+        except Exception:
+            return {}
+
+    def dp_pages():
+        """(id, name) of every DisplayPad page, empty when unavailable."""
+        state = _ctl({"cmd": "list"}).get("displaypad") or {}
+        pages = state.get("pages") or {}
+        try:
+            return sorted((int(k), v) for k, v in pages.items())
+        except (TypeError, ValueError):
+            return []
 
     def on_open(icon, item):
         os.kill(main_pid, signal.SIGUSR1)
@@ -67,10 +99,19 @@ def main():
 
     def build_icon():
         img = Image.open(os.path.join(_res_dir(), "resources", "app_icon_32.png"))
-        menu = pystray.Menu(
-            pystray.MenuItem(open_label, on_open, default=True),
-            pystray.MenuItem(quit_label, on_quit),
-        )
+        # The page list is read when the menu is built, not when the tray
+        # starts: pages are created and renamed while the app runs.
+        def page_menu():
+            for _pid, name in dp_pages():
+                yield pystray.MenuItem(
+                    name,
+                    lambda _i, _it, n=name: _ctl({"cmd": "dp_page", "page": n}))
+
+        items = [pystray.MenuItem(open_label, on_open, default=True)]
+        if dp_pages():
+            items.append(pystray.MenuItem(pages_label, pystray.Menu(page_menu)))
+        items.append(pystray.MenuItem(quit_label, on_quit))
+        menu = pystray.Menu(*items)
         return pystray.Icon("MountainEvMax", img, "Mountain Everest Max", menu)
 
     # Supervise the tray. If the systray manager disappears, pystray raises out
