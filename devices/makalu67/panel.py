@@ -130,26 +130,33 @@ class Makalu67Panel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, pady=(4, 0))
         cap_scroll_speed(scroll)
 
-        self._build_rgb_section(scroll)
-        self._build_custom_section(scroll)
-        self._build_dpi_section(scroll)
-        self._build_remap_section(scroll)
-        self._build_settings_section(scroll)
+        cards = ctk.CTkFrame(scroll, fg_color="transparent")
+        cards.pack(fill="both", expand=True, padx=12, pady=8)
+        cards.grid_columnconfigure(0, weight=1, uniform="card")
+        cards.grid_columnconfigure(1, weight=1, uniform="card")
+
+        self._build_rgb_section(cards)
+        self._build_custom_section(cards)
+        self._build_dpi_section(cards)
+        self._build_remap_section(cards)
+        self._build_settings_section(cards)
+
+        for i, sec in enumerate(self._sections):
+            sec.outer.grid(row=i // 2, column=i % 2, sticky="nsew",
+                           padx=(0, 6) if i % 2 == 0 else (6, 0), pady=(0, 12))
 
         self._app.update_idletasks()
-        for s in self._sections:
-            s.measure()
 
-    def _build_rgb_section(self, scroll):
+    def _build_rgb_section(self, parent):
         title = f"{self.T('makalu_rgb_title')} — {self._model_name}"
-        s = _PlaceholderSection(scroll, self._app, "", title)
+        s = _PlaceholderSection(parent, self._app, "", title, card=True, auto_pack=False)
         self._sections.append(s)
         self._section_titles.append((s, "makalu_rgb_title"))
         self._rgb_section = s
         self._build_rgb_content(s.content)
 
-    def _build_custom_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_custom_title"))
+    def _build_custom_section(self, parent):
+        s = _PlaceholderSection(parent, self._app, "", self.T("makalu_custom_title"), card=True, auto_pack=False)
         self._sections.append(s)
         self._section_titles.append((s, "makalu_custom_title"))
         self._custom_section = s
@@ -300,8 +307,8 @@ class Makalu67Panel(ctk.CTkFrame):
 
     # ── DPI ───────────────────────────────────────────────────────────────────
 
-    def _build_dpi_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_dpi_title"),
+    def _build_dpi_section(self, parent):
+        s = _PlaceholderSection(parent, self._app, "", self.T("makalu_dpi_title"), card=True, auto_pack=False,
                                 on_open=self._dpi_start_poll,
                                 on_close=self._dpi_stop_poll)
         self._sections.append(s)
@@ -561,8 +568,8 @@ class Makalu67Panel(ctk.CTkFrame):
     def _t_cat(self, cat):
         return self.T(self._CAT_LANG_KEYS.get(cat, cat))
 
-    def _build_remap_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_remap_title"))
+    def _build_remap_section(self, parent):
+        s = _PlaceholderSection(parent, self._app, "", self.T("makalu_remap_title"), card=True, auto_pack=False)
         self._sections.append(s)
         self._section_titles.append((s, "makalu_remap_title"))
         self._remap_section = s
@@ -890,8 +897,8 @@ class Makalu67Panel(ctk.CTkFrame):
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
-    def _build_settings_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_settings_title"))
+    def _build_settings_section(self, parent):
+        s = _PlaceholderSection(parent, self._app, "", self.T("makalu_settings_title"), card=True, auto_pack=False)
         self._sections.append(s)
         self._section_titles.append((s, "makalu_settings_title"))
         self._settings_section = s
@@ -1633,22 +1640,30 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
 class _PlaceholderSection:
     """Accordion section with a plain string title (not a lang key)."""
 
-    def __init__(self, parent, app, icon, title, on_open=None, on_close=None):
+    def __init__(self, parent, app, icon, title, on_open=None, on_close=None,
+                 card=False, auto_pack=True):
         self._app       = app
-        self._open      = False
+        self._card      = card
+        self._open      = bool(card)
         self._natural_h = 0
         self._on_open   = on_open
         self._on_close  = on_close
 
-        self._outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
-        self._outer.pack(fill="x", pady=2)
+        self._outer = ctk.CTkFrame(
+            parent, fg_color=BG2 if card else "transparent",
+            corner_radius=7 if card else 0,
+            border_width=1 if card else 0, border_color=BORDER)
+        if auto_pack:
+            self._outer.pack(fill="x", pady=2)
 
-        self._header = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=6,
-                                    cursor="hand2")
+        self._header = ctk.CTkFrame(
+            self._outer, fg_color="transparent" if card else BG2,
+            corner_radius=6, cursor="arrow" if card else "hand2")
         self._header.pack(fill="x")
 
         accent = tk.Frame(self._header, bg=YLW, width=4)
-        accent.pack(side="left", fill="y")
+        if not card:
+            accent.pack(side="left", fill="y")
 
         # No icon column unless a caller actually passes one. The emoji that
         # used to sit here came from whatever emoji font was installed, brought
@@ -1665,11 +1680,14 @@ class _PlaceholderSection:
 
         self._chevron = ctk.CTkLabel(self._header, text="▶",
                                       font=("Helvetica", 10), text_color=FG2, width=24)
-        self._chevron.pack(side="right", padx=(0, 12))
+        if not card:
+            self._chevron.pack(side="right", padx=(0, 12))
 
-        self._content = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=0, height=0)
-        self._content.pack(fill="x", pady=(1, 0))
-        self._content.pack_propagate(False)
+        self._content = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=0,
+                                     **({} if card else {"height": 0}))
+        self._content.pack(fill="both", expand=card, pady=(1, 0))
+        if not card:
+            self._content.pack_propagate(False)
 
         def _bind_all(w):
             w.bind("<Button-1>", self._toggle)
@@ -1684,7 +1702,13 @@ class _PlaceholderSection:
     def set_title(self, text):
         self._title_lbl.configure(text=text)
 
+    @property
+    def outer(self):
+        return self._outer
+
     def measure(self):
+        if self._card:
+            return
         self._content.pack_propagate(True)
         self._app.update_idletasks()
         self._natural_h = self._content.winfo_reqheight()
@@ -1695,7 +1719,7 @@ class _PlaceholderSection:
             self._content.configure(height=self._natural_h)
 
     def open(self):
-        if self._open:
+        if self._card or self._open:
             return
         self._open = True
         self._chevron.configure(text="▼")
@@ -1705,7 +1729,7 @@ class _PlaceholderSection:
             self._on_open()
 
     def close(self):
-        if not self._open:
+        if self._card or not self._open:
             return
         self._open = False
         self._chevron.configure(text="▶")

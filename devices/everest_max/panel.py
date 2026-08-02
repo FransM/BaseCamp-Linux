@@ -177,22 +177,29 @@ class EverestMaxPanel(ctk.CTkFrame):
         # anyone whose keyboard is not plugged in. The variables stay so the
         # rest of this panel keeps working unchanged.
 
-        # ── Accordion scroll area ──
+        # ── Cards ──
+        # Five collapsed rows in a 480px column became five open cards in two
+        # columns. Nothing is hidden behind a click any more: the window is
+        # wide enough to show the lot.
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
         scroll.pack(fill="both", expand=True, pady=(4, 0))
+        cards = ctk.CTkFrame(scroll, fg_color="transparent")
+        cards.pack(fill="both", expand=True, padx=12, pady=8)
+        cards.grid_columnconfigure(0, weight=1, uniform="card")
+        cards.grid_columnconfigure(1, weight=1, uniform="card")
 
-        self._build_monitor_section(scroll)
-        self._build_main_display_section(scroll)
-        self._build_numpad_section(scroll)
-        self._build_rgb_section(scroll)
-        self._build_zone_section(scroll)
+        self._build_monitor_section(cards)
+        self._build_main_display_section(cards)
+        self._build_numpad_section(cards)
+        self._build_rgb_section(cards)
+        self._build_zone_section(cards)
 
-        # Apply i18n, then measure sections
+        for i, sec in enumerate(self._sections):
+            sec.outer.grid(row=i // 2, column=i % 2, sticky="nsew",
+                           padx=(0, 6) if i % 2 == 0 else (6, 0), pady=(0, 12))
+
         self._app._apply_lang()
         self._app.update_idletasks()
-        for s in self._sections:
-            s.measure()
-        self._sections[0].open()
 
         from shared.ui_helpers import cap_scroll_speed
         cap_scroll_speed(scroll)
@@ -203,8 +210,8 @@ class EverestMaxPanel(ctk.CTkFrame):
 
     # ── Section builders ──────────────────────────────────────────────────────
 
-    def _build_monitor_section(self, scroll):
-        s1 = AccordionSection(scroll, self._app, "", "monitor_title")
+    def _build_monitor_section(self, parent):
+        s1 = AccordionSection(parent, self._app, "", "monitor_title", card=True, auto_pack=False)
         self._sections.append(s1)
         b1 = s1.content
 
@@ -218,8 +225,8 @@ class EverestMaxPanel(ctk.CTkFrame):
                                          text_color=FG2)
         self._cpu_status.pack(pady=(0, 12))
 
-    def _build_main_display_section(self, scroll):
-        s2 = AccordionSection(scroll, self._app, "", "main_display_title")
+    def _build_main_display_section(self, parent):
+        s2 = AccordionSection(parent, self._app, "", "main_display_title", card=True, auto_pack=False)
         self._sections.append(s2)
         b2 = s2.content
 
@@ -264,8 +271,8 @@ class EverestMaxPanel(ctk.CTkFrame):
                                           text_color=FG2)
         self._main_status.pack(pady=(0, 12))
 
-    def _build_numpad_section(self, scroll):
-        s3 = AccordionSection(scroll, self._app, "", "numpad_title")
+    def _build_numpad_section(self, parent):
+        s3 = AccordionSection(parent, self._app, "", "numpad_title", card=True, auto_pack=False)
         self._sections.append(s3)
         b3 = s3.content
 
@@ -443,8 +450,8 @@ class EverestMaxPanel(ctk.CTkFrame):
                                           text_color=GRN)
         self._numpad_info.pack(pady=(4, 10))
 
-    def _build_rgb_section(self, scroll):
-        s5 = AccordionSection(scroll, self._app, "", "rgb_title")
+    def _build_rgb_section(self, parent):
+        s5 = AccordionSection(parent, self._app, "", "rgb_title", card=True, auto_pack=False)
         self._sections.append(s5)
         c = s5.content
 
@@ -573,8 +580,8 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_section = s5
         self._rgb_update_controls()
 
-    def _build_zone_section(self, scroll):
-        s6 = AccordionSection(scroll, self._app, "", "zone_title")
+    def _build_zone_section(self, parent):
+        s6 = AccordionSection(parent, self._app, "", "zone_title", card=True, auto_pack=False)
         self._sections.append(s6)
         c6 = s6.content
 

@@ -109,8 +109,17 @@ class Everest60Panel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, pady=(4, 0))
         cap_scroll_speed(scroll)
 
-        self._build_rgb_section(scroll)
-        self._build_side_leds_section(scroll)
+        cards = ctk.CTkFrame(scroll, fg_color="transparent")
+        cards.pack(fill="both", expand=True, padx=12, pady=8)
+        cards.grid_columnconfigure(0, weight=1, uniform="card")
+        cards.grid_columnconfigure(1, weight=1, uniform="card")
+
+        self._build_rgb_section(cards)
+        self._build_side_leds_section(cards)
+
+        for i, sec in enumerate(self._sections):
+            sec.outer.grid(row=i // 2, column=i % 2, sticky="nsew",
+                           padx=(0, 6) if i % 2 == 0 else (6, 0), pady=(0, 12))
         # Custom RGB is now the "Custom" entry in the effect dropdown (#34) — no
         # separate section.
 
@@ -118,9 +127,9 @@ class Everest60Panel(ctk.CTkFrame):
         for s in self._sections:
             s.measure()
 
-    def _build_rgb_section(self, scroll):
+    def _build_rgb_section(self, parent):
         title = f"{self.T('rgb_title')} — {self._model_name}"
-        s = _Section(scroll, self._app, "", title)
+        s = _Section(parent, self._app, "", title, card=True, auto_pack=False)
         self._sections.append(s)
         self._rgb_section = s
         self._build_rgb_content(s.content)
@@ -296,15 +305,16 @@ class Everest60Panel(ctk.CTkFrame):
 
         self._rgb_update_controls()
 
-    def _build_side_leds_section(self, scroll):
+    def _build_side_leds_section(self, parent):
         """Side perimeter ring (44 LEDs) — single colour for now.
 
         Uses the custom-RGB protocol path under the hood, so the main keys
         are blanked when only side colour is applied. A future enhancement
         can fold this into the full custom-RGB editor.
         """
-        s = _Section(scroll, self._app, "",
-                     f"{self.T('side_leds_title')} — {self._model_name}")
+        s = _Section(parent, self._app, "",
+                     f"{self.T('side_leds_title')}, {self._model_name}",
+                     card=True, auto_pack=False)
         self._sections.append(s)
         self._side_leds_section = s
 
@@ -670,18 +680,26 @@ class Everest60Panel(ctk.CTkFrame):
 # ── Accordion section ─────────────────────────────────────────────────────────
 
 class _Section:
-    def __init__(self, parent, app, icon, title):
+    def __init__(self, parent, app, icon, title, card=False, auto_pack=True):
         self._app       = app
-        self._open      = False
+        self._card      = card
+        self._open      = bool(card)
         self._natural_h = 0
 
-        self._outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
-        self._outer.pack(fill="x", pady=2)
+        self._outer = ctk.CTkFrame(
+            parent, fg_color=BG2 if card else "transparent",
+            corner_radius=7 if card else 0,
+            border_width=1 if card else 0, border_color=BORDER)
+        if auto_pack:
+            self._outer.pack(fill="x", pady=2)
 
-        self._header = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=6, cursor="hand2")
+        self._header = ctk.CTkFrame(
+            self._outer, fg_color="transparent" if card else BG2,
+            corner_radius=6, cursor="arrow" if card else "hand2")
         self._header.pack(fill="x")
 
-        tk.Frame(self._header, bg=YLW, width=4).pack(side="left", fill="y")
+        if not card:
+            tk.Frame(self._header, bg=YLW, width=4).pack(side="left", fill="y")
         # No icon column unless a caller actually passes one. The emoji that
         # used to sit here came from whatever emoji font was installed, brought
         # its own colour into a system that has a rule for every colour, and
@@ -694,23 +712,33 @@ class _Section:
         self._title_lbl.pack(side="left", fill="x", expand=True, padx=4, pady=12)
         self._chevron = ctk.CTkLabel(self._header, text="▶",
                                      font=("Helvetica", 10), text_color=FG2, width=24)
-        self._chevron.pack(side="right", padx=(0, 12))
+        if not card:
+            self._chevron.pack(side="right", padx=(0, 12))
 
-        self._content = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=0, height=0)
-        self._content.pack(fill="x", pady=(1, 0))
-        self._content.pack_propagate(False)
+        self._content = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=0,
+                                     **({} if card else {"height": 0}))
+        self._content.pack(fill="both", expand=card, pady=(1, 0))
+        if not card:
+            self._content.pack_propagate(False)
 
-        def _bind_all(w):
-            w.bind("<Button-1>", self._toggle)
-            for child in w.winfo_children():
-                _bind_all(child)
-        _bind_all(self._header)
+        if not card:
+            def _bind_all(w):
+                w.bind("<Button-1>", self._toggle)
+                for child in w.winfo_children():
+                    _bind_all(child)
+            _bind_all(self._header)
 
     @property
     def content(self):
         return self._content
 
+    @property
+    def outer(self):
+        return self._outer
+
     def measure(self):
+        if self._card:
+            return
         self._content.pack_propagate(True)
         self._app.update_idletasks()
         self._natural_h = self._content.winfo_reqheight()
@@ -718,7 +746,7 @@ class _Section:
         self._content.configure(height=self._natural_h if self._open else 0)
 
     def open(self):
-        if self._open:
+        if self._card or self._open:
             return
         self._open = True
         self._chevron.configure(text="▼")
@@ -729,7 +757,7 @@ class _Section:
         self.close() if self._open else self.open()
 
     def close(self):
-        if not self._open:
+        if self._card or not self._open:
             return
         self._open = False
         self._chevron.configure(text="▶")

@@ -1846,23 +1846,40 @@ class MultiUploadDialog(ctk.CTkToplevel):
 # ── Accordion ─────────────────────────────────────────────────────────────────
 
 class AccordionSection:
-    def __init__(self, parent, app, icon, title_key, on_open=None, on_close=None):
+    """A titled block. In `card` mode it is simply a card that is always open.
+
+    The accordion made sense in a 480px column where five sections could not
+    be on screen at once. In a resizable window they fit side by side, and
+    collapsing them only hides what someone came to change. The class keeps
+    its open/close API so existing callers work either way.
+    """
+
+    def __init__(self, parent, app, icon, title_key, on_open=None, on_close=None,
+                 card=False, auto_pack=True):
         self._app      = app
-        self._open     = False
+        self._card     = card
+        self._open     = bool(card)
         self._natural_h = 0
         self._anim_id  = None
         self._on_open  = on_open
         self._on_close = on_close
 
-        self._outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
-        self._outer.pack(fill="x", pady=2)
+        self._outer = ctk.CTkFrame(
+            parent, fg_color=BG2 if card else "transparent",
+            corner_radius=7 if card else 0,
+            border_width=1 if card else 0, border_color=BORDER)
+        if auto_pack:
+            self._outer.pack(fill="x", pady=2)
 
-        self._header = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=6,
-                                    cursor="hand2")
+        self._header = ctk.CTkFrame(self._outer, fg_color="transparent" if card else BG2,
+                                    corner_radius=6,
+                                    cursor="arrow" if card else "hand2")
         self._header.pack(fill="x")
 
+        # The yellow bar was on every section, so it distinguished nothing.
         accent = tk.Frame(self._header, bg=YLW, width=4)
-        accent.pack(side="left", fill="y")
+        if not card:
+            accent.pack(side="left", fill="y")
 
         # No icon column unless a caller actually passes one. The emoji that
         # used to sit here came from whatever emoji font was installed, brought
@@ -1880,20 +1897,32 @@ class AccordionSection:
 
         self._chevron = ctk.CTkLabel(self._header, text="▶",
                                       font=("Helvetica", 10), text_color=FG2, width=24)
-        self._chevron.pack(side="right", padx=(0, 12))
+        if not card:
+            self._chevron.pack(side="right", padx=(0, 12))
 
-        self._content = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=0, height=0)
-        self._content.pack(fill="x", pady=(1, 0))
-        self._content.pack_propagate(False)
+        # A card sizes to its content; the accordion needs a driven height.
+        self._content = ctk.CTkFrame(self._outer, fg_color=BG2, corner_radius=0,
+                                     **({} if card else {"height": 0}))
+        self._content.pack(fill="both", expand=card, pady=(1, 0))
+        if not card:
+            self._content.pack_propagate(False)
 
-        for w in (self._header, accent, self._chevron, self._title_lbl):
-            w.bind("<Button-1>", self._toggle)
+        if not card:
+            for w in (self._header, accent, self._chevron, self._title_lbl):
+                w.bind("<Button-1>", self._toggle)
 
     @property
     def content(self):
         return self._content
 
+    @property
+    def outer(self):
+        """The frame to place when the caller does its own layout."""
+        return self._outer
+
     def measure(self):
+        if self._card:
+            return
         self._content.pack_propagate(True)
         self._app.update_idletasks()
         self._natural_h = self._content.winfo_reqheight()
@@ -1901,7 +1930,7 @@ class AccordionSection:
         self._content.configure(height=0)
 
     def open(self):
-        if self._open:
+        if self._card or self._open:
             return
         self._open = True
         self._chevron.configure(text="▼")
@@ -1911,7 +1940,7 @@ class AccordionSection:
             self._on_open()
 
     def close(self):
-        if not self._open:
+        if self._card or not self._open:
             return
         self._open = False
         self._chevron.configure(text="▶")
