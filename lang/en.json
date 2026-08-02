@@ -475,5 +475,16 @@
   "settings_about_version": "Version",
   "settings_about_install": "Installation",
   "settings_about_config": "Configuration",
-  "settings_about_socket": "Control socket"
+  "settings_about_socket": "Control socket",
+  "dp_grid_hint": "Click a key to edit it, right-click clears it",
+  "dp_insp_action": "Action",
+  "dp_insp_value": "Value",
+  "dp_insp_image": "Image",
+  "dp_insp_pick_image": "Choose image",
+  "dp_insp_clear": "Clear",
+  "dp_insp_browse": "Browse",
+  "dp_insp_more": "More settings",
+  "dp_header_upload": "Upload",
+  "dp_header_fullscreen": "Fullscreen image",
+  "dp_insp_target": "Target page"
 }

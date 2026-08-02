@@ -19,6 +19,7 @@ import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
+import shared.ui as UI
 from shared.ui_helpers import (
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER, cap_scroll_speed,
     native_open_image, native_open_folder, parse_desktop_apps,
@@ -640,7 +641,48 @@ def _confirm_delete_page(app, panel, page_id):
 # ── Image management dialog ───────────────────────────────────────────────────
 
 _DIALOG_TILE  = 90   # thumbnail size in dialog
-_PANEL_TILE   = 48   # thumbnail size in compact panel overview
+_PANEL_TILE   = 84   # key tile on the screen (was 48 in the old column)
+_INSPECTOR_W  = 236  # width of the key inspector beside the grid
+
+def action_type_ids(app, include_page=True):
+    """Internal action type ids in menu order, plugin types appended.
+
+    Lives at module level because the actions dialog and the key inspector in
+    the panel show the same menu, and two copies of this list would drift the
+    first time a plugin type is added.
+    """
+    base = list(_ACTION_TYPES) if include_page else [t for t in _ACTION_TYPES
+                                                     if t != "page"]
+    pm = getattr(app, "_plugin_manager", None)
+    if pm:
+        plugin_ids = pm.get_action_type_ids()
+        if plugin_ids:
+            base.append("_separator")
+            base.extend(plugin_ids)
+    return base
+
+
+def action_type_labels(app, include_page=True):
+    """Translated labels, index-aligned with action_type_ids()."""
+    labels = [app.T("action_type_none"), app.T("action_type_shell"),
+              app.T("action_type_url"), app.T("action_type_folder"),
+              app.T("action_type_app")]
+    if include_page:
+        labels.append(app.T("action_type_page"))
+    labels.append("OBS")
+    labels.append(app.T("action_type_macro"))
+    labels.append(app.T("action_type_keypress"))
+    labels.append(app.T("action_type_text"))
+    labels.append(app.T("action_type_set_key"))
+    pm = getattr(app, "_plugin_manager", None)
+    if pm:
+        plugin_labels = pm.get_action_type_labels()
+        if plugin_labels:
+            labels.append("-- Plugins --")
+            for _tid, lbl in plugin_labels:
+                labels.append(lbl)
+    return labels
+
 
 class DisplayPadImageDialog(ctk.CTkToplevel):
     """Extra window: assign images/GIFs to all 12 DisplayPad buttons."""
@@ -1191,35 +1233,10 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
     def _get_action_types(self, include_page=True):
         """Return list of internal action type IDs, including plugin types."""
-        base = list(_ACTION_TYPES) if include_page else [t for t in _ACTION_TYPES if t != "page"]
-        pm = getattr(self._app, "_plugin_manager", None)
-        if pm:
-            plugin_ids = pm.get_action_type_ids()
-            if plugin_ids:
-                base.append("_separator")
-                base.extend(plugin_ids)
-        return base
+        return action_type_ids(self._app, include_page)
 
     def _type_labels(self, include_page=True):
-        labels = [self._app.T("action_type_none"), self._app.T("action_type_shell"),
-                  self._app.T("action_type_url"),  self._app.T("action_type_folder"),
-                  self._app.T("action_type_app")]
-        if include_page:
-            labels.append(self._app.T("action_type_page"))
-        labels.append("OBS")
-        labels.append(self._app.T("action_type_macro"))
-        labels.append(self._app.T("action_type_keypress"))
-        labels.append(self._app.T("action_type_text"))
-        labels.append(self._app.T("action_type_set_key"))
-        # Append plugin action labels with separator
-        pm = getattr(self._app, "_plugin_manager", None)
-        if pm:
-            plugin_labels = pm.get_action_type_labels()
-            if plugin_labels:
-                labels.append("── Plugins ──")
-                for _tid, lbl in plugin_labels:
-                    labels.append(lbl)
-        return labels
+        return action_type_labels(self._app, include_page)
 
     def _sec_type_labels(self):
         """Labels for the secondary 'also on press' type menu (issue #16),
@@ -2322,8 +2339,11 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._app         = app
         self._images      = {}
         self._gif_frames  = {}
-        self._tile_imgs   = {}   # compact overview: key_index -> CTkImage
-        self._tile_lbls   = {}   # compact overview: key_index -> CTkLabel
+        self._tile_imgs   = {}   # key grid: key_index -> CTkImage
+        self._tile_lbls   = {}   # key grid: key_index -> CTkLabel
+        self._tile_cells  = {}   # key grid: key_index -> frame (selection border)
+        self._selected_key = 0   # key shown in the inspector
+        self._insp_loading = False
         self._uploading        = False
         self._animating        = False
         self._page_switch_waiting = False  # set by _switch_to_page while it
@@ -2501,67 +2521,36 @@ class DisplayPadPanel(ctk.CTkFrame):
 
         # Section heading + rotation
         head_row = ctk.CTkFrame(content, fg_color="transparent")
-        head_row.pack(padx=16, pady=(14, 0))
+        head_row.pack_forget()   # its contents live in the screen header now
 
-        # The screen header above the panel already says which device this is,
-        # so the heading is kept for the string refresh but not shown. It goes
-        # away entirely when this screen is rebuilt.
+        # Kept for the language refresh; the screen header shows the name.
         self._heading_lbl = ctk.CTkLabel(
             head_row, text=self.T("dp_title"),
             font=("Helvetica", 14, "bold"), text_color=FG,
             fg_color="transparent", anchor="w")
 
-        self._rot_menu = ctk.CTkOptionMenu(
-            head_row, values=["0°", "90°", "180°", "270°"],
-            fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
-            text_color=FG, font=("Helvetica", 10), width=60, height=24,
-            command=self._on_rotation_change)
-        self._rot_menu.set(f"{self._rotation}°")
-        self._rot_menu.pack(side="right", padx=(4, 0))
+        # ── Page tabs ──────────────────────────────────────────────────────
+        # The named pages from 2.1.7 were only visible after opening a dialog
+        # and pulling down a combo box. As tabs they are simply there, which
+        # is also what dp_page switches from the outside.
+        self._pagebar = ctk.CTkFrame(content, fg_color="transparent")
+        self._pagebar.pack(fill="x", padx=16, pady=(10, 0))
+        self._page_tabs = {}
+        self._page_lbl = ctk.CTkLabel(self._pagebar, text="")      # i18n refresh only
+        self._page_back_btn = ctk.CTkButton(self._pagebar, text="")  # legacy, unused
 
-        self._bri_menu = ctk.CTkOptionMenu(
-            head_row, values=["0%", "25%", "50%", "75%", "100%"],
-            fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
-            text_color=FG, font=("Helvetica", 10), width=72, height=24,
-            command=self._on_brightness_change)
-        self._bri_menu.set(f"{self._brightness}%")
-        self._bri_menu.pack(side="right", padx=(4, 0))
+        # ── Key grid and inspector ─────────────────────────────────────────
+        body = ctk.CTkFrame(content, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=(10, 0))
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=0, minsize=_INSPECTOR_W)
+        body.grid_rowconfigure(0, weight=1)
 
-        self._reg(ctk.CTkLabel(head_row, text=self.T("dp_brightness_label"),
-                               font=("Helvetica", 10), text_color=FG2,
-                               fg_color="transparent"), "dp_brightness_label"
-                  ).pack(side="right", padx=(6, 0))
-
-        self._deb_menu = ctk.CTkOptionMenu(
-            head_row, values=["0.2s", "0.4s", "0.6s", "0.8s", "1.0s"],
-            fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
-            text_color=FG, font=("Helvetica", 10), width=72, height=24,
-            command=self._on_debounce_change)
-        self._deb_menu.set(f"{self._debounce}s")
-        self._deb_menu.pack(side="right", padx=(4, 0))
-
-        self._reg(ctk.CTkLabel(head_row, text=self.T("dp_debounce_label"),
-                               font=("Helvetica", 10), text_color=FG2,
-                               fg_color="transparent"), "dp_debounce_label"
-                  ).pack(side="right", padx=(6, 0))
-
-        # Page indicator bar
-        page_bar = ctk.CTkFrame(content, fg_color="transparent")
-        page_bar.pack(padx=16, pady=(4, 0))
-        self._page_lbl = ctk.CTkLabel(
-            page_bar, text=f"{self.T('dp_page_label')} {self.T('dp_page_main')}",
-            font=("Helvetica", 11), text_color=FG2, anchor="w")
-        self._page_lbl.pack(side="left")
-        self._page_back_btn = ctk.CTkButton(
-            page_bar, text=self.T("dp_page_back"),
-            font=("Helvetica", 10), fg_color=BG3, hover_color=BG2,
-            text_color=FG, height=24, corner_radius=4, width=120,
-            command=lambda: self._switch_to_page(0))
-        # hidden by default (only visible on sub-pages)
-
-        # Compact 6×2 overview grid
-        overview = ctk.CTkFrame(content, fg_color=BG, corner_radius=0)
-        overview.pack(pady=(6, 6))
+        grid_wrap = ctk.CTkFrame(body, fg_color="transparent")
+        grid_wrap.grid(row=0, column=0, sticky="nsew")
+        overview = ctk.CTkFrame(grid_wrap, fg_color="transparent")
+        overview.pack(anchor="n")
+        self._keygrid = overview
 
         ph = _make_placeholder(_PANEL_TILE)
         for idx in range(NUM_KEYS):
@@ -2573,72 +2562,321 @@ class DisplayPadPanel(ctk.CTkFrame):
                 img = (_make_gif_thumb(path, _PANEL_TILE, self._rotation) if is_gif
                        else _make_thumb(path, _PANEL_TILE, self._rotation))
             else:
-                img = self._make_action_tile(idx) if hasattr(self, '_make_action_tile') else ph
+                img = self._make_action_tile(idx) if hasattr(self, "_make_action_tile") else ph
             self._tile_imgs[idx] = img
 
-            lbl = ctk.CTkLabel(overview, image=img, text="",
+            cell = ctk.CTkFrame(overview, fg_color=BG3, corner_radius=6,
+                                border_width=2, border_color=BG3)
+            cell.grid(row=row * 2, column=col, padx=4, pady=(4, 0))
+            lbl = ctk.CTkLabel(cell, image=img, text="",
                                width=_PANEL_TILE, height=_PANEL_TILE,
                                fg_color=BG3, corner_radius=4)
-            lbl.grid(row=row * 2, column=col, padx=3, pady=(3, 0))
+            lbl.pack(padx=2, pady=2)
             self._tile_lbls[idx] = lbl
+            self._tile_cells[idx] = cell
+            for w in (cell, lbl):
+                w.bind("<Button-1>", lambda _e, i=idx: self._select_key(i))
+                w.bind("<Button-3>", lambda _e, i=idx: self._clear_slot(i))
 
             ctk.CTkLabel(overview, text=f"K{idx + 1}",
-                         font=("Helvetica", 8), text_color=FG2,
+                         font=("Helvetica", 9), text_color=FG2,
                          fg_color="transparent").grid(row=row * 2 + 1, column=col)
 
-        # Clear button
-        self._clear_btn = ctk.CTkButton(
-            content, text=self.T("dp_clear_all"),
-            font=("Helvetica", 11),
-            fg_color=BG3, hover_color=BG2, text_color=FG2,
-            height=30, corner_radius=6,
-            command=self._clear_all,
-        )
-        self._clear_btn.pack(padx=16, pady=(4, 4))
+        hint = ctk.CTkLabel(grid_wrap, text=self.T("dp_grid_hint"),
+                            font=("Helvetica", 10), text_color=FG2)
+        hint.pack(pady=(10, 0))
+        self._reg(hint, "dp_grid_hint")
 
-        # Dialog buttons row
-        dlg_row = ctk.CTkFrame(content, fg_color="transparent")
-        dlg_row.pack(padx=16, pady=(0, 4))
+        self._build_inspector(body)
 
-        self._assign_btn = ctk.CTkButton(
-            dlg_row, text=self.T("dp_assign_images"),
-            font=("Helvetica", 11),
-            fg_color=BG3, hover_color=BG2, text_color=FG,
-            height=30, corner_radius=6, border_width=1, border_color=BORDER,
-            command=self._open_dialog,
-        )
-        self._assign_btn.pack(side="left", fill="x", expand=True, padx=(0, 4))
-
-        self._actions_btn = ctk.CTkButton(
-            dlg_row, text=self.T("dp_configure_actions"),
-            font=("Helvetica", 11),
-            fg_color=BG3, hover_color=BG2, text_color=FG,
-            height=30, corner_radius=6, border_width=1, border_color=BORDER,
-            command=self._open_actions_dialog,
-        )
-        self._actions_btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
-
-        # GIF speed row
-        fps_row = ctk.CTkFrame(content, fg_color="transparent")
-        fps_row.pack(padx=16, pady=(0, 4))
-        self._min_ms_lbl = ctk.CTkLabel(fps_row, text=self.T("dp_min_ms_frame"),
-                     font=("Helvetica", 11), text_color=FG2,
-                     fg_color="transparent")
-        self._min_ms_lbl.pack(side="left")
-        ctk.CTkEntry(fps_row, textvariable=self._min_ms_var,
-                     width=60, height=26, font=("Helvetica", 11),
-                     fg_color=BG3, border_color=BORDER, text_color=FG,
-                     ).pack(side="left", padx=(6, 0))
-        self._gif_speed_lbl = ctk.CTkLabel(fps_row, text=self.T("dp_gif_speed"),
-                     font=("Helvetica", 10), text_color=FG2,
-                     fg_color="transparent")
-        self._gif_speed_lbl.pack(side="left", padx=(8, 0))
-
-        # Info label
+        # Info label, kept for status text from the upload worker
         self._info_label = ctk.CTkLabel(
             content, text="",
             font=("Helvetica", 11), text_color=FG2, fg_color="transparent")
-        self._info_label.pack(pady=(0, 8))
+        self._info_label.pack(pady=(8, 8))
+
+        self._rebuild_page_tabs()
+        self._select_key(0)
+
+    # ── Key inspector ─────────────────────────────────────────────────────────
+
+    def _build_inspector(self, parent):
+        """Everything about the selected key, in one column beside the grid.
+
+        This replaces the "Configure Button Actions" window for the common
+        case. The rarely used parts of that window (also on press, double
+        click, the per-page timeout) are still reachable through the button at
+        the bottom, so nothing was lost while it is being absorbed.
+        """
+        insp = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=7,
+                            border_width=1, border_color=BORDER)
+        insp.grid(row=0, column=1, sticky="nsew", padx=(16, 0))
+        self._inspector = insp
+
+        self._insp_title = ctk.CTkLabel(
+            insp, text="", font=("Helvetica", 12, "bold"), text_color=FG, anchor="w")
+        self._insp_title.pack(fill="x", padx=12, pady=(12, 8))
+
+        self._insp_type_lbl = ctk.CTkLabel(insp, text=self.T("dp_insp_action"),
+                                           font=("Helvetica", 10), text_color=FG2,
+                                           anchor="w")
+        self._insp_type_lbl.pack(fill="x", padx=12)
+        self._reg(self._insp_type_lbl, "dp_insp_action")
+        self._insp_type = ctk.CTkOptionMenu(
+            insp, values=action_type_labels(self._app), width=_INSPECTOR_W - 24,
+            height=28, font=("Helvetica", 11), fg_color=BG3, button_color=BORDER,
+            button_hover_color=BORDER, text_color=FG,
+            command=self._on_insp_type_change)
+        self._insp_type.pack(padx=12, pady=(2, 8))
+
+        self._insp_value_lbl = ctk.CTkLabel(insp, text=self.T("dp_insp_value"),
+                                            font=("Helvetica", 10), text_color=FG2,
+                                            anchor="w")
+        self._insp_value_lbl.pack(fill="x", padx=12)
+        self._reg(self._insp_value_lbl, "dp_insp_value")
+        self._insp_value_var = tk.StringVar()
+        self._insp_value = ctk.CTkEntry(
+            insp, textvariable=self._insp_value_var, width=_INSPECTOR_W - 24,
+            height=28, font=("Helvetica", 11), fg_color=BG3, text_color=FG,
+            border_color=BORDER)
+        self._insp_value.pack(padx=12, pady=(2, 4))
+        self._insp_value.bind("<FocusOut>", lambda _e: self._save_inspector())
+        self._insp_value.bind("<Return>", lambda _e: self._save_inspector())
+        self._insp_page = ctk.CTkOptionMenu(
+            insp, values=[""], width=_INSPECTOR_W - 24, height=28,
+            font=("Helvetica", 11), fg_color=BG3, button_color=BORDER,
+            button_hover_color=BORDER, text_color=FG,
+            command=lambda _v: self._save_inspector())
+
+        self._insp_browse = UI.GhostButton(
+            insp, self.T("dp_insp_browse"), self._insp_do_browse,
+            width=_INSPECTOR_W - 24, height=UI.CTRL_H_SM)
+
+        self._insp_img_lbl = ctk.CTkLabel(insp, text=self.T("dp_insp_image"),
+                                          font=("Helvetica", 10), text_color=FG2,
+                                          anchor="w")
+        self._insp_img_lbl.pack(fill="x", padx=12, pady=(8, 2))
+        self._reg(self._insp_img_lbl, "dp_insp_image")
+        img_row = ctk.CTkFrame(insp, fg_color="transparent")
+        img_row.pack(fill="x", padx=12)
+        UI.GhostButton(img_row, self.T("dp_insp_pick_image"),
+                       self._insp_pick_image, width=_INSPECTOR_W - 96,
+                       height=UI.CTRL_H_SM).pack(side="left")
+        UI.DangerButton(img_row, self.T("dp_insp_clear"),
+                        lambda: self._clear_slot(self._selected_key),
+                        width=64, height=UI.CTRL_H_SM).pack(side="right")
+
+        self._insp_more = UI.GhostButton(
+            insp, self.T("dp_insp_more"), self._open_actions_dialog,
+            width=_INSPECTOR_W - 24, height=UI.CTRL_H_SM)
+        self._insp_more.pack(side="bottom", padx=12, pady=12, fill="x")
+
+    def _select_key(self, idx):
+        """Mark a key in the grid and show it in the inspector."""
+        self._selected_key = idx
+        for i, cell in self._tile_cells.items():
+            cell.configure(border_color=BLUE if i == idx else BG3)
+        self._load_inspector()
+
+    def _load_inspector(self):
+        idx = self._selected_key
+        act = self._get_action_dict(idx)
+        btype = act.get("type", "none")
+        self._insp_loading = True
+        try:
+            ids = action_type_ids(self._app)
+            labels = action_type_labels(self._app)
+            self._insp_title.configure(text=f"K{idx + 1}")
+            if btype in ids:
+                self._insp_type.set(labels[ids.index(btype)])
+            else:
+                self._insp_type.set(labels[0])
+            self._insp_value_var.set(act.get("action", ""))
+            self._apply_inspector_type(btype, act)
+        finally:
+            self._insp_loading = False
+
+    def _apply_inspector_type(self, btype, act=None):
+        """Show the input that fits the chosen type: a page picker for page
+        actions, a browse button for folders and apps, a plain field for the
+        rest."""
+        act = act if act is not None else self._get_action_dict(self._selected_key)
+        self._insp_value.pack_forget()
+        self._insp_page.pack_forget()
+        self._insp_browse.pack_forget()
+        if btype == "none":
+            self._insp_value_lbl.pack_forget()
+            return
+        self._insp_value_lbl.pack(fill="x", padx=12, after=self._insp_type)
+        self._insp_value_lbl.configure(
+            text=self.T("dp_insp_target") if btype == "page"
+            else self.T("dp_insp_value"))
+        if btype == "page":
+            names = sorted(_load_displaypad_page_names().values())
+            cur = act.get("target") if isinstance(act.get("target"), str) else None
+            self._insp_page.configure(values=names or [""])
+            self._insp_page.set(cur if cur in names else (names[0] if names else ""))
+            self._insp_page.pack(padx=12, pady=(2, 4), after=self._insp_value_lbl)
+        else:
+            self._insp_value.pack(padx=12, pady=(2, 4), after=self._insp_value_lbl)
+            if btype in ("folder", "app"):
+                self._insp_browse.pack(padx=12, pady=(0, 4), after=self._insp_value)
+
+    def _on_insp_type_change(self, label):
+        labels = action_type_labels(self._app)
+        ids = action_type_ids(self._app)
+        try:
+            btype = ids[labels.index(label)]
+        except ValueError:
+            return
+        if btype == "_separator":
+            self._load_inspector()
+            return
+        self._apply_inspector_type(btype)
+        self._save_inspector(btype)
+
+    def _save_inspector(self, btype=None):
+        if getattr(self, "_insp_loading", False):
+            return
+        idx = self._selected_key
+        if btype is None:
+            labels = action_type_labels(self._app)
+            ids = action_type_ids(self._app)
+            try:
+                btype = ids[labels.index(self._insp_type.get())]
+            except ValueError:
+                return
+        if btype == "_separator":
+            return
+        target = None
+        value = self._insp_value_var.get()
+        if btype == "page":
+            name = self._insp_page.get()
+            pid = self._page_id_by_name(name)
+            target = pid if pid is not None else "new"
+            value = name
+        self._save_page_action(self._current_page, idx, btype, value, target=target)
+        self._refresh_panel_tile(idx)
+        self._rebuild_page_tabs()
+
+    def _insp_do_browse(self):
+        labels = action_type_labels(self._app)
+        ids = action_type_ids(self._app)
+        try:
+            btype = ids[labels.index(self._insp_type.get())]
+        except ValueError:
+            return
+        if btype == "folder":
+            path = native_open_folder(title=self._app.T("ui_pick_folder"))
+            if path:
+                self._insp_value_var.set(path)
+                self._save_inspector(btype)
+        elif btype == "app":
+            self._open_app_picker()
+
+    def _insp_pick_image(self):
+        path = pick_dp_library_image(self, self._app)
+        if not path:
+            return
+        self._images[str(self._selected_key)] = path
+        self._page_images.setdefault(self._current_page, {})[str(self._selected_key)] = path
+        self._persist_images()
+        self._refresh_panel_tile(self._selected_key)
+        self._start_upload()
+
+    # ── Page tabs ─────────────────────────────────────────────────────────────
+
+    def _rebuild_page_tabs(self):
+        """One tab per page, in id order, plus the button that adds one."""
+        if not hasattr(self, "_pagebar"):
+            return
+        for w in list(self._page_tabs.values()):
+            w.destroy()
+        self._page_tabs.clear()
+        for w in self._pagebar.winfo_children():
+            if getattr(w, "_is_tab_extra", False):
+                w.destroy()
+        names = _load_displaypad_page_names()
+        for pid in sorted(names):
+            active = pid == self._current_page
+            btn = ctk.CTkButton(
+                self._pagebar, text=names[pid], font=("Helvetica", 11,
+                                                      "bold" if active else "normal"),
+                fg_color=BG2 if active else "transparent",
+                hover_color=BG2, text_color=FG if active else FG2,
+                border_width=1, border_color=BORDER if active else BG,
+                height=UI.CTRL_H_SM, corner_radius=5,
+                width=max(64, len(names[pid]) * 8 + 20),
+                command=lambda p=pid: self._switch_to_page(p))
+            btn.pack(side="left", padx=(0, 4))
+            self._page_tabs[pid] = btn
+        add = ctk.CTkButton(
+            self._pagebar, text=self.T("dp_new_page"), font=("Helvetica", 11),
+            fg_color="transparent", hover_color=BG2, text_color=FG2,
+            height=UI.CTRL_H_SM, corner_radius=5, width=90,
+            command=self._on_new_page)
+        add._is_tab_extra = True
+        add.pack(side="left")
+
+    def _on_new_page(self):
+        name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
+        if not name:
+            return
+        pid = self._mint_page_id()
+        self._ensure_page(pid, back_to=self._current_page)
+        names = _load_displaypad_page_names()
+        names[pid] = self._unique_page_name(name, exclude_id=pid)
+        _save_displaypad_page_names(names)
+        self._rebuild_page_tabs()
+        self._switch_to_page(pid)
+
+    def header_actions(self, parent):
+        """Fill the screen header: device controls left of the primary action.
+
+        The shell calls this every time the screen is shown and clears the
+        strip when leaving, so the widgets are rebuilt rather than kept alive
+        somewhere invisible.
+        """
+        UI.PrimaryButton(parent, self.T("dp_header_upload"),
+                         self._start_upload, width=110,
+                         height=UI.CTRL_H_SM).pack(side="right", padx=(UI.S2, 0))
+        UI.GhostButton(parent, self.T("dp_header_fullscreen"),
+                       self._open_dialog, width=130,
+                       height=UI.CTRL_H_SM).pack(side="right", padx=(UI.S2, 0))
+
+        self._rot_menu = ctk.CTkOptionMenu(
+            parent, values=["0°", "90°", "180°", "270°"],
+            fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
+            text_color=FG, font=("Helvetica", 10), width=64,
+            height=UI.CTRL_H_SM, command=self._on_rotation_change)
+        self._rot_menu.set(f"{self._rotation}°")
+        self._rot_menu.pack(side="right", padx=(UI.S2, 0))
+
+        self._bri_menu = ctk.CTkOptionMenu(
+            parent, values=["0%", "25%", "50%", "75%", "100%"],
+            fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
+            text_color=FG, font=("Helvetica", 10), width=76,
+            height=UI.CTRL_H_SM, command=self._on_brightness_change)
+        self._bri_menu.set(f"{self._brightness}%")
+        self._bri_menu.pack(side="right", padx=(UI.S2, 0))
+        ctk.CTkLabel(parent, text=self.T("dp_brightness_label"),
+                     font=("Helvetica", 10), text_color=FG2).pack(side="right")
+
+        self._deb_menu = ctk.CTkOptionMenu(
+            parent, values=["0.2s", "0.4s", "0.6s", "0.8s", "1.0s"],
+            fg_color=BG2, button_color=BG3, button_hover_color=BORDER,
+            text_color=FG, font=("Helvetica", 10), width=76,
+            height=UI.CTRL_H_SM, command=self._on_debounce_change)
+        self._deb_menu.set(f"{self._debounce}s")
+        self._deb_menu.pack(side="right", padx=(UI.S2, 0))
+        ctk.CTkLabel(parent, text=self.T("dp_debounce_label"),
+                     font=("Helvetica", 10), text_color=FG2).pack(side="right")
+
+    def refresh(self):
+        """Shown again: the page tabs and the inspector may be stale after a
+        page switch triggered from a key press or from dp_page."""
+        self._rebuild_page_tabs()
+        self._select_key(self._selected_key)
 
     def _on_brightness_change(self, val):
         pct = int(val.replace("%", ""))
@@ -3175,8 +3413,11 @@ class DisplayPadPanel(ctk.CTkFrame):
         if hasattr(self, "_page_lbl"):
             name = self._get_page_name(page_num)
             self._page_lbl.configure(text=f"{self.T('dp_page_label')} {name}")
-            self._page_back_btn.pack(
-                side="right", padx=(4, 0)) if page_num != 0 else self._page_back_btn.pack_forget()
+        # The tabs are the page indicator now, and the inspector has to follow
+        # the new page: a switch can come from a key press or from dp_page,
+        # not just from clicking a tab.
+        self._rebuild_page_tabs()
+        self._select_key(self._selected_key)
 
         self._info_label.configure(
             text=self.T("dp_page_switching", p=page_num if page_num else self.T("dp_page_main")),
@@ -3741,6 +3982,55 @@ class DisplayPadPanel(ctk.CTkFrame):
             else:
                 self._save_sub_pages()
         return True
+
+    def _persist_images(self):
+        """Write the current page's images where that page keeps them."""
+        if self._current_page == 0:
+            _save_displaypad_buttons(self._images)
+        else:
+            self._page_images[self._current_page] = dict(self._images)
+            self._save_sub_pages()
+
+    def _clear_slot(self, idx):
+        """Blank one key: image back to the blank icon, action to none."""
+        if idx is None:
+            return
+        self._images[str(idx)] = self._blank_icon
+        self._gif_frames.pop(idx, None)
+        self._fullscreen_group.discard(idx)
+        self._persist_images()
+        self._save_page_action(self._current_page, idx, "none", "")
+        self._refresh_panel_tile(idx)
+        if idx == self._selected_key:
+            self._load_inspector()
+        self._start_upload()
+
+    def _open_app_picker(self):
+        """Pick an installed application for an 'app' action."""
+        from shared.ui_helpers import parse_desktop_apps
+        apps = parse_desktop_apps()
+        if not apps:
+            return
+        names = sorted(apps.keys())
+        dlg = ctk.CTkToplevel(self._app)
+        dlg.title(self._app.T("app_picker_title"))
+        dlg.geometry("420x460")
+        dlg.transient(self._app)
+        box = ctk.CTkScrollableFrame(dlg, fg_color=BG)
+        box.pack(fill="both", expand=True, padx=10, pady=10)
+        cap_scroll_speed(box)
+
+        def _take(name):
+            self._insp_value_var.set(apps[name])
+            self._save_inspector("app")
+            dlg.destroy()
+
+        for name in names:
+            ctk.CTkButton(box, text=name, anchor="w", height=28,
+                          fg_color=BG2, hover_color=BG3, text_color=FG,
+                          font=("Helvetica", 11),
+                          command=lambda n=name: _take(n)).pack(fill="x", pady=1)
+        dlg.after(20, dlg.grab_set)
 
     def _clear_all(self):
         if self._uploading:

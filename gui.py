@@ -1210,6 +1210,15 @@ class App(ctk.CTk):
         self._active_device = device_id
 
         panel = self._panels[device_id]
+        # Screens fill the header's action slot themselves. Cleared on every
+        # switch so a screen never sees another screen's buttons.
+        for w in self._screen_actions.winfo_children():
+            w.destroy()
+        if hasattr(panel, "header_actions"):
+            try:
+                panel.header_actions(self._screen_actions)
+            except Exception as e:
+                print(f"[UI] header_actions failed for {device_id}: {e}")
         if hasattr(panel, "refresh"):
             try:
                 panel.refresh()

@@ -475,5 +475,16 @@
   "settings_about_version": "Version",
   "settings_about_install": "Installation",
   "settings_about_config": "Konfiguration",
-  "settings_about_socket": "Steuersocket"
+  "settings_about_socket": "Steuersocket",
+  "dp_grid_hint": "Taste anklicken zum Bearbeiten, Rechtsklick leert sie",
+  "dp_insp_action": "Aktion",
+  "dp_insp_value": "Wert",
+  "dp_insp_image": "Bild",
+  "dp_insp_pick_image": "Bild wählen",
+  "dp_insp_clear": "Leeren",
+  "dp_insp_browse": "Durchsuchen",
+  "dp_insp_more": "Weitere Einstellungen",
+  "dp_header_upload": "Hochladen",
+  "dp_header_fullscreen": "Vollbild-Bild",
+  "dp_insp_target": "Zielseite"
 }
