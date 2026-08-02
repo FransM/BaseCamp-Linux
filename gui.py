@@ -680,7 +680,8 @@ class App(ctk.CTk):
         current_name = self._avail_langs.get(self._lang_code, "")
         self._lang_var.set(current_name)
         if hasattr(self, "_everest_panel"):
-            self._everest_panel._lang_combo.configure(values=lang_names)
+            if hasattr(self, "_everest_panel"):
+                self._everest_panel._lang_combo.configure(values=lang_names)
 
         self._restore_debounce_id = None
         self._was_withdrawn = False
@@ -755,12 +756,16 @@ class App(ctk.CTk):
         if cmd == "ping":
             return {"ok": True, "app": "BaseCamp Linux", "version": APP_VERSION}
         if cmd == "list":
-            return {"ok": True, "pages": list(self._panels.keys()),
+            # Every screen that exists, built or not: a script asking what is
+            # there should not get a different answer depending on what the
+            # person happened to click.
+            return {"ok": True,
+                    "pages": sorted(set(self._panels) | set(self._panel_factories)),
                     "active": self._active_device, "present": dict(self._dev_present),
                     "displaypad": self._control_dp_state()}
         if cmd == "page":
             page = obj.get("page", "")
-            if page not in self._panels:
+            if page not in self._panels and page not in self._panel_factories:
                 return {"ok": False, "error": f"unknown page '{page}'"}
             self.after(0, lambda: self._switch_device(page))
             return {"ok": True}
@@ -968,16 +973,22 @@ class App(ctk.CTk):
         self._rebuild_obs_type_map()
         self._apply_lang()
 
-    def _apply_lang(self):
+    def _apply_lang(self, only=None):
+        """Re-label everything. `only` limits the panel round to one screen,
+        which is what a freshly built screen needs: the others already have
+        the current language and re-labelling them again is wasted work."""
         for widget, key, attr in self._i18n_widgets:
             try:
                 widget.configure(**{attr: self.T(key)})
             except Exception:
                 pass
-        # Delegate to active panel for panel-specific i18n (OBS combos, type menus)
-        for panel in self._panels.values():
+        panels = [only] if only is not None else list(self._panels.values())
+        for panel in panels:
             if hasattr(panel, "apply_lang"):
-                panel.apply_lang()
+                try:
+                    panel.apply_lang()
+                except Exception as e:
+                    print(f"[UI] apply_lang failed: {e}")
 
     def _on_lang_change(self, val=None):
         selected_name = val if val is not None else self._lang_var.get()
@@ -1159,55 +1170,95 @@ class App(ctk.CTk):
             wraplength=320, justify="center")
         self._no_device_hint.pack(pady=(6, 0))
 
-        # Instantiate panels (OBS first — other panels reference it)
-        self._obs_panel         = OBSPanel(self._panel_area, self)
-        self._macro_panel       = MacroPanel(self._panel_area, self)
-        self._everest_panel     = EverestMaxPanel(self._panel_area, self)
-        self._everest60_panel   = Everest60Panel(self._panel_area, self)
-        self._makalu_panel      = Makalu67Panel(self._panel_area, self)
-        self._displaypad_panel  = DisplayPadPanel(self._panel_area, self)
-        self._plugins_panel     = PluginManagerPanel(self._panel_area, self)
-        self._settings_panel    = SettingsPanel(self._panel_area, self)
+        # Two screens are built up front because they work whether or not you
+        # are looking at them: the DisplayPad owns the device (key events,
+        # uploads, page switches from dp_page) and OBS holds the connection
+        # other screens ask about. Everything else is built the first time it
+        # is opened.
+        #
+        # This is where the startup time was: every CustomTkinter widget draws
+        # itself with anti-aliased corners on a canvas, and building all eight
+        # screens meant about 1400 rounded rectangles and 4000 circles before
+        # the window appeared.
+        self._obs_panel        = OBSPanel(self._panel_area, self)
+        self._displaypad_panel = DisplayPadPanel(self._panel_area, self)
 
         self._panels = {
-            "everest_max": self._everest_panel,
-            "everest60":   self._everest60_panel,
-            "makalu67":    self._makalu_panel,
-            "displaypad":  self._displaypad_panel,
-            "obs":         self._obs_panel,
-            "macros":      self._macro_panel,
-            "plugins":     self._plugins_panel,
-            "settings":    self._settings_panel,
+            "displaypad": self._displaypad_panel,
+            "obs":        self._obs_panel,
+        }
+        self._panel_factories = {
+            "everest_max": lambda: EverestMaxPanel(self._panel_area, self),
+            "everest60":   lambda: Everest60Panel(self._panel_area, self),
+            "makalu67":    lambda: Makalu67Panel(self._panel_area, self),
+            "macros":      lambda: MacroPanel(self._panel_area, self),
+            "plugins":     lambda: PluginManagerPanel(self._panel_area, self),
+            "settings":    lambda: SettingsPanel(self._panel_area, self),
+        }
+        self._panel_attr = {
+            "everest_max": "_everest_panel", "everest60": "_everest60_panel",
+            "makalu67": "_makalu_panel", "macros": "_macro_panel",
+            "plugins": "_plugins_panel", "settings": "_settings_panel",
         }
 
         # ── Plugin panels ──
         # A plugin that brings its own screen lands under Tools, in the same
         # list as everything else. This is what used to force a third row of
-        # pills the moment two of them were installed.
+        # pills the moment two of them were installed. Their panels are built
+        # on first open like the rest.
         self._plugin_sw_btns = {}
         for pid, info, inst in list(self._plugin_manager.get_panel_plugins()):
             try:
-                panel = inst.create_panel(self._panel_area)
-                self._panels[pid] = panel
                 label = getattr(inst, "panel_label", info.get("name", pid))
+                self._panel_factories[pid] = (
+                    lambda i=inst: i.create_panel(self._panel_area))
                 item = UI.NavItem(self._nav_tools_box, text=label,
                                   command=lambda p=pid: self._switch_device(p))
                 item.pack(fill="x")
                 self._nav_items[pid] = item
                 self._plugin_sw_btns[pid] = item
             except Exception as e:
-                print(f"[Plugin] Failed to create panel for {pid}: {e}")
+                print(f"[Plugin] Failed to register panel for {pid}: {e}")
 
         # Start plugin services after UI is ready
         self.after(100, self._plugin_manager.start_services)
 
-        # Show keyboard panel by default
-        self._switch_device("everest_max")
+        # Show the first screen once the window itself is up. Building it
+        # inline meant the window only appeared when the whole screen was
+        # drawn; this way the shell is on screen and the screen fills in.
+        self.after(1, lambda: self._switch_device("everest_max"))
 
     # ── Device switching ──────────────────────────────────────────────────────
 
+    def _get_panel(self, device_id):
+        """The screen for an id, built on first use.
+
+        Building it here rather than at startup is the difference between a
+        window that appears in a second and one that takes four, because the
+        cost is entirely in drawing widgets nobody has asked for yet.
+        """
+        panel = self._panels.get(device_id)
+        if panel is not None:
+            return panel
+        factory = self._panel_factories.get(device_id)
+        if factory is None:
+            return None
+        panel = factory()
+        self._panels[device_id] = panel
+        attr = self._panel_attr.get(device_id)
+        if attr:
+            setattr(self, attr, panel)
+        # A freshly built screen has never seen a language change.
+        try:
+            self._apply_lang(only=panel)
+        except Exception:
+            pass
+        return panel
+
     def _switch_device(self, device_id):
         if self._active_device == device_id:
+            return
+        if self._get_panel(device_id) is None:
             return
         # Hide all panels. A screen that polls something is told it is gone,
         # so nothing keeps reading sensors for a screen nobody is looking at.
@@ -1311,7 +1362,8 @@ class App(ctk.CTk):
     def _start_cpu_auto_clean(self):
         """Delegate to Everest panel (only keyboard has CPU monitor)."""
         if hasattr(self, "_everest_panel"):
-            self._everest_panel._start_cpu_auto_clean()
+            if hasattr(self, "_everest_panel"):
+                self._everest_panel._start_cpu_auto_clean()
 
     # ── USB presence check ────────────────────────────────────────────────────
 
@@ -1967,8 +2019,8 @@ class App(ctk.CTk):
                 p._anim_stop.set()
         # Stop Everest panel CPU proc if running
         if hasattr(self, "_everest_panel"):
-            if self._everest_panel._cpu_proc and \
-               self._everest_panel._cpu_proc.poll() is None:
+            if hasattr(self, "_everest_panel") and self._everest_panel._cpu_proc \
+                    and self._everest_panel._cpu_proc.poll() is None:
                 self._everest_panel._cpu_proc.terminate()
         if hasattr(self, "_tray_proc") and self._tray_proc.poll() is None:
             self._tray_proc.terminate()

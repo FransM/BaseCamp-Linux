@@ -2463,6 +2463,12 @@ class DisplayPadPanel(ctk.CTkFrame):
                 acts[0] = _back_act()
 
         self._images = dict(self._page_images.get(0, {}))
+        # A value that is not a path is dropped rather than carried into the
+        # first os.path call, where it would stop the app from starting at all.
+        for k, v in list(self._images.items()):
+            if v is not None and not isinstance(v, str):
+                print(f"[DisplayPad] ignoring non-path image for key {k}: {v!r}")
+                self._images[k] = self._blank_icon
         for k, path in self._images.items():
             if path and os.path.exists(path) and path.lower().endswith('.gif'):
                 frames = _load_gif_frames(path)
@@ -2784,11 +2790,25 @@ class DisplayPadPanel(ctk.CTkFrame):
             self._open_app_picker()
 
     def _insp_pick_image(self):
-        path = pick_dp_library_image(self, self._app)
+        """Pick an image for the selected key.
+
+        The picker returns (source path, gif frame, library file name), not a
+        path. Writing the whole triple into the image map put a list where
+        every reader expects a string, which the next start then tripped over
+        while loading GIF frames.
+        """
+        from shared.config import _save_to_dp_library, DISPLAYPAD_LIBRARY_DIR
+        result = pick_dp_library_image(self, self._app)
+        if not result:
+            return
+        src_path, gif_frame, thumb_fname = result
+        if thumb_fname is None and src_path:
+            _save_to_dp_library(src_path, gif_frame)
+        path = (os.path.join(DISPLAYPAD_LIBRARY_DIR, thumb_fname)
+                if thumb_fname else src_path)
         if not path:
             return
-        self._images[str(self._selected_key)] = path
-        self._page_images.setdefault(self._current_page, {})[str(self._selected_key)] = path
+        self._set_button_image(self._selected_key, path)
         self._persist_images()
         self._refresh_panel_tile(self._selected_key)
         self._start_upload()
