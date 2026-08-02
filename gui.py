@@ -35,8 +35,6 @@ else:
     SCRIPT = os.path.join(_HERE, "emax_controller.py")
     TRAY_HELPER = os.path.join(_HERE, "tray_helper.py")
 
-LANG_DIR = os.path.join(_RES, "lang")
-
 STYLES = {"Analog": "analog", "Digital": "digital"}
 
 # ── Shared modules ─────────────────────────────────────────────────────────────
@@ -64,7 +62,11 @@ from shared.config import (
     _compute_lib_hash, _compute_main_lib_hash,
     _list_library, _list_main_library,
     OBS_INTERNAL_ORDER,
+    shipped_path,
 )
+# not os.path.join(_RES, ...): _RES is the frozen bundle, and the language
+# files travel with the source overlay. See shipped_path().
+LANG_DIR = shipped_path("lang")
 from shared.image_utils import image_to_rgb565
 import shared.ui as UI
 from shared.ui_helpers import (

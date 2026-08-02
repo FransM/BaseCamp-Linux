@@ -7,6 +7,29 @@ import pwd as _pwd
 from PIL import Image
 
 
+def shipped_path(name):
+    """Path to a data file that the source overlay ships (lang/, presets).
+
+    A frozen build has two candidate roots and picking the wrong one makes an
+    update silently do nothing. `sys._MEIPASS` is the PyInstaller bundle and
+    never changes; `__file__` moves with the source overlay, because that is
+    where our modules are loaded from once an overlay is active. Anything
+    build_source.sh puts in the tarball must therefore be looked up relative to
+    `__file__`, or an overlay update can ship a new file that nothing ever
+    reads. That is exactly what happened to the language files: the overlay
+    carried them, the app kept reading the bundled copies, and every key added
+    after the AppImage was built showed up in the interface as its own name.
+
+    Files the overlay deliberately leaves out, resources/ above all, must keep
+    using _MEIPASS: they only exist in the bundle.
+    """
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidate = os.path.join(here, name)
+    if os.path.exists(candidate) or not getattr(sys, "frozen", False):
+        return candidate
+    return os.path.join(getattr(sys, "_MEIPASS", here), name)
+
+
 _JSON_WARNED_MTIMES = {}
 
 def _warn_json(path, exc):
@@ -699,11 +722,8 @@ def _save_per_key(leds, side, bri):
 # ── Presets ────────────────────────────────────────────────────────────────────
 
 def _load_presets():
-    _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _FROZEN = getattr(sys, "frozen", False)
-    _RES = getattr(sys, "_MEIPASS", _HERE) if _FROZEN else _HERE
     defaults = {}
-    _default_file = os.path.join(_RES, "default_presets.json")
+    _default_file = shipped_path("default_presets.json")
     try:
         defaults = _read_json(_default_file)
     except Exception:
@@ -752,12 +772,9 @@ def _save_per_key_60(leds, side, bri):
 
 
 def _load_presets_60():
-    _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _FROZEN = getattr(sys, "frozen", False)
-    _RES = getattr(sys, "_MEIPASS", _HERE) if _FROZEN else _HERE
     defaults = {}
     try:
-        defaults = _read_json(os.path.join(_RES, "default_presets_60.json"))
+        defaults = _read_json(shipped_path("default_presets_60.json"))
     except Exception:
         pass
     try:
@@ -793,12 +810,9 @@ def _save_makalu_leds(leds, bri, preset=""):
 
 
 def _load_makalu_presets():
-    _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _FROZEN = getattr(sys, "frozen", False)
-    _RES = getattr(sys, "_MEIPASS", _HERE) if _FROZEN else _HERE
     defaults = {}
     try:
-        defaults = _read_json(os.path.join(_RES, "default_makalu_presets.json"))
+        defaults = _read_json(shipped_path("default_makalu_presets.json"))
     except Exception:
         pass
     try:
