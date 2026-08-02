@@ -221,7 +221,7 @@ class EverestMaxPanel(ctk.CTkFrame):
     # ── Section builders ──────────────────────────────────────────────────────
 
     def _build_monitor_section(self, scroll):
-        s1 = AccordionSection(scroll, self._app, "⚡", "monitor_title")
+        s1 = AccordionSection(scroll, self._app, "", "monitor_title")
         self._sections.append(s1)
         b1 = s1.content
 
@@ -236,7 +236,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._cpu_status.pack(pady=(0, 12))
 
     def _build_main_display_section(self, scroll):
-        s2 = AccordionSection(scroll, self._app, "🖥", "main_display_title")
+        s2 = AccordionSection(scroll, self._app, "", "main_display_title")
         self._sections.append(s2)
         b2 = s2.content
 
@@ -282,7 +282,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._main_status.pack(pady=(0, 12))
 
     def _build_numpad_section(self, scroll):
-        s3 = AccordionSection(scroll, self._app, "⌨", "numpad_title")
+        s3 = AccordionSection(scroll, self._app, "", "numpad_title")
         self._sections.append(s3)
         b3 = s3.content
 
@@ -461,7 +461,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._numpad_info.pack(pady=(4, 10))
 
     def _build_rgb_section(self, scroll):
-        s5 = AccordionSection(scroll, self._app, "💡", "rgb_title")
+        s5 = AccordionSection(scroll, self._app, "", "rgb_title")
         self._sections.append(s5)
         c = s5.content
 
@@ -591,7 +591,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._rgb_update_controls()
 
     def _build_zone_section(self, scroll):
-        s6 = AccordionSection(scroll, self._app, "🎨", "zone_title")
+        s6 = AccordionSection(scroll, self._app, "", "zone_title")
         self._sections.append(s6)
         c6 = s6.content
 

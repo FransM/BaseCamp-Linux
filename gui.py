@@ -969,10 +969,11 @@ class App(ctk.CTk):
                       font=("Helvetica", 14), command=self._quit).place(relx=1.0,
                       rely=0.5, anchor="e", x=-8)
         self._settings_btn = ctk.CTkButton(
-            hdr, text="⚙", width=32, height=32, corner_radius=6,
+            hdr, text=self.T("ui_settings"), width=104, height=32, corner_radius=6,
             fg_color="transparent", hover_color=BG3, text_color=FG2,
-            font=("Helvetica", 16), command=self._open_settings)
+            font=("Helvetica", 11), command=self._open_settings)
         self._settings_btn.place(relx=1.0, rely=0.5, anchor="e", x=-44)
+        self._reg(self._settings_btn, "ui_settings")
 
         # ── Device switcher bar (2 rows) ──
         switcher = ctk.CTkFrame(self, fg_color=BG3, corner_radius=0)
@@ -1035,8 +1036,6 @@ class App(ctk.CTk):
         self._no_device_frame = ctk.CTkFrame(self._panel_area, fg_color=BG)
         _nd_inner = ctk.CTkFrame(self._no_device_frame, fg_color="transparent")
         _nd_inner.place(relx=0.5, rely=0.45, anchor="center")
-        ctk.CTkLabel(_nd_inner, text="🔌", font=("Helvetica", 48),
-                     text_color=FG2).pack(pady=(0, 8))
         self._no_device_title = ctk.CTkLabel(
             _nd_inner, text="", font=("Helvetica", 16, "bold"), text_color=FG)
         self._no_device_title.pack()
@@ -1483,8 +1482,11 @@ class App(ctk.CTk):
                         # without opening the dialog. Works for any install
                         # type — source/AUR users still see "open me" too.
                         if hasattr(self, "_settings_btn"):
+                            # Says what it is instead of decorating the cog:
+                            # the button opens the place where the update is.
                             self._settings_btn.configure(
-                                text="⚙ ↑", text_color=GRN)
+                                text=self.T("ui_update_short", ver=ver),
+                                text_color=GRN)
                         # Proactive popup — only for AppImage installs where
                         # we can actually do something about it from the GUI.
                         # Trigger on _update_url so source-only releases (no

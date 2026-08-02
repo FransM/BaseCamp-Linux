@@ -15,6 +15,25 @@ import customtkinter as ctk
 from shared.ui import tokens as T
 
 
+# ── Translation lookup ────────────────────────────────────────────────────────
+
+def resolve_t(widget):
+    """Return the nearest T() up the widget chain, or a passthrough.
+
+    Some older dialogs were built without an app reference and therefore had
+    no way to translate their own labels, which is how hardcoded English ended
+    up in them. Walking up to the app is cheap and means a component can
+    translate without every caller having to hand it a function.
+    """
+    w = widget
+    while w is not None:
+        fn = getattr(w, "T", None)
+        if callable(fn):
+            return fn
+        w = getattr(w, "master", None)
+    return lambda key, **kw: key
+
+
 # ── Containers ────────────────────────────────────────────────────────────────
 
 class Card(ctk.CTkFrame):

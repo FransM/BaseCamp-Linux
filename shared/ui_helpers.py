@@ -12,6 +12,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 from PIL import Image, ImageTk, ImageEnhance
 
+from shared.ui.widgets import resolve_t
 from shared.config import (
     ICON_LIBRARY_DIR, MAIN_LIBRARY_DIR,
     DISPLAYPAD_LIBRARY_DIR, DISPLAYPAD_FS_LIBRARY_DIR,
@@ -428,7 +429,10 @@ class ColorPickerDialog(ctk.CTkToplevel):
         if self._show_brightness:
             bri_row = ctk.CTkFrame(self, fg_color="transparent")
             bri_row.pack(fill="x", padx=PAD, pady=2)
-            ctk.CTkLabel(bri_row, text="☀", width=20, text_color=FG2).pack(side="left")
+            _t = resolve_t(self)
+            ctk.CTkLabel(bri_row, text=_t("custom_rgb_brightness_short"), width=70,
+                         font=FONT_SM, text_color=FG2,
+                         anchor="w").pack(side="left")
             ctk.CTkSlider(bri_row, from_=0, to=100, variable=self._bri_var,
                           command=self._on_bri_change,
                           button_color=BLUE, progress_color=BG3
@@ -1860,8 +1864,13 @@ class AccordionSection:
         accent = tk.Frame(self._header, bg=YLW, width=4)
         accent.pack(side="left", fill="y")
 
-        ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
-                     text_color=YLW, width=30).pack(side="left", padx=(8, 4))
+        # No icon column unless a caller actually passes one. The emoji that
+        # used to sit here came from whatever emoji font was installed, brought
+        # its own colour into a system that has a rule for every colour, and
+        # left a missing-glyph box on machines without one.
+        if icon:
+            ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
+                         text_color=YLW, width=30).pack(side="left", padx=(8, 4))
 
         self._title_lbl = ctk.CTkLabel(self._header, text=app.T(title_key),
                                         font=("Helvetica", 11, "bold"),

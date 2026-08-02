@@ -120,7 +120,7 @@ class Everest60Panel(ctk.CTkFrame):
 
     def _build_rgb_section(self, scroll):
         title = f"{self.T('rgb_title')} — {self._model_name}"
-        s = _Section(scroll, self._app, "💡", title)
+        s = _Section(scroll, self._app, "", title)
         self._sections.append(s)
         self._rgb_section = s
         self._build_rgb_content(s.content)
@@ -303,7 +303,7 @@ class Everest60Panel(ctk.CTkFrame):
         are blanked when only side colour is applied. A future enhancement
         can fold this into the full custom-RGB editor.
         """
-        s = _Section(scroll, self._app, "✨",
+        s = _Section(scroll, self._app, "",
                      f"{self.T('side_leds_title')} — {self._model_name}")
         self._sections.append(s)
         self._side_leds_section = s
@@ -682,8 +682,13 @@ class _Section:
         self._header.pack(fill="x")
 
         tk.Frame(self._header, bg=YLW, width=4).pack(side="left", fill="y")
-        ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
-                     text_color=YLW, width=30).pack(side="left", padx=(8, 4))
+        # No icon column unless a caller actually passes one. The emoji that
+        # used to sit here came from whatever emoji font was installed, brought
+        # its own colour into a system that has a rule for every colour, and
+        # left a missing-glyph box on machines without one.
+        if icon:
+            ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
+                         text_color=YLW, width=30).pack(side="left", padx=(8, 4))
         self._title_lbl = ctk.CTkLabel(self._header, text=title,
                                        font=("Helvetica", 11, "bold"), text_color=FG, anchor="w")
         self._title_lbl.pack(side="left", fill="x", expand=True, padx=4, pady=12)

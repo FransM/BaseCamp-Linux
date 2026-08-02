@@ -714,12 +714,14 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         self._page_selector.set(self._panel._get_page_name(cur))
         self._page_selector.pack(side="right")
         ctk.CTkButton(
-            header, text="✎", width=28, height=28,
+            header, text=self._app.T("dp_rename_page_btn"), width=92, height=28,
+            font=("Helvetica", 10),
             fg_color=BG2, hover_color="#333a44", text_color=FG,
             command=self._on_rename_page).pack(side="right", padx=(0, 6))
         ctk.CTkButton(
-            header, text="🗑", width=28, height=28,
-            fg_color=BG2, hover_color="#4a2222", text_color=FG,
+            header, text=self._app.T("dp_delete_page_btn"), width=72, height=28,
+            font=("Helvetica", 10),
+            fg_color=BG2, hover_color="#4a2222", text_color=RED,
             command=self._on_delete_page).pack(side="right", padx=(0, 6))
 
         # 6 × 2 grid of tiles
@@ -1445,12 +1447,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             command=self._on_page_change)
         self._page_selector.pack(side="right")
         ctk.CTkButton(
-            header, text="✎", width=28, height=28,
+            header, text=self._app.T("dp_rename_page_btn"), width=92, height=28,
+            font=("Helvetica", 10),
             fg_color=BG2, hover_color="#333a44", text_color=FG,
             command=self._on_rename_page).pack(side="right", padx=(0, 6))
         ctk.CTkButton(
-            header, text="🗑", width=28, height=28,
-            fg_color=BG2, hover_color="#4a2222", text_color=FG,
+            header, text=self._app.T("dp_delete_page_btn"), width=72, height=28,
+            font=("Helvetica", 10),
+            fg_color=BG2, hover_color="#4a2222", text_color=RED,
             command=self._on_delete_page).pack(side="right", padx=(0, 6))
         self._page_list = pages
 
@@ -2521,8 +2525,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._bri_menu.set(f"{self._brightness}%")
         self._bri_menu.pack(side="right", padx=(4, 0))
 
-        ctk.CTkLabel(head_row, text="☀", font=("Helvetica", 12),
-                     text_color=FG2, fg_color="transparent").pack(side="right")
+        self._reg(ctk.CTkLabel(head_row, text=self.T("dp_brightness_label"),
+                               font=("Helvetica", 10), text_color=FG2,
+                               fg_color="transparent"), "dp_brightness_label"
+                  ).pack(side="right", padx=(6, 0))
 
         self._deb_menu = ctk.CTkOptionMenu(
             head_row, values=["0.2s", "0.4s", "0.6s", "0.8s", "1.0s"],
@@ -2532,8 +2538,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._deb_menu.set(f"{self._debounce}s")
         self._deb_menu.pack(side="right", padx=(4, 0))
 
-        ctk.CTkLabel(head_row, text="⏱", font=("Helvetica", 12),
-                     text_color=FG2, fg_color="transparent").pack(side="right")
+        self._reg(ctk.CTkLabel(head_row, text=self.T("dp_debounce_label"),
+                               font=("Helvetica", 10), text_color=FG2,
+                               fg_color="transparent"), "dp_debounce_label"
+                  ).pack(side="right", padx=(6, 0))
 
         # Page indicator bar
         page_bar = ctk.CTkFrame(content, fg_color="transparent")

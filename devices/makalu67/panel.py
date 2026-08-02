@@ -142,14 +142,14 @@ class Makalu67Panel(ctk.CTkFrame):
 
     def _build_rgb_section(self, scroll):
         title = f"{self.T('makalu_rgb_title')} — {self._model_name}"
-        s = _PlaceholderSection(scroll, self._app, "💡", title)
+        s = _PlaceholderSection(scroll, self._app, "", title)
         self._sections.append(s)
         self._section_titles.append((s, "makalu_rgb_title"))
         self._rgb_section = s
         self._build_rgb_content(s.content)
 
     def _build_custom_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "🎨", self.T("makalu_custom_title"))
+        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_custom_title"))
         self._sections.append(s)
         self._section_titles.append((s, "makalu_custom_title"))
         self._custom_section = s
@@ -301,7 +301,7 @@ class Makalu67Panel(ctk.CTkFrame):
     # ── DPI ───────────────────────────────────────────────────────────────────
 
     def _build_dpi_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "🎯", self.T("makalu_dpi_title"),
+        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_dpi_title"),
                                 on_open=self._dpi_start_poll,
                                 on_close=self._dpi_stop_poll)
         self._sections.append(s)
@@ -562,7 +562,7 @@ class Makalu67Panel(ctk.CTkFrame):
         return self.T(self._CAT_LANG_KEYS.get(cat, cat))
 
     def _build_remap_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "🖱", self.T("makalu_remap_title"))
+        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_remap_title"))
         self._sections.append(s)
         self._section_titles.append((s, "makalu_remap_title"))
         self._remap_section = s
@@ -891,7 +891,7 @@ class Makalu67Panel(ctk.CTkFrame):
     # ── Settings ──────────────────────────────────────────────────────────────
 
     def _build_settings_section(self, scroll):
-        s = _PlaceholderSection(scroll, self._app, "⚙", self.T("makalu_settings_title"))
+        s = _PlaceholderSection(scroll, self._app, "", self.T("makalu_settings_title"))
         self._sections.append(s)
         self._section_titles.append((s, "makalu_settings_title"))
         self._settings_section = s
@@ -1334,12 +1334,27 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
         self._cv.delete("all")
         self._led_items.clear()
 
-        # Mouse body
+        # Mouse body, drawn rather than typed. It used to be a plain rectangle
+        # with a 48pt mouse emoji in the middle, which meant the shape came
+        # from whatever emoji font was installed and was missing entirely on
+        # systems without one. A silhouette also makes it obvious which end is
+        # the front, which matters when eight LEDs are numbered around it.
         x1, y1, x2, y2 = _MOUSE_BODY
-        self._cv.create_rectangle(x1, y1, x2, y2,
-                                  fill="#1a1a22", outline="#444", width=2)
-        self._cv.create_text((x1 + x2) // 2, (y1 + y2) // 2,
-                             text="🖱️", font=("Helvetica", 48), fill="#2a2a36")
+        mx = (x1 + x2) // 2
+        shoulder = y1 + int((y2 - y1) * 0.22)
+        waist    = y1 + int((y2 - y1) * 0.62)
+        self._cv.create_polygon(
+            mx, y1,                 # nose
+            x2, shoulder,           # right shoulder
+            x2, waist,              # right flank
+            mx, y2,                 # tail
+            x1, waist,              # left flank
+            x1, shoulder,           # left shoulder
+            fill="#1a1a22", outline="#444", width=2, smooth=True)
+        # Split between the two main buttons, and the wheel between them.
+        self._cv.create_line(mx, y1 + 12, mx, shoulder + 46, fill="#333", width=2)
+        self._cv.create_rectangle(mx - 6, shoulder + 4, mx + 6, shoulder + 34,
+                                  fill="#2a2a36", outline="#444")
 
         # Side labels
         self._cv.create_text(42, 36, text="Left",  fill="#555", font=("Helvetica", 9))
@@ -1630,8 +1645,13 @@ class _PlaceholderSection:
         accent = tk.Frame(self._header, bg=YLW, width=4)
         accent.pack(side="left", fill="y")
 
-        ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
-                     text_color=YLW, width=30).pack(side="left", padx=(8, 4))
+        # No icon column unless a caller actually passes one. The emoji that
+        # used to sit here came from whatever emoji font was installed, brought
+        # its own colour into a system that has a rule for every colour, and
+        # left a missing-glyph box on machines without one.
+        if icon:
+            ctk.CTkLabel(self._header, text=icon, font=("Helvetica", 14),
+                         text_color=YLW, width=30).pack(side="left", padx=(8, 4))
 
         self._title_lbl = ctk.CTkLabel(self._header, text=title,
                      font=("Helvetica", 11, "bold"),

@@ -247,7 +247,7 @@
   "makalu_remap_cat_sniper": "Sniper",
   "makalu_remap_fn_sniper": "DPI Sniper",
   "makalu_remap_sniper_dpi": "Sniper DPI:",
-  "dp_title": "Mountain DisplayPad",
+  "dp_title": "DisplayPad",
   "dp_assign_images": "Bilder zuweisen",
   "dp_upload_start": "Upload / Start",
   "dp_clear_all": "Clear All",
@@ -429,5 +429,12 @@
   "ui_continue": "Fortfahren",
   "ui_load": "Laden",
   "ui_rename": "Umbenennen",
-  "ui_create": "Anlegen"
+  "ui_create": "Anlegen",
+  "ui_settings": "Einstellungen",
+  "ui_update_short": "Update {ver}",
+  "dp_brightness_label": "Helligkeit",
+  "dp_debounce_label": "Entprellung",
+  "dp_rename_page_btn": "Umbenennen",
+  "dp_delete_page_btn": "Löschen",
+  "custom_rgb_brightness_short": "Helligkeit"
 }
