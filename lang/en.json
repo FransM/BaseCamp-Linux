@@ -491,5 +491,7 @@
   "clock_title": "Clock",
   "ui_back": "Back",
   "macro_assigned_to": "On: {places}",
-  "macro_unassigned": "Not assigned to any key yet"
+  "macro_unassigned": "Not assigned to any key yet",
+  "pluginmgr_requires_ok": "Needs {pkg}, available",
+  "pluginmgr_requires_missing": "Needs {pkg}, not available here. The AppImage ships its own Python and cannot see packages installed with the system pip, so this plugin only works on a source install."
 }

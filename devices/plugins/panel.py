@@ -7,6 +7,7 @@ import urllib.request
 import zipfile
 import tempfile
 import customtkinter as ctk
+import shared.ui as UI
 from PIL import Image
 
 from shared.ui_helpers import BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER
@@ -331,13 +332,38 @@ class PluginManagerPanel(ctk.CTkFrame):
 
         help_text = info.get("help", "")
         if help_text:
-            help_frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=4)
+            # This text was always in the manifest and is the only place that
+            # explains which action types to put on a key and what their values
+            # mean. It used to be set in 9pt wrapped at 400px inside a 480px
+            # window; the screen is wider than that now.
+            help_frame = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=5,
+                                      border_width=1, border_color=BORDER)
             help_frame.pack(fill="x", pady=(0, 4))
             ctk.CTkLabel(
-                help_frame, text=f"\u2139  {help_text}",
-                font=("Helvetica", 9), text_color=FG,
-                anchor="w", justify="left", wraplength=400
-            ).pack(fill="x", padx=8, pady=4)
+                help_frame, text=help_text,
+                font=("Helvetica", 10), text_color=FG,
+                anchor="w", justify="left", wraplength=620
+            ).pack(fill="x", padx=10, pady=8)
+
+        # Dependencies were checked at load time and the result went to the
+        # console, which is why nobody could tell why a plugin was installed,
+        # enabled and doing nothing. It says so here now.
+        for pkg in info.get("requires", []) or []:
+            try:
+                __import__(pkg)
+                ok = True
+            except Exception:
+                ok = False
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=(0, 2))
+            UI.StatusDot(row, state="ok" if ok else "warn", size=7,
+                         bg=BG3).pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(
+                row,
+                text=self.T("pluginmgr_requires_ok", pkg=pkg) if ok
+                else self.T("pluginmgr_requires_missing", pkg=pkg),
+                font=("Helvetica", 10), text_color=FG2 if ok else YLW,
+                anchor="w", justify="left", wraplength=620).pack(side="left")
 
         author = info.get("author", "")
         if author:
