@@ -4,6 +4,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 import customtkinter as ctk
+import shared.ui as UI
 import json
 
 from shared.config import load_macros, save_macros
@@ -12,7 +13,7 @@ from shared.macros import (
     KEYSYM_TO_FRIENDLY, check_macro_tools, get_mouse_location,
     save_mouse_recording, list_mouse_recordings,
 )
-from shared.ui_helpers import (BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, BORDER,
+from shared.ui_helpers import (BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER,
                                cap_scroll_speed)
 
 
@@ -26,6 +27,9 @@ def _placeholder_for_type(atype):
         "mouse_path": "recording.json",
         "mouse_scroll": "up 3 / down 5",
     }.get(atype, "")
+
+
+_MACRO_LIST_W = 220
 
 
 class MacroPanel(ctk.CTkFrame):
@@ -102,8 +106,18 @@ class MacroPanel(ctk.CTkFrame):
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
-        scroll.pack(fill="both", expand=True, pady=(4, 0))
+        # List on the left, editor on the right. Stacked, the list was a 100px
+        # scroll box above the thing it selects, so choosing a macro meant
+        # scrolling a box inside a scrolling screen.
+        split = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        split.pack(fill="both", expand=True, pady=(4, 0))
+        split.grid_columnconfigure(0, weight=0, minsize=_MACRO_LIST_W)
+        split.grid_columnconfigure(1, weight=1)
+        split.grid_rowconfigure(0, weight=1)
+        left = ctk.CTkFrame(split, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=(0, 12))
+        scroll = ctk.CTkScrollableFrame(split, fg_color=BG, corner_radius=0)
+        scroll.grid(row=0, column=1, sticky="nsew")
 
         # Cap scroll speed
         _c = scroll._parent_canvas
@@ -116,27 +130,18 @@ class MacroPanel(ctk.CTkFrame):
             return _orig(*args)
         _c.yview = _capped
 
-        # Header
-        hdr = ctk.CTkFrame(scroll, fg_color="transparent")
-        hdr.pack(fill="x", padx=12, pady=(10, 4))
+        # The screen header carries the name; this is kept for apply_lang.
+        self._title_lbl = ctk.CTkLabel(left, text=self.T("macro_title"))
+        UI.SectionLabel(left, text=self.T("macro_title")).pack(
+            fill="x", pady=(10, 4))
+        self._new_btn = UI.PrimaryButton(
+            left, self.T("macro_new"), self._new_macro, width=_MACRO_LIST_W - 12)
+        self._new_btn.pack(fill="x", pady=(0, 6))
 
-        self._title_lbl = ctk.CTkLabel(
-            hdr, text=self.T("macro_title"),
-            font=("Helvetica", 14, "bold"), text_color=FG)
-        self._title_lbl.pack(side="left")
-
-        self._new_btn = ctk.CTkButton(
-            hdr, text="+ " + self.T("macro_new"),
-            font=("Helvetica", 11, "bold"), fg_color=BLUE,
-            hover_color="#0884be", text_color=FG,
-            height=28, corner_radius=4, width=110,
-            command=self._new_macro)
-        self._new_btn.pack(side="right")
-
-        # Macro list area (scrollable, max height 120px)
         self._list_frame = ctk.CTkScrollableFrame(
-            scroll, fg_color=BG3, corner_radius=4, height=100)
-        self._list_frame.pack(fill="x", padx=12, pady=(0, 6))
+            left, fg_color=BG2, corner_radius=7, border_width=1,
+            border_color=BORDER)
+        self._list_frame.pack(fill="both", expand=True, pady=(0, 6))
         # Cap scroll speed on macro list
         _lc = self._list_frame._parent_canvas
         _lorig = _lc.yview
@@ -154,8 +159,16 @@ class MacroPanel(ctk.CTkFrame):
             font=("Helvetica", 11), text_color=FG2)
 
         # Editor area
-        self._editor_frame = ctk.CTkFrame(scroll, fg_color=BG3, corner_radius=4)
-        self._editor_frame.pack(fill="x", padx=12, pady=(0, 6))
+        self._editor_frame = ctk.CTkFrame(scroll, fg_color=BG2, corner_radius=7,
+                                          border_width=1, border_color=BORDER)
+        self._editor_frame.pack(fill="x", padx=12, pady=(10, 6))
+
+        # Where does this macro actually sit? The answer lives in the device
+        # configs, and until now nobody could see it from here.
+        self._assign_lbl = ctk.CTkLabel(
+            self._editor_frame, text="", font=("Helvetica", 10),
+            text_color=FG2, anchor="w", justify="left")
+        self._assign_lbl.pack(fill="x", padx=8, pady=(8, 0))
 
         # Name row
         name_row = ctk.CTkFrame(self._editor_frame, fg_color="transparent")
@@ -338,9 +351,49 @@ class MacroPanel(ctk.CTkFrame):
         self._selected_id = macro_id
         self._refresh_macro_list(keep_selection=True)
         self._refresh_editor()
+        self._refresh_assignments()
         # Make sure editor is visible
         self._editor_frame.pack_forget()
-        self._editor_frame.pack(fill="x", padx=12, pady=(0, 6))
+        self._editor_frame.pack(fill="x", padx=12, pady=(10, 6))
+
+    def _find_assignments(self, macro_id):
+        """Every key this macro sits on, as readable places.
+
+        Reads the same configs the dispatchers read, so the answer cannot
+        drift from what actually happens on a key press.
+        """
+        from shared.config import (load_buttons, _load_displaypad_page_names,
+                                   _load_displaypad_actions)
+        places = []
+        try:
+            for i, act in enumerate(load_buttons() or []):
+                if act.get("type") == "macro" and act.get("action") == macro_id:
+                    places.append(f"Everest Max D{i + 1}")
+        except Exception:
+            pass
+        try:
+            names = _load_displaypad_page_names()
+            for pid in sorted(names):
+                for k, act in enumerate(_load_displaypad_actions(pid) or []):
+                    if not isinstance(act, dict):
+                        continue
+                    if act.get("type") == "macro" and act.get("action") == macro_id:
+                        places.append(f"DisplayPad K{k + 1} ({names[pid]})")
+        except Exception:
+            pass
+        return places
+
+    def _refresh_assignments(self):
+        if not getattr(self, "_assign_lbl", None):
+            return
+        places = self._find_assignments(self._selected_id or "")
+        if places:
+            self._assign_lbl.configure(
+                text=self.T("macro_assigned_to", places=", ".join(places)),
+                text_color=FG2)
+        else:
+            self._assign_lbl.configure(text=self.T("macro_unassigned"),
+                                       text_color=YLW)
 
     def _refresh_editor(self):
         """Populate the editor with the selected macro's data."""

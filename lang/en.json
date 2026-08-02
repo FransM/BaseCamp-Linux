@@ -489,5 +489,7 @@
   "dp_insp_target": "Target page",
   "obs_connection": "Connection",
   "clock_title": "Clock",
-  "ui_back": "Back"
+  "ui_back": "Back",
+  "macro_assigned_to": "On: {places}",
+  "macro_unassigned": "Not assigned to any key yet"
 }

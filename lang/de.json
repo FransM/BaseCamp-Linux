@@ -489,5 +489,7 @@
   "dp_insp_target": "Zielseite",
   "obs_connection": "Verbindung",
   "clock_title": "Uhr",
-  "ui_back": "Zurück"
+  "ui_back": "Zurück",
+  "macro_assigned_to": "Liegt auf: {places}",
+  "macro_unassigned": "Noch keiner Taste zugewiesen"
 }
