@@ -924,8 +924,12 @@ def _load_all_displaypad_pages():
     invalidate the cache from the handful of functions that write here --
     no need to re-stat the directory on every call."""
     global _PAGES_CACHE
-    if _PAGES_CACHE is not None:
-        return dict(_PAGES_CACHE)
+    # Bind once: plugin threads and the control socket read pages while the
+    # GUI thread may be invalidating the cache, and checking the global and
+    # then copying it separately can hit dict(None) in between.
+    cached = _PAGES_CACHE
+    if cached is not None:
+        return dict(cached)
 
     _migrate_legacy_displaypad_pages()
     out = {}

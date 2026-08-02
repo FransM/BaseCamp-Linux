@@ -8,6 +8,10 @@ Source-overlay patch: the control socket can put the DisplayPad on a page, and a
 
 - **Switch DisplayPad pages from a script (#63, @FransM).** The socket's `page` command only ever switched the GUI tab, so nothing outside the app could change which twelve keys the pad shows. The new `dp_page` command does that: `basecamp --ctl '{"cmd":"dp_page","page":"Editor"}'`, addressing pages by the name you gave them, or by id, or `"prev"` for the page you came from. Re-sending the page the pad is already on reports `changed: false` instead of failing, an unknown name comes back with the list of names that do exist, and the switch goes through the same path as a page action on a key, so a running upload or animation finishes first. `list` now also reports the pad's pages and the page it is on, so a script can discover the names. This makes an editor wrapper that flips to a page of snippets while it runs a three-line shell script, see [docs/CONTROL_INTERFACE.md](docs/CONTROL_INTERFACE.md).
 
+### Fixes
+
+- **Page cache could be read while it was being invalidated.** Plugin threads (`get_displaypad_current_page()` and friends) and now the control socket read the page files off the GUI thread, where the cached lookup checked the cache and copied it in two steps, so an invalidation landing in between raised a `TypeError`. It binds the cache once now. Rare, but the window widened with every off-thread reader.
+
 ### Documentation
 
 - **README brought up to date (#51, #63, @FransM).** The page-model rewrite in 2.1.7 covered the DisplayPad section only. This pass adds the plugin index (installing published plugins from the app, manual install from a URL or folder, the source-install caveat for plugins with third-party dependencies), the DisplayPad brightness and debounce controls, the command-line flags, the optional source dependencies, and the Page navigation and Redefine key action types that D1-D4 and K1-K12 have had since 2.1.0 but that only the DisplayPad section mentioned.

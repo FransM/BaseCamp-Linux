@@ -792,14 +792,14 @@ class App(ctk.CTk):
         except Exception as e:
             return {"ok": False, "error": f"dp_page: {type(e).__name__}: {e}"}
 
-        if isinstance(want, str) and want.lower() == "prev":
-            target = panel._prev_page
-        elif isinstance(want, str):
+        if isinstance(want, str):
+            # A real page name always wins, over the "prev" keyword as well as
+            # over an id, so a page the user called "prev" or "3" stays
+            # reachable by the name shown in the picker.
             target = next((pid for pid, name in known.items() if name == want), None)
-            if target is None:
-                # A name wins over a number, so a page literally called "3"
-                # stays reachable; only fall back to id lookup if nothing
-                # matched by name.
+            if target is None and want.lower() == "prev":
+                target = panel._prev_page
+            elif target is None:
                 try:
                     target = int(want)
                 except ValueError:

@@ -85,8 +85,9 @@ basecamp --ctl '{"cmd":"dp_page","page":"Editor"}'
 
 - `"prev"` goes back to the page you came from, exactly like the `Previous page`
   timeout target.
-- A raw page id (`{"cmd":"dp_page","page":2}`) also works. A name always wins
-  over an id, so a page literally named "3" stays reachable by its name.
+- A raw page id (`{"cmd":"dp_page","page":2}`) also works. A page name always
+  wins, over the `"prev"` keyword as well as over an id, so a page you named
+  "prev" or "3" stays reachable.
 - `changed: false` means the pad was already on that page and nothing was done.
   Re-sending the same page is not an error, so a script that fires on every
   window focus does not have to track state.
