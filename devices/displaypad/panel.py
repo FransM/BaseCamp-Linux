@@ -1352,7 +1352,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             # "keypress" type: show placeholder hint
             elif btype == "keypress":
                 self._cmd_entries[i].configure(
-                    placeholder_text="e.g. grave, F12, ctrl+shift+a")
+                    placeholder_text=self._app.T("dp_keypress_hint"))
             # "text" type: text to be typed out
             elif btype == "text":
                 self._cmd_entries[i].configure(
@@ -1952,7 +1952,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._page_combos[idx].pack(side="left", padx=(0, 4))
         elif internal == "keypress":
             self._cmd_entries[idx].configure(state="normal",
-                placeholder_text="e.g. grave, F12, ctrl+shift+a")
+                placeholder_text=self._app.T("dp_keypress_hint"))
             cur = self._act_cmd[idx].get()
         elif internal != "obs":
             self._cmd_entries[idx].configure(state="normal", placeholder_text="")
@@ -1986,7 +1986,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         else:
             if internal == "keypress":
                 self._sec_entries[idx].configure(
-                    placeholder_text="e.g. F12, ctrl+shift+a")
+                    placeholder_text=self._app.T("dp_keypress_hint_short"))
             elif internal == "text":
                 self._sec_entries[idx].configure(
                     placeholder_text=self._app.T("action_type_text_hint"))
@@ -2028,7 +2028,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         else:
             if internal == "keypress":
                 self._dbl_entries[idx].configure(
-                    placeholder_text="e.g. F12, ctrl+shift+a")
+                    placeholder_text=self._app.T("dp_keypress_hint_short"))
             elif internal == "text":
                 self._dbl_entries[idx].configure(
                     placeholder_text=self._app.T("action_type_text_hint"))
@@ -2177,7 +2177,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
     def _browse(self, idx):
         btype = self._act_type[idx].get()
         if btype == "folder":
-            path = native_open_folder()
+            path = native_open_folder(title=self._app.T("ui_pick_folder"))
             if path:
                 self._act_cmd[idx].set(path)
                 self._apply(idx)

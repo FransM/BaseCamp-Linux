@@ -1069,7 +1069,7 @@ class Makalu67Panel(ctk.CTkFrame):
 
     def _pick_rgb_color(self, which):
         initial = self._rgb_color1 if which == 1 else self._rgb_color2
-        rgb = pick_color(self._app, initial_rgb=initial, title="Pick Color",
+        rgb = pick_color(self._app, initial_rgb=initial, title=self.T("ui_pick_color"),
                          show_brightness=False)
         if rgb is None:
             return
@@ -1095,7 +1095,7 @@ class Makalu67Panel(ctk.CTkFrame):
 
         name = self._rgb_mode_var.get()
         code, hs, hc1, hc2, hd = _EFFECT_MAP.get(name, (0, False, False, False, False))
-        self._rgb_status.configure(text="Applying…", text_color=YLW)
+        self._rgb_status.configure(text=self.T("custom_rgb_persisting"), text_color=YLW)
 
         r1, g1, b1 = self._rgb_color1
         r2, g2, b2 = self._rgb_color2
@@ -1179,9 +1179,14 @@ class Makalu67Panel(ctk.CTkFrame):
 class MakaluCustomRGBWindow(ctk.CTkToplevel):
     """Per-LED color editor for the Makalu 67 (8 LEDs, 4 left + 4 right)."""
 
+    def _T(self, key, **kw):
+        """This window had no translation access at all, which is how its
+        whole toolbar ended up as English literals."""
+        return self._app.T(key, **kw)
+
     def __init__(self, app, panel):
         super().__init__(app)
-        self.title("Custom RGB — Makalu 67")
+        self.title(app.T("makalu_rgb_window_title"))
         self.resizable(False, False)
         self._app   = app
         self._panel = panel
@@ -1234,7 +1239,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
                                       bg=_rgb_hex(self._fill_rgb),
                                       highlightthickness=1, highlightbackground="#555")
         self._fill_swatch.pack(side="left", padx=(8, 2), pady=6)
-        ctk.CTkButton(strip, text="Pick", width=50, height=28,
+        ctk.CTkButton(strip, text=self._T("custom_rgb_pick"), width=50, height=28,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._pick_fill).pack(side="left", padx=(0, 8))
@@ -1244,44 +1249,44 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
                             cursor="hand2")
             btn.pack(side="left", padx=2, pady=8)
             btn.bind("<Button-1>", lambda e, c=rgb: self._set_fill(c))
-        self._sel_lbl = ctk.CTkLabel(strip, text="0 LEDs selected",
+        self._sel_lbl = ctk.CTkLabel(strip, text=self._T("makalu_rgb_selected", n=0),
                                      text_color=FG2, font=("Helvetica", 11))
         self._sel_lbl.pack(side="right", padx=10)
 
         # Action buttons
         act = ctk.CTkFrame(self, fg_color="transparent")
         act.pack(fill="x", padx=PAD, pady=4)
-        ctk.CTkButton(act, text="Fill Selected", width=110, height=30,
+        ctk.CTkButton(act, text=self._T("custom_rgb_fill"), width=110, height=30,
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._fill_selected).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(act, text="Select All", width=90, height=30,
+        ctk.CTkButton(act, text=self._T("custom_rgb_select_all"), width=90, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._select_all).pack(side="left", padx=4)
-        ctk.CTkButton(act, text="Deselect", width=80, height=30,
+        ctk.CTkButton(act, text=self._T("custom_rgb_deselect"), width=80, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._deselect_all).pack(side="left", padx=4)
-        ctk.CTkButton(act, text="All Black", width=80, height=30,
+        ctk.CTkButton(act, text=self._T("custom_rgb_all_black"), width=80, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
                       command=lambda: self._fill_all((0, 0, 0))).pack(side="left", padx=4)
-        ctk.CTkButton(act, text="All White", width=80, height=30,
+        ctk.CTkButton(act, text=self._T("custom_rgb_all_white"), width=80, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
                       command=lambda: self._fill_all((255, 255, 255))).pack(side="left", padx=4)
-        ctk.CTkButton(act, text="↩ Undo", width=70, height=30,
+        ctk.CTkButton(act, text=self._T("custom_rgb_undo"), width=70, height=30,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._undo).pack(side="right", padx=(4, 0))
-        ctk.CTkLabel(act, text="Alt+click = Eyedropper", text_color=FG2,
+        ctk.CTkLabel(act, text=self._T("makalu_rgb_eyedropper"), text_color=FG2,
                      font=("Helvetica", 10)).pack(side="right", padx=8)
 
         # Presets
         pre = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
         pre.pack(fill="x", padx=PAD, pady=(0, 4))
-        ctk.CTkLabel(pre, text="Presets:", text_color=FG2,
+        ctk.CTkLabel(pre, text=self._T("custom_rgb_presets"), text_color=FG2,
                      font=("Helvetica", 11)).pack(side="left", padx=(8, 4), pady=6)
         self._preset_var = tk.StringVar()
         self._preset_combo = ctk.CTkComboBox(
@@ -1289,15 +1294,15 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
             fg_color=BG3, border_color=BORDER, button_color=BLUE,
             dropdown_fg_color=BG2, text_color=FG, font=("Helvetica", 11))
         self._preset_combo.pack(side="left", padx=(0, 4), pady=6)
-        ctk.CTkButton(pre, text="Load", width=60, height=28,
+        ctk.CTkButton(pre, text=self._T("custom_rgb_load"), width=60, height=28,
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._preset_load).pack(side="left", padx=2)
-        ctk.CTkButton(pre, text="Save as…", width=80, height=28,
+        ctk.CTkButton(pre, text=self._T("custom_rgb_save_as"), width=80, height=28,
                       fg_color="#166534", hover_color="#14532d", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._preset_save_as).pack(side="left", padx=2)
-        ctk.CTkButton(pre, text="Delete", width=68, height=28,
+        ctk.CTkButton(pre, text=self._T("custom_rgb_delete"), width=68, height=28,
                       fg_color="#7f1d1d", hover_color="#6b1a1a", text_color=FG,
                       font=("Helvetica", 11),
                       command=self._preset_delete).pack(side="left", padx=2)
@@ -1309,7 +1314,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
         # Brightness + Apply
         bot = ctk.CTkFrame(self, fg_color="transparent")
         bot.pack(fill="x", padx=PAD, pady=(4, PAD))
-        ctk.CTkLabel(bot, text="Brightness:", text_color=FG2,
+        ctk.CTkLabel(bot, text=self._T("custom_rgb_brightness"), text_color=FG2,
                      font=("Helvetica", 11)).pack(side="left")
         _bri_levels = [0, 25, 50, 75, 100]
         bri_safe = min(_bri_levels, key=lambda x: abs(x - self._bri))
@@ -1320,7 +1325,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
             fg_color=BG3, button_color=BG3, button_hover_color=BG2,
             text_color=FG, font=("Helvetica", 11), width=100, height=28,
         ).pack(side="left", padx=(4, 16))
-        ctk.CTkButton(bot, text="Apply to Mouse", width=130, height=32,
+        ctk.CTkButton(bot, text=self._T("makalu_rgb_apply"), width=130, height=32,
                       fg_color=BLUE, hover_color="#0284c7", text_color=FG,
                       font=("Helvetica", 11, "bold"),
                       command=self._apply).pack(side="left", padx=(0, 4))
@@ -1357,8 +1362,8 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
                                   fill="#2a2a36", outline="#444")
 
         # Side labels
-        self._cv.create_text(42, 36, text="Left",  fill="#555", font=("Helvetica", 9))
-        self._cv.create_text(258, 36, text="Right", fill="#555", font=("Helvetica", 9))
+        self._cv.create_text(42, 36, text=self._T("makalu_rgb_left"),  fill="#555", font=("Helvetica", 9))
+        self._cv.create_text(258, 36, text=self._T("makalu_rgb_right"), fill="#555", font=("Helvetica", 9))
 
         # LED squares
         labels = ["L0", "L1", "L2", "L3", "R4", "R5", "R6", "R7"]
@@ -1470,7 +1475,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
         self._fill_swatch.configure(bg=_rgb_hex(rgb))
 
     def _pick_fill(self):
-        rgb = pick_color(self, initial_rgb=tuple(self._fill_rgb), title="LED Color",
+        rgb = pick_color(self, initial_rgb=tuple(self._fill_rgb), title=self._T("makalu_rgb_led_color"),
                          show_brightness=False)
         if rgb is None:
             return
@@ -1535,7 +1540,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
         name = self._preset_var.get().strip()
         presets = self._load_presets()
         if name not in presets:
-            self._preset_status.configure(text="Not found", text_color=RED)
+            self._preset_status.configure(text=self._T("custom_rgb_not_found"), text_color=RED)
             return
         self._push_undo()
         d    = presets[name]
@@ -1554,7 +1559,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
         dlg.geometry("300x110")
         dlg.grab_set()
         dlg.configure(fg_color=BG)
-        ctk.CTkLabel(dlg, text="Preset name:", text_color=FG,
+        ctk.CTkLabel(dlg, text=self._T("custom_rgb_preset_name"), text_color=FG,
                      font=("Helvetica", 12)).pack(pady=(14, 4))
         var = tk.StringVar(value=self._preset_var.get())
         entry = ctk.CTkEntry(dlg, textvariable=var, width=200, height=30,
@@ -1576,14 +1581,14 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
             self._preset_status.configure(text=f'Saved "{name}"', text_color=GRN)
             dlg.destroy()
         entry.bind("<Return>", lambda e: _save())
-        ctk.CTkButton(dlg, text="Save", width=80, height=28,
+        ctk.CTkButton(dlg, text=self._T("custom_rgb_preset_save_btn"), width=80, height=28,
                       fg_color=BLUE, text_color=FG, command=_save).pack(pady=8)
 
     def _preset_delete(self):
         name = self._preset_var.get().strip()
         presets = self._load_presets()
         if name not in presets:
-            self._preset_status.configure(text="Not found", text_color=RED)
+            self._preset_status.configure(text=self._T("custom_rgb_not_found"), text_color=RED)
             return
         del presets[name]
         self._save_presets(presets)
@@ -1595,7 +1600,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
     # ── Apply ─────────────────────────────────────────────────────────────────
 
     def _apply(self):
-        self._status.configure(text="Sending…", text_color=YLW)
+        self._status.configure(text=self._T("custom_rgb_sending"), text_color=YLW)
         self.update_idletasks()
         bri = int(self._bri_var.get().replace("%", ""))
         flat = []
@@ -1613,7 +1618,7 @@ class MakaluCustomRGBWindow(ctk.CTkToplevel):
                 ok, msg = False, str(ex)
             def finish():
                 self._status.configure(
-                    text="Applied ✓" if ok else f"Failed: {msg[:40]}",
+                    text=self._T("custom_rgb_applied") if ok else f"Failed: {msg[:40]}",
                     text_color=GRN if ok else RED)
                 self.after(3000, lambda: self._status.configure(text=""))
             self.after(0, finish)

@@ -415,6 +415,7 @@ class ColorPickerDialog(ctk.CTkToplevel):
 
     def _build_ui(self):
         PAD = 16
+        _t = resolve_t(self)
         self.configure(fg_color=BG2)
 
         self._canvas = tk.Canvas(self, width=_WHL, height=_WHL,
@@ -429,7 +430,6 @@ class ColorPickerDialog(ctk.CTkToplevel):
         if self._show_brightness:
             bri_row = ctk.CTkFrame(self, fg_color="transparent")
             bri_row.pack(fill="x", padx=PAD, pady=2)
-            _t = resolve_t(self)
             ctk.CTkLabel(bri_row, text=_t("custom_rgb_brightness_short"), width=70,
                          font=FONT_SM, text_color=FG2,
                          anchor="w").pack(side="left")
@@ -461,10 +461,10 @@ class ColorPickerDialog(ctk.CTkToplevel):
 
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(fill="x", padx=PAD, pady=(4, PAD))
-        ctk.CTkButton(btn_row, text="Cancel", width=90, height=32,
+        ctk.CTkButton(btn_row, text=_t("custom_rgb_cancel"), width=90, height=32,
                       fg_color=BG3, hover_color="#2a2a3a", text_color=FG,
                       command=self.destroy).pack(side="right", padx=(4, 0))
-        ctk.CTkButton(btn_row, text="OK", width=90, height=32,
+        ctk.CTkButton(btn_row, text=_t("ui_ok"), width=90, height=32,
                       fg_color=BLUE, hover_color="#0284c7",
                       command=self._ok).pack(side="right")
 

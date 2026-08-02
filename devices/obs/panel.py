@@ -85,12 +85,12 @@ class OBSPanel(ctk.CTkFrame):
 
         row1 = ctk.CTkFrame(conn, fg_color="transparent")
         row1.pack(pady=(8, 2))
-        ctk.CTkLabel(row1, text="Host:", text_color=FG2,
+        ctk.CTkLabel(row1, text=self.T("obs_host_label"), text_color=FG2,
                      font=("Helvetica", 11)).pack(side="left")
         ctk.CTkEntry(row1, textvariable=self._obs_host, width=120, height=30,
                      fg_color=BG2, text_color=FG, border_color=BORDER,
                      font=("Helvetica", 11)).pack(side="left", padx=(2, 8))
-        ctk.CTkLabel(row1, text="Port:", text_color=FG2,
+        ctk.CTkLabel(row1, text=self.T("obs_port_label"), text_color=FG2,
                      font=("Helvetica", 11)).pack(side="left")
         ctk.CTkEntry(row1, textvariable=self._obs_port, width=62, height=30,
                      fg_color=BG2, text_color=FG, border_color=BORDER,

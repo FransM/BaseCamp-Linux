@@ -761,7 +761,7 @@ class EverestMaxPanel(ctk.CTkFrame):
 
     def _pick_rgb_color(self, which):
         initial = self._rgb_color1 if which == 1 else self._rgb_color2
-        rgb = pick_color(self._app, initial_rgb=initial, title="Farbe wählen", show_brightness=False)
+        rgb = pick_color(self._app, initial_rgb=initial, title=self.T("ui_pick_color"), show_brightness=False)
         if rgb is None:
             return
         hex_color = _rgb_hex(rgb)
@@ -813,7 +813,7 @@ class EverestMaxPanel(ctk.CTkFrame):
 
     def _pick_zone_color(self, zone_key):
         initial = self._zone_colors.get(zone_key, (0, 0, 0))
-        rgb = pick_color(self._app, initial_rgb=initial, title="Farbe wählen", show_brightness=False)
+        rgb = pick_color(self._app, initial_rgb=initial, title=self.T("ui_pick_color"), show_brightness=False)
         if rgb is None:
             return
         self._zone_colors[zone_key] = rgb
@@ -938,7 +938,7 @@ class EverestMaxPanel(ctk.CTkFrame):
     def _browse_action(self, idx):
         btype = self._btn_type[idx].get()
         if btype == "folder":
-            path = native_open_folder()
+            path = native_open_folder(title=self.T("ui_pick_folder"))
             if path:
                 self._btn_action[idx].set(path)
                 self._apply_btn(idx)

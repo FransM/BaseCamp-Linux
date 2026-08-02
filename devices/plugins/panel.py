@@ -614,7 +614,7 @@ class PluginManagerPanel(ctk.CTkFrame):
 
     def _browse_folder(self):
         from tkinter import filedialog
-        path = filedialog.askdirectory(title="Select plugin folder")
+        path = filedialog.askdirectory(title=self.T("pluginmgr_pick_folder"))
         if path:
             self._install_entry.delete(0, "end")
             self._install_entry.insert(0, path)
@@ -624,7 +624,7 @@ class PluginManagerPanel(ctk.CTkFrame):
         if not src:
             return
         self._install_btn.configure(state="disabled")
-        self._install_status.configure(text="Installing...", text_color=YLW)
+        self._install_status.configure(text=self.T("pluginmgr_installing"), text_color=YLW)
 
         if os.path.isdir(src):
             self._install_from_folder(src)

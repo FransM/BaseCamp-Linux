@@ -425,14 +425,14 @@ class MacroPanel(ctk.CTkFrame):
         rec_btn = None
         if is_key_type:
             rec_btn = ctk.CTkButton(
-                r1, text="Rec", width=34, height=26, corner_radius=3,
+                r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
                 font=("Helvetica", 9),
                 command=lambda i=idx: self._start_key_record(i))
             rec_btn.pack(side="left", padx=(0, 2))
         elif is_mouse_click:
             rec_btn = ctk.CTkButton(
-                r1, text="Rec", width=34, height=26, corner_radius=3,
+                r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
                 font=("Helvetica", 9),
                 command=lambda i=idx: self._start_click_record(i))
@@ -448,7 +448,7 @@ class MacroPanel(ctk.CTkFrame):
         # Delay (hidden for "delay" type)
         delay_frame = ctk.CTkFrame(r1, fg_color="transparent")
         delay_frame.pack(side="left", padx=(0, 2))
-        ctk.CTkLabel(delay_frame, text="ms:", font=("Helvetica", 10),
+        ctk.CTkLabel(delay_frame, text=self.T("macro_ms_label"), font=("Helvetica", 10),
                      text_color=FG2).pack(side="left")
         delay_var = tk.StringVar(value=str(act_data.get("delay", 0)))
         delay_entry = ctk.CTkEntry(
@@ -540,7 +540,7 @@ class MacroPanel(ctk.CTkFrame):
         # Rec/Pick button
         if is_key_type:
             rec_btn = ctk.CTkButton(
-                r1, text="Rec", width=34, height=26, corner_radius=3,
+                r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
                 font=("Helvetica", 9),
                 command=lambda i=idx: self._start_key_record(i))
@@ -548,7 +548,7 @@ class MacroPanel(ctk.CTkFrame):
             row["rec_btn"] = rec_btn
         elif is_mouse_click:
             rec_btn = ctk.CTkButton(
-                r1, text="Rec", width=34, height=26, corner_radius=3,
+                r1, text=self.T("macro_rec_btn"), width=34, height=26, corner_radius=3,
                 fg_color=BG3, hover_color="#333348", text_color=FG2,
                 font=("Helvetica", 9),
                 command=lambda i=idx: self._start_click_record(i))
@@ -598,7 +598,7 @@ class MacroPanel(ctk.CTkFrame):
             keysym = event.keysym.lower()
             friendly = KEYSYM_TO_FRIENDLY.get(keysym, keysym)
             row["value_var"].set(friendly)
-            rec_btn.configure(fg_color=BG3, text_color=FG2, text="Rec")
+            rec_btn.configure(fg_color=BG3, text_color=FG2, text=self.T("macro_rec_btn"))
             self._auto_save_current()
 
         bind_id = self._app.bind("<KeyPress>", _on_key)
@@ -636,7 +636,7 @@ class MacroPanel(ctk.CTkFrame):
 
         def _pick(name):
             row["value_var"].set(name)
-            rec_btn.configure(fg_color=BG3, text_color=FG2, text="Rec")
+            rec_btn.configure(fg_color=BG3, text_color=FG2, text=self.T("macro_rec_btn"))
             self._auto_save_current()
             dlg.destroy()
 
@@ -648,7 +648,7 @@ class MacroPanel(ctk.CTkFrame):
         dlg.bind("<Button-2>", _on_click)
         dlg.bind("<Button-3>", _on_click)
         dlg.protocol("WM_DELETE_WINDOW", lambda: (
-            rec_btn.configure(fg_color=BG3, text_color=FG2, text="Rec"),
+            rec_btn.configure(fg_color=BG3, text_color=FG2, text=self.T("macro_rec_btn")),
             dlg.destroy()))
 
     def _on_value_edit(self):
@@ -870,7 +870,7 @@ class MacroPanel(ctk.CTkFrame):
         dlg.resizable(False, False)
         ctk.CTkLabel(dlg, text=msg, font=("Helvetica", 11), text_color=FG,
                      wraplength=290).pack(pady=(12, 6))
-        ctk.CTkButton(dlg, text="OK", width=60, height=28,
+        ctk.CTkButton(dlg, text=self.T("ui_ok"), width=60, height=28,
                       fg_color=BG3, hover_color="#333348", text_color=FG,
                       command=dlg.destroy).pack()
 
@@ -885,7 +885,7 @@ class MacroPanel(ctk.CTkFrame):
         ctk.CTkLabel(dlg, text=self.T("macro_no_tool"),
                      font=("Helvetica", 11), text_color=RED,
                      wraplength=290).pack(pady=(12, 6))
-        ctk.CTkButton(dlg, text="OK", width=60, height=28,
+        ctk.CTkButton(dlg, text=self.T("ui_ok"), width=60, height=28,
                       fg_color=BG3, hover_color="#333348", text_color=FG,
                       command=dlg.destroy).pack()
 

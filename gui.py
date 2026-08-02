@@ -939,7 +939,7 @@ class App(ctk.CTk):
             cancelled[0] = True
             dlg.destroy()
 
-        ctk.CTkButton(btn_row, text="OK", command=_ok,
+        ctk.CTkButton(btn_row, text=self.T("ui_ok"), command=_ok,
                       fg_color=BLUE, text_color=FG, hover_color="#0884be",
                       font=("Helvetica", 11, "bold"), height=30, width=70,
                       corner_radius=6).pack(side="left", padx=4)
@@ -983,14 +983,14 @@ class App(ctk.CTk):
         row1.pack(pady=(4, 0))
 
         self._sw_keyboard_btn = ctk.CTkButton(
-            row1, text="Keyboard", font=("Helvetica", 11, "bold"),
+            row1, text=self.T("switcher_keyboard"), font=("Helvetica", 11, "bold"),
             fg_color=BLUE, hover_color="#0884be", text_color=FG,
             height=28, corner_radius=4,
             command=lambda: self._switch_device(self._kb_panel_id))
         self._sw_keyboard_btn.pack(side="left", padx=4)
 
         self._sw_mouse_btn = ctk.CTkButton(
-            row1, text="Mouse", font=("Helvetica", 11, "bold"),
+            row1, text=self.T("switcher_mouse"), font=("Helvetica", 11, "bold"),
             fg_color=BG2, hover_color="#222232", text_color=FG2,
             height=28, corner_radius=4,
             command=lambda: self._switch_device("makalu67"))
