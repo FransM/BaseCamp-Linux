@@ -76,7 +76,7 @@ from shared.ui_helpers import (
     ColorPickerDialog, pick_color,
     LibraryPickerDialog, pick_library_image, pick_main_library_image,
     MultiUploadDialog,
-    CustomRGBWindow,
+    CustomRGBWindow, cap_scroll_speed,
     AccordionSection,
     _KB_LAYOUT, _KB_CANVAS_W, _KB_CANVAS_H, _SIDE_SZ, _SIDE_OFFSET,
     _QUICK_COLORS, _SIDE_ZONE_INDICES,
@@ -163,47 +163,48 @@ def _check_usb_presence(vid, pid):
 
 # ── Settings dialog ────────────────────────────────────────────────────────────
 
-class SettingsDialog(ctk.CTkToplevel):
-    """Modal with Profiles, Backup/Restore + version info."""
-    def __init__(self, app):
-        super().__init__(app)
+class SettingsPanel(ctk.CTkFrame):
+    """The settings screen: update, profiles, application, backup, about.
+
+    This used to be a fixed 420x580 modal with six themes stacked in one
+    column, and the update flow, the part that actually wants attention,
+    sat at the very bottom of it. As a screen each theme is a card and the
+    update card is the one that spans the width.
+    """
+    def __init__(self, parent, app):
+        super().__init__(parent, fg_color=BG)
         self._app = app
-        self.title(app.T("settings_title"))
-        self.geometry("420x580")
-        self.resizable(False, False)
-        try:
-            self.transient(app)
-        except Exception:
-            pass
 
-        ctk.CTkLabel(self, text=app.T("settings_title"),
-                     font=("Helvetica", 14, "bold")).pack(pady=(14, 4))
-        ctk.CTkLabel(self, text=f"BaseCamp Linux v{APP_VERSION}",
-                     font=("Helvetica", 10), text_color=FG2).pack(pady=(0, 12))
+        outer = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
+        outer.pack(fill="both", expand=True)
+        cap_scroll_speed(outer)
+        grid = ctk.CTkFrame(outer, fg_color="transparent")
+        grid.pack(fill="both", expand=True, padx=UI.S5, pady=UI.S5)
+        grid.grid_columnconfigure(0, weight=1, uniform="set")
+        grid.grid_columnconfigure(1, weight=1, uniform="set")
 
-        # ── Language section ──
-        # Reachable from any tab so the language can be changed even when only
-        # a DisplayPad (no keyboard panel) is connected (issue #35).
-        ctk.CTkLabel(self, text=app.T("settings_language"),
-                     font=("Helvetica", 11, "bold")).pack(pady=(0, 4))
-        lang_row = ctk.CTkFrame(self, fg_color="transparent")
-        lang_row.pack(fill="x", padx=20, pady=(0, 12))
-        lang_names = list(app._avail_langs.values())
-        self._lang_combo = ctk.CTkComboBox(
-            lang_row, values=lang_names or [""],
-            command=self._do_change_lang,
-            width=200, height=30, font=("Helvetica", 11),
-            fg_color=BG2, button_color=BLUE, text_color=FG)
-        self._lang_combo.set(app._avail_langs.get(app._lang_code, ""))
-        self._lang_combo.pack(side="left", fill="x", expand=True)
+        # ── Update, full width ──
+        upd = UI.Card(grid, title=app.T("settings_update_section"))
+        upd.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, UI.S3))
+        self._update_lbl = ctk.CTkLabel(
+            upd.body, text=getattr(app, "_update_message", "")
+            or app.T("settings_update_current", ver=APP_VERSION),
+            font=("Helvetica", 11), text_color=FG, anchor="w",
+            justify="left", wraplength=520)
+        self._update_lbl.pack(side="left", fill="x", expand=True)
+        self._update_btn = None
+        if (getattr(app, "_update_install_type", "") == "appimage"
+                and getattr(app, "_update_url", "")):
+            self._update_btn = UI.PrimaryButton(
+                upd.body, app.T("settings_update_button"), self._do_update, width=150)
+            self._update_btn.pack(side="right")
 
-        # ── Profiles section ──
+        # ── Profiles ──
         from shared.config import list_profiles, get_active_profile
-        ctk.CTkLabel(self, text=app.T("settings_profiles"),
-                     font=("Helvetica", 11, "bold")).pack(pady=(0, 4))
-
-        profile_row = ctk.CTkFrame(self, fg_color="transparent")
-        profile_row.pack(fill="x", padx=20, pady=2)
+        prof = UI.Card(grid, title=app.T("settings_profiles"))
+        prof.grid(row=1, column=0, sticky="nsew", padx=(0, UI.S3), pady=(0, UI.S3))
+        profile_row = ctk.CTkFrame(prof.body, fg_color="transparent")
+        profile_row.pack(fill="x", pady=2)
         profiles = list_profiles()
         active   = get_active_profile()
         self._profile_combo = ctk.CTkComboBox(
@@ -217,66 +218,123 @@ class SettingsDialog(ctk.CTkToplevel):
         else:
             self._profile_combo.set(app.T("settings_profile_none"))
         self._profile_combo.pack(side="left", padx=(0, 4), fill="x", expand=True)
-        ctk.CTkButton(profile_row, text=app.T("settings_profile_load"),
-                      width=70, height=30, command=self._do_load_profile).pack(
-            side="left", padx=2)
-        ctk.CTkButton(profile_row, text=app.T("settings_profile_delete"),
-                      width=70, height=30, fg_color=RED, hover_color="#8a1f1f",
-                      command=self._do_delete_profile).pack(side="left", padx=2)
+        UI.GhostButton(profile_row, app.T("settings_profile_load"),
+                       self._do_load_profile, width=80,
+                       height=UI.CTRL_H_SM).pack(side="left", padx=(UI.S2, 0))
+        UI.DangerButton(profile_row, app.T("settings_profile_delete"),
+                        self._do_delete_profile, width=80,
+                        height=UI.CTRL_H_SM).pack(side="left", padx=(UI.S2, 0))
 
-        save_row = ctk.CTkFrame(self, fg_color="transparent")
-        save_row.pack(fill="x", padx=20, pady=(2, 12))
+        save_row = ctk.CTkFrame(prof.body, fg_color="transparent")
+        save_row.pack(fill="x", pady=(6, 0))
         self._new_profile_var = ctk.StringVar()
         ctk.CTkEntry(save_row, textvariable=self._new_profile_var,
                      placeholder_text=app.T("settings_profile_name_hint"),
                      height=30, font=("Helvetica", 11),
                      fg_color=BG2, text_color=FG).pack(
             side="left", padx=(0, 4), fill="x", expand=True)
-        ctk.CTkButton(save_row, text=app.T("settings_profile_save"),
-                      width=70, height=30, command=self._do_save_profile).pack(
-            side="left", padx=2)
+        UI.GhostButton(save_row, app.T("settings_profile_save"),
+                       self._do_save_profile, width=90,
+                       height=UI.CTRL_H_SM).pack(side="left", padx=(UI.S2, 0))
 
-        # ── Backup / Restore section ──
-        ctk.CTkLabel(self, text=app.T("settings_backup_section"),
-                     font=("Helvetica", 11, "bold")).pack(pady=(8, 4))
-        ctk.CTkButton(self, text=app.T("settings_backup"),
-                      command=self._do_backup, height=34, corner_radius=6).pack(
-            fill="x", padx=20, pady=4)
-        ctk.CTkButton(self, text=app.T("settings_restore"),
-                      command=self._do_restore, height=34, corner_radius=6,
-                      fg_color=BG3, hover_color=BG2).pack(fill="x", padx=20, pady=4)
+        # ── Application: language, autostart, splash, pickers ──
+        appc = UI.Card(grid, title=app.T("settings_app_section"))
+        appc.grid(row=1, column=1, sticky="nsew", pady=(0, UI.S3))
+        lang_row = ctk.CTkFrame(appc.body, fg_color="transparent")
+        lang_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(lang_row, text=app.T("settings_language"),
+                     font=("Helvetica", 11), text_color=FG2,
+                     anchor="w").pack(side="left")
+        lang_names = list(app._avail_langs.values())
+        self._lang_combo = ctk.CTkComboBox(
+            lang_row, values=lang_names or [""], command=self._do_change_lang,
+            width=150, height=UI.CTRL_H_SM, font=("Helvetica", 11),
+            fg_color=BG2, button_color=BLUE, text_color=FG)
+        self._lang_combo.set(app._avail_langs.get(app._lang_code, ""))
+        self._lang_combo.pack(side="right")
 
-        # ── File pickers section ──
-        ctk.CTkLabel(self, text=app.T("settings_picker_section"),
-                     font=("Helvetica", 11, "bold")).pack(pady=(10, 2))
-        ctk.CTkLabel(self, text=app.T("settings_picker_reset_hint"),
-                     font=("Helvetica", 9), text_color=FG2,
-                     wraplength=380, justify="left").pack(padx=20, pady=(0, 4))
-        ctk.CTkButton(self, text=app.T("settings_picker_reset"),
-                      command=self._do_reset_pickers, height=30,
-                      corner_radius=6, fg_color=BG3, hover_color=BG2).pack(
-            fill="x", padx=20, pady=2)
+        # Autostart and the splash screen used to live in the keyboard panel
+        # header, so they were unreachable for anyone with only a DisplayPad.
+        # They are application settings and belong here.
+        self._autostart_var = ctk.BooleanVar(value=load_autostart_enabled())
+        self._splash_var    = ctk.BooleanVar(value=load_splash_enabled())
+        for key, var, cb in (("settings_autostart", self._autostart_var,
+                              self._do_toggle_autostart),
+                             ("settings_splash", self._splash_var,
+                              self._do_toggle_splash)):
+            row = ctk.CTkFrame(appc.body, fg_color="transparent")
+            row.pack(fill="x", pady=3)
+            ctk.CTkLabel(row, text=app.T(key), font=("Helvetica", 11),
+                         text_color=FG2, anchor="w").pack(side="left")
+            ctk.CTkSwitch(row, text="", variable=var, command=cb,
+                          width=40, progress_color=BLUE).pack(side="right")
 
-        self._status = ctk.CTkLabel(self, text="", font=("Helvetica", 10),
-                                     text_color=FG2)
-        self._status.pack(pady=(12, 4))
+        pick_row = ctk.CTkFrame(appc.body, fg_color="transparent")
+        pick_row.pack(fill="x", pady=(6, 0))
+        ctk.CTkLabel(pick_row, text=app.T("settings_picker_section"),
+                     font=("Helvetica", 11), text_color=FG2,
+                     anchor="w").pack(side="left")
+        UI.GhostButton(pick_row, app.T("settings_picker_reset"),
+                       self._do_reset_pickers, width=140,
+                       height=UI.CTRL_H_SM).pack(side="right")
 
-        # Update-check status (filled in by App.check_for_update if newer found)
-        self._update_lbl = ctk.CTkLabel(self, text=getattr(app, "_update_message", ""),
-                                         font=("Helvetica", 10), text_color=GRN,
-                                         wraplength=380, justify="left")
-        self._update_lbl.pack(pady=(0, 4), padx=12)
+        # ── Backup ──
+        bak = UI.Card(grid, title=app.T("settings_backup_section"))
+        bak.grid(row=2, column=0, sticky="nsew", padx=(0, UI.S3))
+        ctk.CTkLabel(bak.body, text=app.T("settings_backup_hint"),
+                     font=("Helvetica", 10), text_color=FG2, anchor="w",
+                     justify="left", wraplength=330).pack(fill="x", pady=(0, 8))
+        bak_row = ctk.CTkFrame(bak.body, fg_color="transparent")
+        bak_row.pack(fill="x")
+        UI.GhostButton(bak_row, app.T("settings_backup"), self._do_backup,
+                       width=150).pack(side="left", padx=(0, UI.S2))
+        UI.GhostButton(bak_row, app.T("settings_restore"), self._do_restore,
+                       width=170).pack(side="left")
 
-        # In-app self-update — AppImage only. The button is only created when
-        # an AppImage install was detected AND a download URL was resolved.
-        self._update_btn = None
-        if (getattr(app, "_update_install_type", "") == "appimage"
-                and getattr(app, "_update_url", "")):
-            self._update_btn = ctk.CTkButton(
-                self, text=app.T("settings_update_button"),
-                command=self._do_update, height=32, corner_radius=6,
-                fg_color=GRN, hover_color="#1f7a3a")
-            self._update_btn.pack(pady=(2, 12), padx=20, fill="x")
+        # ── About ──
+        about = UI.Card(grid, title=app.T("settings_about_section"))
+        about.grid(row=2, column=1, sticky="nsew")
+        self._about_values = {}
+        for key, value in (
+                ("settings_about_version", APP_VERSION),
+                ("settings_about_install", app._detect_install_type()),
+                ("settings_about_config",
+                 CONFIG_DIR.replace(os.path.expanduser("~"), "~")),
+                ("settings_about_socket", "")):
+            row = ctk.CTkFrame(about.body, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=app.T(key), font=("Helvetica", 11),
+                         text_color=FG2, anchor="w").pack(side="left")
+            val = ctk.CTkLabel(row, text=str(value), font=("Helvetica", 11),
+                               text_color=FG, anchor="e")
+            val.pack(side="right")
+            self._about_values[key] = val
+
+        self._status = ctk.CTkLabel(grid, text="", font=("Helvetica", 11),
+                                    text_color=FG2, anchor="w")
+        self._status.grid(row=3, column=0, columnspan=2, sticky="ew",
+                          pady=(UI.S3, 0))
+
+    def refresh(self):
+        """Called every time the screen is shown. The control socket starts
+        after the UI is built, so a value read at construction time would say
+        "not connected" for the rest of the session."""
+        app = self._app
+        self._about_values["settings_about_socket"].configure(
+            text=app.T("state_connected") if getattr(app, "_control_server", None)
+            else app.T("state_absent"))
+        if getattr(app, "_update_message", ""):
+            self._update_lbl.configure(text=app._update_message, text_color=GRN)
+        try:
+            self._refresh_profile_combo()
+        except Exception:
+            pass
+
+    def _do_toggle_autostart(self):
+        save_autostart_enabled(self._autostart_var.get())
+
+    def _do_toggle_splash(self):
+        save_splash_enabled(self._splash_var.get())
 
     def _refresh_profile_combo(self):
         from shared.config import list_profiles, get_active_profile
@@ -1102,6 +1160,7 @@ class App(ctk.CTk):
         self._makalu_panel      = Makalu67Panel(self._panel_area, self)
         self._displaypad_panel  = DisplayPadPanel(self._panel_area, self)
         self._plugins_panel     = PluginManagerPanel(self._panel_area, self)
+        self._settings_panel    = SettingsPanel(self._panel_area, self)
 
         self._panels = {
             "everest_max": self._everest_panel,
@@ -1111,6 +1170,7 @@ class App(ctk.CTk):
             "obs":         self._obs_panel,
             "macros":      self._macro_panel,
             "plugins":     self._plugins_panel,
+            "settings":    self._settings_panel,
         }
 
         # ── Plugin panels ──
@@ -1148,6 +1208,13 @@ class App(ctk.CTk):
         # Show selected panel
         self._panels[device_id].pack(fill="both", expand=True)
         self._active_device = device_id
+
+        panel = self._panels[device_id]
+        if hasattr(panel, "refresh"):
+            try:
+                panel.refresh()
+            except Exception as e:
+                print(f"[UI] refresh failed for {device_id}: {e}")
 
         # Update the sidebar selection and the screen header
         self._refresh_sidebar()
@@ -1359,6 +1426,7 @@ class App(ctk.CTk):
 
     _SCREEN_TITLES = {
         "obs": "OBS Studio", "macros": "Macros", "plugins": "Plugins",
+        "settings": None,   # filled from the language file at refresh time
     }
 
     def _refresh_screen_header(self):
@@ -1375,6 +1443,8 @@ class App(ctk.CTk):
             title = self._nav_items["keyboard"]._label.cget("text")
         elif dev in ("makalu67", "displaypad"):
             title = self._nav_items[dev]._label.cget("text")
+        elif dev == "settings":
+            title = self.T("settings_title")
         elif dev in self._SCREEN_TITLES:
             title = self._SCREEN_TITLES[dev]
         else:
@@ -1825,14 +1895,8 @@ class App(ctk.CTk):
             item.set_text(f"Plugins ({count})" if count else "Plugins")
 
     def _open_settings(self):
-        if getattr(self, "_settings_win", None) is not None:
-            try:
-                if self._settings_win.winfo_exists():
-                    self._settings_win.focus()
-                    return
-            except Exception:
-                pass
-        self._settings_win = SettingsDialog(self)
+        """Settings is a screen now, not a modal on top of the app."""
+        self._switch_device("settings")
 
     def _quit(self):
         self.destroy()

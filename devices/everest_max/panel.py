@@ -172,27 +172,10 @@ class EverestMaxPanel(ctk.CTkFrame):
                                            text_color=GRN)
         self._style_status.pack(pady=(0, 4))
 
-        # Splash + Autostart switches
-        sw_row = ctk.CTkFrame(dash, fg_color="transparent")
-        sw_row.pack(pady=(0, 12))
-
-        self._reg(
-            ctk.CTkSwitch(sw_row, text="", variable=self._splash_var,
-                          command=lambda: save_splash_enabled(self._splash_var.get()),
-                          onvalue=True, offvalue=False,
-                          progress_color=BLUE, button_color=FG, button_hover_color=FG2,
-                          fg_color=BG3, text_color=FG2, font=("Helvetica", 11)),
-            "splash_toggle"
-        ).pack(side="left", padx=(0, 16))
-
-        self._reg(
-            ctk.CTkSwitch(sw_row, text="", variable=self._autostart_var,
-                          command=lambda: save_autostart_enabled(self._autostart_var.get()),
-                          onvalue=True, offvalue=False,
-                          progress_color=BLUE, button_color=FG, button_hover_color=FG2,
-                          fg_color=BG3, text_color=FG2, font=("Helvetica", 11)),
-            "autostart_toggle"
-        ).pack(side="left")
+        # Splash and autostart moved to the settings screen: they are
+        # application settings, and sitting here they were out of reach for
+        # anyone whose keyboard is not plugged in. The variables stay so the
+        # rest of this panel keeps working unchanged.
 
         # ── Accordion scroll area ──
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)

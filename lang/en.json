@@ -464,5 +464,16 @@
   "ui_quit": "Quit",
   "state_connected": "connected",
   "state_absent": "not connected",
-  "state_not_ready": "not ready"
+  "state_not_ready": "not ready",
+  "settings_update_section": "Update",
+  "settings_update_current": "You are on {ver}, the latest version.",
+  "settings_app_section": "Application",
+  "settings_autostart": "Start at login",
+  "settings_splash": "Show startup screen",
+  "settings_backup_hint": "Key assignments, DisplayPad pages, macros, OBS and profiles in one ZIP. Image libraries and plugins stay out so the file stays small.",
+  "settings_about_section": "About",
+  "settings_about_version": "Version",
+  "settings_about_install": "Installation",
+  "settings_about_config": "Configuration",
+  "settings_about_socket": "Control socket"
 }

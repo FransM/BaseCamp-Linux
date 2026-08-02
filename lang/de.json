@@ -464,5 +464,16 @@
   "ui_quit": "Beenden",
   "state_connected": "verbunden",
   "state_absent": "nicht verbunden",
-  "state_not_ready": "nicht bereit"
+  "state_not_ready": "nicht bereit",
+  "settings_update_section": "Aktualisierung",
+  "settings_update_current": "Du hast {ver}, das ist die neueste Version.",
+  "settings_app_section": "Anwendung",
+  "settings_autostart": "Beim Anmelden starten",
+  "settings_splash": "Startbild zeigen",
+  "settings_backup_hint": "Tastenbelegungen, DisplayPad-Seiten, Makros, OBS und Profile in einer ZIP. Bildbibliothek und Plugins bleiben draußen, damit die Datei klein bleibt.",
+  "settings_about_section": "Über",
+  "settings_about_version": "Version",
+  "settings_about_install": "Installation",
+  "settings_about_config": "Konfiguration",
+  "settings_about_socket": "Steuersocket"
 }
