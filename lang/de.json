@@ -486,5 +486,7 @@
   "dp_insp_more": "Weitere Einstellungen",
   "dp_header_upload": "Hochladen",
   "dp_header_fullscreen": "Vollbild-Bild",
-  "dp_insp_target": "Zielseite"
+  "dp_insp_target": "Zielseite",
+  "obs_connection": "Verbindung",
+  "clock_title": "Uhr"
 }

@@ -2,6 +2,7 @@
 import threading
 import tkinter as tk
 import customtkinter as ctk
+import shared.ui as UI
 
 from shared.config import load_obs_config, save_obs_config
 from shared.ui_helpers import BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, BORDER
@@ -74,14 +75,11 @@ class OBSPanel(ctk.CTkFrame):
         from shared.ui_helpers import cap_scroll_speed
         cap_scroll_speed(scroll)
 
-        # Title
-        ctk.CTkLabel(scroll, text=self.T("obs_title"),
-                     font=("Helvetica", 14, "bold"), text_color=FG,
-                     fg_color="transparent").pack(padx=16, pady=(14, 6), anchor="w")
-
-        # ── Connection frame ──
-        conn = ctk.CTkFrame(scroll, fg_color=BG3, corner_radius=4)
-        conn.pack(fill="x", padx=12, pady=(0, 4))
+        # The screen header says OBS Studio, so no second title here. One
+        # card, because 188 lines of connection settings do not fill a screen.
+        card = UI.Card(scroll, title=self.T("obs_connection"))
+        card.pack(fill="x", padx=16, pady=(12, 4))
+        conn = card.body
 
         row1 = ctk.CTkFrame(conn, fg_color="transparent")
         row1.pack(pady=(8, 2))
@@ -109,15 +107,11 @@ class OBSPanel(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(conn, fg_color="transparent")
         btn_row.pack(pady=(6, 8))
         self._reg(
-            ctk.CTkButton(btn_row, text="", command=self._connect,
-                          fg_color=BLUE, text_color=FG, hover_color="#0884be",
-                          font=("Helvetica", 11, "bold"), height=34, corner_radius=6),
+            UI.PrimaryButton(btn_row, "", self._connect, width=140),
             "obs_connect"
         ).pack(side="left")
         self._reg(
-            ctk.CTkButton(btn_row, text="", command=self._disconnect,
-                          fg_color=RED, text_color=BG, hover_color="#c03030",
-                          font=("Helvetica", 11, "bold"), height=34, corner_radius=6),
+            UI.GhostButton(btn_row, "", self._disconnect, width=120),
             "obs_disconnect"
         ).pack(side="left", padx=(6, 0))
 

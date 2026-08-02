@@ -7,6 +7,7 @@ import threading
 import subprocess
 import tkinter as tk
 import customtkinter as ctk
+import shared.ui as UI
 from PIL import Image, ImageTk
 
 from shared.config import (
@@ -104,13 +105,26 @@ class EverestMaxPanel(ctk.CTkFrame):
     # ── UI build ──────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Dashboard ──
-        dash = ctk.CTkFrame(self, fg_color=BG2, corner_radius=0)
-        dash.pack(fill="x", pady=(2, 0))
+        # ── Cards ──
+        # The clock used to be the largest thing on the screen, above the
+        # language picker and the autostart switches, although it is a setting
+        # of the keyboard display and not a state of the app. It is a card
+        # among the others now.
+        scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
+        scroll.pack(fill="both", expand=True, pady=(4, 0))
+        cards = ctk.CTkFrame(scroll, fg_color="transparent")
+        cards.pack(fill="both", expand=True, padx=12, pady=8)
+        cards.grid_columnconfigure(0, weight=1, uniform="card")
+        cards.grid_columnconfigure(1, weight=1, uniform="card")
+
+        clock_card = AccordionSection(cards, self._app, "", "clock_title",
+                                      card=True, auto_pack=False)
+        self._sections.append(clock_card)
+        dash = clock_card.content
 
         self._clock_label = ctk.CTkLabel(dash, text="",
-                                          font=("Courier", 30, "bold"), text_color=BLUE)
-        self._clock_label.pack(pady=(12, 0))
+                                          font=("Courier", 26, "bold"), text_color=BLUE)
+        self._clock_label.pack(pady=(6, 0))
 
         self._date_label = ctk.CTkLabel(dash, text="",
                                          font=("Helvetica", 10), text_color=FG2)
@@ -130,27 +144,16 @@ class EverestMaxPanel(ctk.CTkFrame):
             text_color=FG, width=90, height=28,
         ).pack(side="left", padx=(0, 10))
 
-        self._reg(
-            ctk.CTkLabel(fmt_row, text="", text_color=FG2, font=("Helvetica", 11)),
-            "language_label"
-        ).pack(side="left", padx=(0, 4))
-
+        # The language picker moved to the settings screen with autostart and
+        # the splash: it belongs to the app, not to a keyboard. The combo box
+        # itself stays alive so _apply_lang keeps working.
         self._lang_var = self._app._lang_var
-        self._lang_combo = ctk.CTkComboBox(
-            fmt_row, variable=self._lang_var, values=[],
-            command=lambda val: self._app._on_lang_change(val),
-            width=120, height=30, font=("Helvetica", 11),
-            fg_color=BG3, button_color=BLUE, border_color=BORDER,
-            text_color=FG, dropdown_fg_color=BG2, dropdown_text_color=FG,
-            dropdown_hover_color=BG3)
-        self._lang_combo.pack(side="left")
+        self._lang_combo = ctk.CTkComboBox(fmt_row, variable=self._lang_var,
+                                           values=[])
 
         self._reg(
-            ctk.CTkButton(
-                fmt_row, text="", font=("Helvetica", 11, "bold"),
-                fg_color=RED, hover_color="#b91c1c", text_color=BG,
-                width=130, height=30,
-                command=self._reset_dial_image),
+            UI.DangerButton(fmt_row, "", self._reset_dial_image, width=140,
+                            height=UI.CTRL_H_SM),
             "dial_reset_btn"
         ).pack(side="left", padx=(10, 0))
 
@@ -176,17 +179,6 @@ class EverestMaxPanel(ctk.CTkFrame):
         # application settings, and sitting here they were out of reach for
         # anyone whose keyboard is not plugged in. The variables stay so the
         # rest of this panel keeps working unchanged.
-
-        # ── Cards ──
-        # Five collapsed rows in a 480px column became five open cards in two
-        # columns. Nothing is hidden behind a click any more: the window is
-        # wide enough to show the lot.
-        scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
-        scroll.pack(fill="both", expand=True, pady=(4, 0))
-        cards = ctk.CTkFrame(scroll, fg_color="transparent")
-        cards.pack(fill="both", expand=True, padx=12, pady=8)
-        cards.grid_columnconfigure(0, weight=1, uniform="card")
-        cards.grid_columnconfigure(1, weight=1, uniform="card")
 
         self._build_monitor_section(cards)
         self._build_main_display_section(cards)
