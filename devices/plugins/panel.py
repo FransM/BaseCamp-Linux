@@ -10,7 +10,9 @@ import customtkinter as ctk
 import shared.ui as UI
 from PIL import Image
 
-from shared.ui_helpers import BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW, BORDER
+from shared.ui_helpers import (BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW,
+                               BORDER, cap_scroll_speed)
+from shared.ui.tokens import FG_FAINT
 from shared.config import CONFIG_DIR
 
 _PLUGINS_DIR = os.path.join(CONFIG_DIR, "plugins")
@@ -18,6 +20,18 @@ _PLUGINS_INDEX_URL = "https://raw.githubusercontent.com/ramisotti13-eng/basecamp
 _REPO_BASE = "https://github.com/ramisotti13-eng/basecamp-plugins/tree/main/"
 
 # Type badge colors
+_PLUGIN_LIST_W = 250   # list column beside the detail
+
+
+def _has_module(name):
+    """Is a dependency importable in the interpreter this app runs in?"""
+    try:
+        __import__(name)
+        return True
+    except Exception:
+        return False
+
+
 _TYPE_COLORS = {
     "panel":   ("#0ea5e9", "#0c4a6e"),
     "service": ("#22c55e", "#14532d"),
@@ -68,113 +82,105 @@ class PluginManagerPanel(ctk.CTkFrame):
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Header
-        hdr = ctk.CTkFrame(self, fg_color="transparent")
-        hdr.pack(fill="x", padx=16, pady=(14, 4))
+        """List on the left, everything about the selected plugin on the right.
 
-        self._title_lbl = ctk.CTkLabel(
-            hdr, text=self.T("pluginmgr_title"),
-            font=("Helvetica", 14, "bold"), text_color=FG)
+        The old screen was a column of cards you had to expand one at a time,
+        so the help text, the type badges and the actions were only visible for
+        whichever card happened to be open, and the available plugins sat in a
+        second list below all of them.
+        """
+        split = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        split.pack(fill="both", expand=True)
+        split.grid_columnconfigure(0, weight=0, minsize=_PLUGIN_LIST_W)
+        split.grid_columnconfigure(1, weight=1)
+        split.grid_rowconfigure(0, weight=1)
+
+        left = ctk.CTkScrollableFrame(split, fg_color=BG, corner_radius=0)
+        left.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=(10, 10))
+        cap_scroll_speed(left)
+
+        head = ctk.CTkFrame(left, fg_color="transparent")
+        head.pack(fill="x", pady=(0, 4))
+        self._title_lbl = UI.SectionLabel(head, text=self.T("pluginmgr_installed"))
         self._title_lbl.pack(side="left")
-
-        self._count_lbl = ctk.CTkLabel(
-            hdr, text="", font=("Helvetica", 11), text_color=FG2)
+        self._count_lbl = ctk.CTkLabel(head, text="", font=("Helvetica", 10),
+                                       text_color=FG2)
         self._count_lbl.pack(side="right")
 
-        # Hint
-        self._hint_lbl = ctk.CTkLabel(
-            self, text=self.T("pluginmgr_hint"),
-            font=("Helvetica", 10), text_color=FG2, justify="left")
-        self._hint_lbl.pack(fill="x", padx=16, pady=(0, 8))
+        self._list_frame = ctk.CTkFrame(left, fg_color="transparent")
+        self._list_frame.pack(fill="x")
 
-        # Installed plugins list
-        self._list_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._list_frame.pack(fill="x", padx=8, pady=(0, 8))
-
-        # Restart hint
-        self._restart_lbl = ctk.CTkLabel(
-            self, text="", font=("Helvetica", 10, "bold"),
-            text_color=YLW)
-        self._restart_lbl.pack(fill="x", padx=16, pady=(0, 4))
-
-        # ── Available Plugins (from GitHub) ──────────────────────────────────
-        avail_frame = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
-        avail_frame.pack(fill="x", padx=16, pady=(4, 4))
-
-        avail_hdr = ctk.CTkFrame(avail_frame, fg_color="transparent")
-        avail_hdr.pack(fill="x", padx=10, pady=(8, 4))
-
-        self._avail_title = ctk.CTkLabel(
-            avail_hdr, text=self.T("pluginmgr_available"),
-            font=("Helvetica", 11, "bold"), text_color=FG)
+        avail_head = ctk.CTkFrame(left, fg_color="transparent")
+        avail_head.pack(fill="x", pady=(14, 4))
+        self._avail_title = UI.SectionLabel(avail_head,
+                                            text=self.T("pluginmgr_available"))
         self._avail_title.pack(side="left")
-
-        self._refresh_btn = ctk.CTkButton(
-            avail_hdr, text="\u21BB", font=("Helvetica", 12),
-            fg_color="transparent", hover_color=BG3, text_color=FG2,
-            width=28, height=24, corner_radius=4,
-            command=self._fetch_available)
+        self._refresh_btn = UI.GhostButton(avail_head, self.T("pluginmgr_reload"),
+                                           self._fetch_available, width=90,
+                                           height=UI.CTRL_H_SM)
         self._refresh_btn.pack(side="right")
 
-        self._avail_list = ctk.CTkFrame(avail_frame, fg_color="transparent")
-        self._avail_list.pack(fill="x", padx=6, pady=(0, 8))
-
+        self._avail_list = ctk.CTkFrame(left, fg_color="transparent")
+        self._avail_list.pack(fill="x")
         self._avail_status = ctk.CTkLabel(
             self._avail_list, text=self.T("pluginmgr_loading"),
-            font=("Helvetica", 9), text_color=FG2)
-        self._avail_status.pack(pady=8)
+            font=("Helvetica", 10), text_color=FG2, anchor="w")
+        self._avail_status.pack(fill="x", pady=4)
 
-        # ── Manual install (collapsed, for advanced users) ───────────────────
-        self._manual_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._manual_frame.pack(fill="x", padx=16, pady=(2, 4))
+        self._restart_lbl = ctk.CTkLabel(left, text="", font=("Helvetica", 10),
+                                         text_color=YLW, anchor="w",
+                                         wraplength=_PLUGIN_LIST_W - 20,
+                                         justify="left")
+        self._restart_lbl.pack(fill="x", pady=(10, 0))
 
+        # ── Manual install, folded away ──
+        self._manual_frame = ctk.CTkFrame(left, fg_color="transparent")
+        self._manual_frame.pack(fill="x", pady=(12, 0))
         manual_toggle = ctk.CTkLabel(
             self._manual_frame, text=self.T("pluginmgr_manual_install"),
-            font=("Helvetica", 9), text_color=FG2, cursor="hand2")
-        manual_toggle.pack(anchor="w")
-
+            font=("Helvetica", 10), text_color=FG2, cursor="hand2", anchor="w")
+        manual_toggle.pack(fill="x")
         self._manual_body = ctk.CTkFrame(self._manual_frame, fg_color="transparent")
-        # Initially hidden
-
-        input_row = ctk.CTkFrame(self._manual_body, fg_color="transparent")
-        input_row.pack(fill="x", pady=(4, 0))
-
         self._install_entry = ctk.CTkEntry(
-            input_row, placeholder_text=self.T("pluginmgr_install_url"),
+            self._manual_body, placeholder_text=self.T("pluginmgr_install_url"),
             fg_color=BG3, border_color=BORDER, text_color=FG,
-            font=("Helvetica", 10), height=28)
-        self._install_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
-
-        self._browse_btn = ctk.CTkButton(
-            input_row, text=self.T("pluginmgr_install_browse"),
-            font=("Helvetica", 9), fg_color=BG3, hover_color=BORDER,
-            text_color=FG2, height=28, width=70, corner_radius=4,
-            command=self._browse_folder)
-        self._browse_btn.pack(side="left", padx=(0, 4))
-
-        self._install_btn = ctk.CTkButton(
-            input_row, text=self.T("pluginmgr_install_btn"),
-            font=("Helvetica", 10, "bold"),
-            fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-            height=28, width=80, corner_radius=4,
-            command=self._do_install)
-        self._install_btn.pack(side="left")
-
+            font=("Helvetica", 10), height=UI.CTRL_H_SM)
+        self._install_entry.pack(fill="x", pady=(6, 4))
+        btn_row = ctk.CTkFrame(self._manual_body, fg_color="transparent")
+        btn_row.pack(fill="x")
+        self._browse_btn = UI.GhostButton(btn_row, self.T("pluginmgr_install_browse"),
+                                          self._browse_folder, width=110,
+                                          height=UI.CTRL_H_SM)
+        self._browse_btn.pack(side="left")
+        self._install_btn = UI.GhostButton(btn_row, self.T("pluginmgr_install_btn"),
+                                           self._do_install, width=110,
+                                           height=UI.CTRL_H_SM)
+        self._install_btn.pack(side="right")
         self._install_status = ctk.CTkLabel(
-            self._manual_body, text="", font=("Helvetica", 9), text_color=FG2)
+            self._manual_body, text="", font=("Helvetica", 10), text_color=FG2,
+            anchor="w", wraplength=_PLUGIN_LIST_W - 20, justify="left")
         self._install_status.pack(fill="x", pady=(4, 0))
-
         self._manual_open = False
         manual_toggle.bind("<Button-1>", lambda e: self._toggle_manual())
 
-        # More plugins link
+        self._hint_lbl = ctk.CTkLabel(
+            left, text=self.T("pluginmgr_hint"), font=("Helvetica", 9),
+            text_color=FG_FAINT, anchor="w", justify="left",
+            wraplength=_PLUGIN_LIST_W - 20)
+        self._hint_lbl.pack(fill="x", pady=(12, 0))
         self._more_lbl = ctk.CTkLabel(
-            self, text=self.T("pluginmgr_more"),
-            font=("Helvetica", 9), text_color=FG2)
-        self._more_lbl.pack(fill="x", padx=16, pady=(2, 10))
+            left, text=self.T("pluginmgr_more"), font=("Helvetica", 9),
+            text_color=FG_FAINT, anchor="w", justify="left",
+            wraplength=_PLUGIN_LIST_W - 20)
+        self._more_lbl.pack(fill="x", pady=(4, 0))
 
+        # ── Detail ──
+        self._detail = ctk.CTkScrollableFrame(split, fg_color=BG, corner_radius=0)
+        self._detail.grid(row=0, column=1, sticky="nsew", padx=12, pady=(10, 10))
+        cap_scroll_speed(self._detail)
+
+        self._selected = None
         self._populate()
-        # Fetch available plugins in background
         self._fetch_available()
 
     def _toggle_manual(self):
@@ -195,132 +201,163 @@ class PluginManagerPanel(ctk.CTkFrame):
         manifests = pm._manifests
 
         if not manifests:
-            ctk.CTkLabel(
-                self._list_frame, text=self.T("pluginmgr_empty"),
-                font=("Helvetica", 12), text_color=FG2
-            ).pack(pady=40)
+            ctk.CTkLabel(self._list_frame, text=self.T("pluginmgr_empty"),
+                         font=("Helvetica", 10), text_color=FG2, anchor="w",
+                         justify="left",
+                         wraplength=_PLUGIN_LIST_W - 20).pack(fill="x", pady=6)
             self._count_lbl.configure(text="")
+            self._render_detail()
             return
 
         for pid in sorted(manifests.keys()):
-            info = manifests[pid]
-            self._build_card(pid, info)
+            self._list_row(self._list_frame, pid, manifests[pid], installed=True)
 
         total = len(manifests)
         active = sum(1 for p in manifests if pm.is_loaded(p))
         self._count_lbl.configure(
             text=self.T("pluginmgr_count", total=total, active=active))
-
-    def _build_card(self, pid, info):
-        pm = self._app._plugin_manager
-        disabled = pm.is_disabled(pid)
-        error = pm.get_error(pid)
-        is_open = pid in self._expanded
-
-        if disabled:
-            accent = FG2
-        elif error:
-            accent = RED
+        if self._selected is None or self._selected[0] not in manifests:
+            self._select(sorted(manifests)[0], True)
         else:
-            accent = GRN
+            self._render_detail()
 
-        card = ctk.CTkFrame(self._list_frame, fg_color=BG3, corner_radius=6,
-                            border_width=2, border_color=accent)
-        card.pack(fill="x", padx=4, pady=3)
+    def _list_row(self, parent, pid, info, installed):
+        """One line: state, name, version. The detail is on the right."""
+        pm = self._app._plugin_manager
+        selected = self._selected is not None and self._selected[0] == pid
+        row = ctk.CTkFrame(parent, fg_color=BG2 if selected else "transparent",
+                           corner_radius=5, height=30)
+        row.pack(fill="x", pady=1)
+        row.pack_propagate(False)
 
-        hdr = ctk.CTkFrame(card, fg_color="transparent")
-        hdr.pack(fill="x", padx=(8, 10), pady=(6, 6))
+        if installed:
+            if pm.is_disabled(pid):
+                state = "off"
+            elif not pm.is_loaded(pid):
+                state = "bad"
+            elif any(not _has_module(m) for m in info.get("requires", []) or []):
+                state = "warn"
+            elif self._has_update(pid, info):
+                state = "info"
+            else:
+                state = "ok"
+            dot = UI.StatusDot(row, state="ok" if state == "info" else state,
+                               size=7, bg=BG2 if selected else BG)
+            dot.pack(side="left", padx=(8, 6))
+            dot.bind("<Button-1>", lambda _e, p=pid: self._select(p, True))
 
-        arrow = "\u25BC" if is_open else "\u25B6"
-        arrow_lbl = ctk.CTkLabel(
-            hdr, text=arrow, font=("Helvetica", 9), text_color=FG2,
-            width=14, cursor="hand2")
-        arrow_lbl.pack(side="left", padx=(0, 4))
+        name = ctk.CTkLabel(row, text=info.get("name", pid),
+                            font=("Helvetica", 11, "bold" if selected else "normal"),
+                            text_color=FG if selected else FG2, anchor="w")
+        name.pack(side="left", fill="x", expand=True,
+                  padx=(8 if not installed else 0, 4))
+        ver = ctk.CTkLabel(row, text=f"v{info.get('version', '')}",
+                           font=("Helvetica", 9), text_color=FG_FAINT)
+        ver.pack(side="right", padx=8)
+        for w in (row, name, ver):
+            w.bind("<Button-1>", lambda _e, p=pid, i=installed: self._select(p, i))
+        self._rows[pid] = row
 
-        icon_img = self._load_icon(pid, info)
-        if icon_img:
-            icon_lbl = ctk.CTkLabel(hdr, image=icon_img, text="", cursor="hand2")
-            icon_lbl.pack(side="left", padx=(0, 6))
+    def _select(self, pid, installed):
+        self._selected = (pid, installed)
+        self._populate_rows_only()
+        self._render_detail()
 
-        name = info.get("name", pid)
-        ver = info.get("version", "")
-        name_lbl = ctk.CTkLabel(
-            hdr, text=name, font=("Helvetica", 12, "bold"),
-            text_color=FG, cursor="hand2")
-        name_lbl.pack(side="left")
+    def _populate_rows_only(self):
+        """Redraw both lists so the selection marker moves, without refetching."""
+        for w in self._list_frame.winfo_children():
+            w.destroy()
+        pm = self._app._plugin_manager
+        for pid in sorted(pm._manifests):
+            self._list_row(self._list_frame, pid, pm._manifests[pid], True)
+        for w in self._avail_list.winfo_children():
+            w.destroy()
+        for pinfo in self._available:
+            pid = pinfo.get("id")
+            if pid and pid not in pm._manifests:
+                self._list_row(self._avail_list, pid, pinfo, False)
 
-        if ver:
-            ver_lbl = ctk.CTkLabel(
-                hdr, text=f"  v{ver}", font=("Helvetica", 10),
-                text_color=FG2, cursor="hand2")
-            ver_lbl.pack(side="left")
+    def _render_detail(self):
+        """Everything about the selected plugin, in the room it needs."""
+        for w in self._detail.winfo_children():
+            w.destroy()
+        if self._selected is None:
+            ctk.CTkLabel(self._detail, text=self.T("pluginmgr_pick_hint"),
+                         font=("Helvetica", 11), text_color=FG2).pack(pady=40)
+            return
+        pid, installed = self._selected
+        pm = self._app._plugin_manager
+        info = pm._manifests.get(pid) if installed else self._available_info(pid)
+        if not info:
+            return
+        error = pm._errors.get(pid) if hasattr(pm, "_errors") else None
 
-        # Show a clickable "↑ Update v<new>" pill if the index has a newer version
-        update_info = self._has_update(pid, info)
-        if update_info:
-            new_ver = update_info.get("version", "")
-            upd_badge = ctk.CTkLabel(
-                hdr, text=self.T("pluginmgr_update_badge", ver=new_ver),
-                font=("Helvetica", 8, "bold"), text_color=BG,
-                fg_color=GRN, corner_radius=6, height=16, padx=4,
-                cursor="hand2")
-            upd_badge.pack(side="left", padx=(6, 0))
-            upd_badge.bind("<Button-1>",
-                           lambda e, p=update_info: self._install_available(p))
+        head = ctk.CTkFrame(self._detail, fg_color="transparent")
+        head.pack(fill="x")
+        ctk.CTkLabel(head, text=info.get("name", pid),
+                     font=("Helvetica", 15, "bold"), text_color=FG,
+                     anchor="w").pack(side="left")
+        ctk.CTkLabel(head, text=f"  v{info.get('version', '')}",
+                     font=("Helvetica", 11), text_color=FG_FAINT).pack(side="left")
+        if installed:
+            state = (self.T("pluginmgr_disabled") if pm.is_disabled(pid)
+                     else self.T("pluginmgr_active") if pm.is_loaded(pid)
+                     else self.T("pluginmgr_not_loaded"))
+            UI.StatusPill(head, text=state,
+                          state="off" if pm.is_disabled(pid)
+                          else "ok" if pm.is_loaded(pid) else "bad").pack(side="right")
 
+        badges = ctk.CTkFrame(self._detail, fg_color="transparent")
+        badges.pack(fill="x", pady=(8, 0))
         ptypes = info.get("type", "")
         if isinstance(ptypes, str):
             ptypes = [ptypes] if ptypes else []
         for ptype in ptypes:
             fg_c, bg_c = _TYPE_COLORS.get(ptype, (FG2, BG2))
-            badge = ctk.CTkLabel(
-                hdr, text=ptype,
-                font=("Helvetica", 8, "bold"), text_color=fg_c,
-                fg_color=bg_c, corner_radius=6,
-                height=16, padx=3, cursor="hand2")
-            badge.pack(side="left", padx=(6, 0))
+            ctk.CTkLabel(badges, text=ptype, font=("Helvetica", 9, "bold"),
+                         text_color=fg_c, fg_color=bg_c, corner_radius=6,
+                         height=18, padx=8).pack(side="left", padx=(0, 6))
 
-        if disabled:
-            btn_text = self.T("pluginmgr_enable")
-            btn_color = GRN
-            btn_hover = "#16a34a"
-            btn_cmd = lambda p=pid: self._enable(p)
+        update_info = self._has_update(pid, info) if installed else None
+        if update_info:
+            box = ctk.CTkFrame(self._detail, fg_color=BG2, corner_radius=6,
+                               border_width=1, border_color=BLUE)
+            box.pack(fill="x", pady=(10, 0))
+            ctk.CTkLabel(box, text=self.T("pluginmgr_update_to",
+                                          ver=update_info.get("version", "")),
+                         font=("Helvetica", 11), text_color=FG,
+                         anchor="w").pack(side="left", padx=10, pady=8)
+            UI.PrimaryButton(box, self.T("pluginmgr_update_btn"),
+                             lambda p=update_info: self._install_available(p),
+                             width=130, height=UI.CTRL_H_SM).pack(side="right",
+                                                                  padx=10, pady=6)
+
+        body = ctk.CTkFrame(self._detail, fg_color="transparent")
+        body.pack(fill="x", pady=(10, 0))
+        self._fill_detail(body, pid, info, error)
+
+        actions = ctk.CTkFrame(self._detail, fg_color="transparent")
+        actions.pack(fill="x", pady=(14, 0))
+        if not installed:
+            UI.PrimaryButton(actions, self.T("pluginmgr_install_btn"),
+                             lambda i=info: self._install_available(i),
+                             width=140).pack(side="left")
+            return
+        if pm.is_disabled(pid):
+            UI.PrimaryButton(actions, self.T("pluginmgr_enable"),
+                             lambda p=pid: self._enable(p), width=130).pack(side="left")
         else:
-            btn_text = self.T("pluginmgr_disable")
-            btn_color = RED
-            btn_hover = "#b91c1c"
-            btn_cmd = lambda p=pid: self._disable(p)
-
-        toggle_btn = ctk.CTkButton(
-            hdr, text=btn_text, font=("Helvetica", 10, "bold"),
-            fg_color=btn_color, hover_color=btn_hover, text_color=FG,
-            height=24, width=80, corner_radius=4,
-            command=btn_cmd)
-        toggle_btn.pack(side="right", padx=(8, 0))
-
-        if is_open:
-            detail = ctk.CTkFrame(card, fg_color="transparent")
-            detail.pack(fill="x", padx=(8, 10), pady=(0, 6))
-            self._fill_detail(detail, pid, info, error)
-
-        def toggle_expand(_e=None, p=pid):
-            if p in self._expanded:
-                self._expanded.discard(p)
-            else:
-                self._expanded.add(p)
-            self._populate()
-
-        for w in (arrow_lbl, name_lbl, hdr):
-            w.bind("<Button-1>", toggle_expand)
-        if icon_img:
-            icon_lbl.bind("<Button-1>", toggle_expand)
-        if ver:
-            ver_lbl.bind("<Button-1>", toggle_expand)
-        for child in hdr.winfo_children():
-            if child is not toggle_btn:
-                child.bind("<Button-1>", toggle_expand)
-
-        self._rows[pid] = {"card": card, "toggle": toggle_btn}
+            UI.GhostButton(actions, self.T("pluginmgr_disable"),
+                           lambda p=pid: self._disable(p), width=130).pack(side="left")
+        UI.GhostButton(actions, self.T("pluginmgr_reload"),
+                       lambda p=pid: self._reload(p), width=120).pack(side="left",
+                                                                      padx=(8, 0))
+        # Bundled plugins live in the app directory and are not ours to
+        # remove; only the ones in the user's plugin folder can go.
+        if _PLUGINS_DIR in (info.get("_path", "") or ""):
+            UI.DangerButton(actions, self.T("pluginmgr_uninstall"),
+                            lambda p=pid: self._uninstall(p),
+                            width=140).pack(side="right")
 
     def _fill_detail(self, parent, pid, info, error):
         desc = info.get("description", "")
@@ -378,44 +415,9 @@ class PluginManagerPanel(ctk.CTkFrame):
                 text_color=RED, anchor="w", wraplength=400, justify="left"
             ).pack(fill="x", pady=(4, 0))
 
-        # Action buttons row
-        plugin_path = info.get("_path", "")
-        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(fill="x", pady=(6, 0))
-
-        # Update button (when index has a newer version)
-        update_info = self._has_update(pid, info)
-        if update_info:
-            ctk.CTkButton(
-                btn_row,
-                text=self.T("pluginmgr_update_to",
-                            ver=update_info.get("version", "")),
-                font=("Helvetica", 9, "bold"),
-                fg_color=GRN, hover_color="#16a34a", text_color=BG,
-                height=22, width=120, corner_radius=4,
-                command=lambda p=update_info: self._install_available(p)
-            ).pack(side="left", padx=(0, 6))
-
-        # Reload button (for active plugins)
-        pm = self._app._plugin_manager
-        if pm.is_loaded(pid):
-            ctk.CTkButton(
-                btn_row, text=self.T("pluginmgr_reload"),
-                font=("Helvetica", 9, "bold"),
-                fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                height=22, width=80, corner_radius=4,
-                command=lambda p=pid: self._reload(p)
-            ).pack(side="left", padx=(0, 6))
-
-        # Uninstall button (only for user-installed plugins, not bundled)
-        if plugin_path and _PLUGINS_DIR in plugin_path:
-            ctk.CTkButton(
-                btn_row, text=self.T("pluginmgr_uninstall"),
-                font=("Helvetica", 9, "bold"),
-                fg_color="#7f1d1d", hover_color="#991b1b", text_color="#fca5a5",
-                height=22, width=90, corner_radius=4,
-                command=lambda p=pid: self._uninstall(p)
-            ).pack(side="left")
+        # The actions used to be here, three small buttons at the end of an
+        # expanded card. The detail pane owns them now: one row, proper ranks,
+        # and it knows whether the plugin is bundled or user-installed.
 
     def _load_icon(self, pid, info):
         if pid in self._icon_cache:
@@ -517,98 +519,23 @@ class PluginManagerPanel(ctk.CTkFrame):
             self.after(0, lambda e=e: self._show_available_error(str(e)))
 
     def _show_available(self, plugins):
-        self._refresh_btn.configure(state="normal")
-        # Cache before re-rendering installed cards so update badges show up
-        self._available = plugins
-        self._populate()
-        # Decorate the Plugins switcher button with an update count
-        if hasattr(self._app, "_on_plugins_fetched"):
-            try:
-                self._app._on_plugins_fetched(plugins)
-            except Exception:
-                pass
-
+        """Available plugins become rows in the same list as the installed
+        ones: while looking for something you do not want to care which of
+        the two lists it happens to be in."""
+        self._available = plugins or []
+        pm = self._app._plugin_manager
         for w in self._avail_list.winfo_children():
             w.destroy()
-
-        pm = self._app._plugin_manager
-        installed_ids = set(pm._manifests.keys())
-
-        if not plugins:
-            ctk.CTkLabel(
-                self._avail_list, text=self.T("pluginmgr_no_available"),
-                font=("Helvetica", 9), text_color=FG2
-            ).pack(pady=8)
-            return
-
-        for pinfo in plugins:
-            pid = pinfo.get("id", "")
-            name = pinfo.get("name", pid)
-            desc = pinfo.get("description", "")
-            ver = pinfo.get("version", "")
-            author = pinfo.get("author", "")
-            is_installed = pid in installed_ids
-
-            row = ctk.CTkFrame(self._avail_list, fg_color=BG3, corner_radius=4)
-            row.pack(fill="x", pady=2)
-
-            # Name + version
-            ctk.CTkLabel(
-                row, text=name, font=("Helvetica", 11, "bold"),
-                text_color=FG
-            ).pack(side="left", padx=(8, 0), pady=4)
-
-            if ver:
-                ctk.CTkLabel(
-                    row, text=f"  v{ver}", font=("Helvetica", 9),
-                    text_color=FG2
-                ).pack(side="left", pady=4)
-
-            if author:
-                ctk.CTkLabel(
-                    row, text=f"  by {author}", font=("Helvetica", 8),
-                    text_color=FG2
-                ).pack(side="left", pady=4)
-
-            # Install / Update / Installed button
-            update_available = False
-            if is_installed:
-                installed_info = pm._manifests.get(pid, {})
-                installed_ver  = _version_tuple(installed_info.get("version", "0"))
-                avail_ver      = _version_tuple(ver or "0")
-                update_available = avail_ver > installed_ver
-
-            if is_installed and update_available:
-                btn = ctk.CTkButton(
-                    row, text=self.T("pluginmgr_update_btn"),
-                    font=("Helvetica", 9, "bold"),
-                    fg_color=GRN, hover_color="#16a34a", text_color=BG,
-                    height=22, width=80, corner_radius=4,
-                    command=lambda p=pinfo: self._install_available(p))
-                btn._pinfo = pinfo
-            elif is_installed:
-                btn = ctk.CTkButton(
-                    row, text=self.T("pluginmgr_installed"),
-                    font=("Helvetica", 9), fg_color=BG2, hover_color=BG2,
-                    text_color=FG2, height=22, width=80, corner_radius=4,
-                    state="disabled")
-            else:
-                btn = ctk.CTkButton(
-                    row, text=self.T("pluginmgr_install_btn"),
-                    font=("Helvetica", 9, "bold"),
-                    fg_color=BLUE, hover_color="#0284c7", text_color=FG,
-                    height=22, width=80, corner_radius=4,
-                    command=lambda p=pinfo, b=None: self._install_available(p))
-                # Store ref so we can update it
-                btn._pinfo = pinfo
-            btn.pack(side="right", padx=(4, 8), pady=4)
-
-            # Description below name
-            if desc:
-                ctk.CTkLabel(
-                    row, text=desc, font=("Helvetica", 8),
-                    text_color=FG2, anchor="w", wraplength=300
-                ).pack(side="left", padx=(12, 4), pady=4)
+        rows = [p for p in self._available if p.get("id") not in pm._manifests]
+        if not rows:
+            ctk.CTkLabel(self._avail_list, text=self.T("pluginmgr_no_available"),
+                         font=("Helvetica", 10), text_color=FG2,
+                         anchor="w").pack(fill="x", pady=4)
+        for pinfo in rows:
+            self._list_row(self._avail_list, pinfo["id"], pinfo, installed=False)
+        self._app._refresh_plugin_update_count() if hasattr(
+            self._app, "_refresh_plugin_update_count") else None
+        self._populate()
 
     def _show_available_error(self, err):
         self._refresh_btn.configure(state="normal")

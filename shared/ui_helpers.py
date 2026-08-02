@@ -1872,6 +1872,22 @@ class MultiUploadDialog(ctk.CTkToplevel):
 
 # ── Accordion ─────────────────────────────────────────────────────────────────
 
+def layout_cards(parent, sections, gap=12):
+    """Two columns of cards, each card at its natural height.
+
+    The cards used to stretch to the height of the tallest one in their row,
+    so a card with two settings in it grew to match a long one beside it and
+    showed a field of empty space. Sticking them to the top of the row keeps
+    every card as tall as its contents.
+    """
+    parent.grid_columnconfigure(0, weight=1, uniform="card")
+    parent.grid_columnconfigure(1, weight=1, uniform="card")
+    for i, sec in enumerate(sections):
+        sec.outer.grid(row=i // 2, column=i % 2, sticky="new",
+                       padx=(0, gap // 2) if i % 2 == 0 else (gap // 2, 0),
+                       pady=(0, gap))
+
+
 class AccordionSection:
     """A titled block. In `card` mode it is simply a card that is always open.
 

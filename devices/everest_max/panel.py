@@ -22,7 +22,7 @@ from shared.config import (
     _save_to_library, _save_to_main_library,
     _compute_lib_hash, _compute_main_lib_hash,
 )
-from shared.ui_helpers import (
+from shared.ui_helpers import (layout_cards,
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
     AccordionSection, LibraryPickerDialog, MultiUploadDialog, CustomRGBWindow,
     pick_color, pick_library_image, pick_main_library_image,
@@ -127,8 +127,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, pady=(4, 0))
         cards = ctk.CTkFrame(scroll, fg_color="transparent")
         cards.pack(fill="both", expand=True, padx=12, pady=8)
-        cards.grid_columnconfigure(0, weight=1, uniform="card")
-        cards.grid_columnconfigure(1, weight=1, uniform="card")
+
 
         clock_card = AccordionSection(cards, self._app, "", "clock_title",
                                       card=True, auto_pack=False,
@@ -202,9 +201,7 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._build_rgb_section(cards)
         self._build_zone_section(cards)
 
-        for i, sec in enumerate(self._sections):
-            sec.outer.grid(row=i // 2, column=i % 2, sticky="nsew",
-                           padx=(0, 6) if i % 2 == 0 else (6, 0), pady=(0, 12))
+        layout_cards(cards, self._sections)
 
         self._app._apply_lang()
         self._app.update_idletasks()
