@@ -788,6 +788,7 @@ class App(ctk.CTk):
         # Devices that enumerated but whose /dev nodes we may not open (#49).
         self._dev_denied    = {}
         self._denied_logged = set()
+        self._denied_strikes = {}
 
         # Plugin system
         self._plugin_manager = PluginManager()
@@ -1596,6 +1597,14 @@ class App(ctk.CTk):
         self._update_device_status(kb_max_present, kb_60_present, mouse_present, dp_present)
         self.after(5000, self._check_devices)
 
+    # A device node exists for a moment before udev has applied our rule to it,
+    # so a pad that re-enumerates, which the DisplayPad does on its own, is
+    # briefly unreadable through no fault of the installation. Saying so at the
+    # first sight of it put a full "cannot be opened" notice on screen during
+    # an ordinary page switch (#80). Only a denial that survives this many
+    # consecutive scans, roughly fifteen seconds, is a real one.
+    _ACCESS_STRIKES = 3
+
     def _check_device_access(self, kb_max, kb_60, mouse, dp):
         """Note devices we can see but not open, and say so once (#49).
 
@@ -1617,6 +1626,10 @@ class App(ctk.CTk):
                 for pid in pids:
                     denied.extend(_device_access_denied(vid, pid))
             if denied:
+                strikes = self._denied_strikes.get(dev_id, 0) + 1
+                self._denied_strikes[dev_id] = strikes
+                if strikes < self._ACCESS_STRIKES:
+                    continue          # still inside the window udev needs
                 self._dev_denied[dev_id] = denied
                 if dev_id not in self._denied_logged:
                     self._denied_logged.add(dev_id)
@@ -1625,6 +1638,8 @@ class App(ctk.CTk):
                           f"missing or has not been applied; see 'USB "
                           f"permissions' in the README.", flush=True)
             else:
+                # Access is back: drop the notice at once, no counting down.
+                self._denied_strikes.pop(dev_id, None)
                 self._dev_denied.pop(dev_id, None)
                 self._denied_logged.discard(dev_id)
 
