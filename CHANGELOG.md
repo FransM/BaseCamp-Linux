@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.0.4] - 2026-08-03
+
+Four reports from @FransM, all in the interface. Source-overlay patch.
+
+- **A device that is briefly unreadable no longer raises an alarm (#80).** A `/dev` node exists for a moment before udev has applied our rule to it, and the DisplayPad re-enumerates on its own, so the permission check added in 3.0.1 could fire during an ordinary page switch and put a full "the device is here, but cannot be opened" notice on screen. A denial now has to survive three consecutive scans, roughly fifteen seconds, before it is reported; access returning clears it at once. A rule that really is missing is still named.
+- **Fullscreen is its own button (#78).** It sits under the keys and goes straight to the file picker, instead of being reachable only by opening the assign-images window first and walking past twelve key slots. The header button is called "Assign images" now, after the window it actually opens, which also settles the naming mismatch from #74. Both share one implementation of the splitting.
+- **A page action says what its text field is for (#50).** The target picker comes first and the caption entry after it, and the placeholder says "Key caption" instead of "Page name". The field is the text drawn on the key, which is not the page it goes to and not the name of one.
+- **Plugin icons in the list (#79).** A plugin that ships `icon.png` showed it in the detail pane but not in the list on the left, which is where you look to find one.
+
 ## [3.0.3] - 2026-08-03
 
 - **Colours can be applied while the CPU monitor runs.** The monitor holds the keyboard's USB interface, so the application stops it before any command that talks to the keyboard and starts it again afterwards. It found the monitor by looking at the screen that was open, which was the same thing while the colour editors were windows on top of their device screen. Since 3.0 they are screens of their own, so from inside the per-key editor the lookup found the editor, which owns no monitor, and the monitor kept the interface: every apply ended in "Failed to claim interface". The panels that actually own a monitor are asked now, and afterwards exactly those are started again. Everest 60 and Makalu had the same arrangement and the same problem.
