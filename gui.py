@@ -1517,17 +1517,39 @@ class App(ctk.CTk):
     # ── Controller delegation ─────────────────────────────────────────────────
 
     def _stop_cpu_proc(self):
-        """Stop CPU monitor on active panel. Returns True if was running."""
-        panel = self._panels.get(self._active_device)
-        if panel and hasattr(panel, "_stop_cpu_proc"):
-            return panel._stop_cpu_proc()
-        return False
+        """Stop every running CPU monitor. Returns True if one was running.
+
+        Asked before any command that talks to a keyboard: the monitor holds
+        that keyboard's USB interface, and a second claim on it fails with
+        "Failed to claim interface", which takes the whole command down.
+
+        This used to look at the screen that is open, which was the same thing
+        while the colour editors were windows on top of their device screen.
+        Since 3.0 they are screens of their own, so from inside the per-key
+        editor the lookup found the editor, which owns no monitor, and the
+        monitor was left running. Ask the panels that actually have one.
+        """
+        self._cpu_stopped = []
+        for pid, panel in self._panels.items():
+            if not hasattr(panel, "_stop_cpu_proc"):
+                continue
+            try:
+                if panel._stop_cpu_proc():
+                    self._cpu_stopped.append(pid)
+            except Exception as e:
+                print(f"[Monitor] could not stop {pid}: {e}")
+        return bool(self._cpu_stopped)
 
     def _start_cpu_auto(self):
-        """Start CPU monitor on active panel."""
-        panel = self._panels.get(self._active_device)
-        if panel and hasattr(panel, "_start_cpu_auto"):
-            panel._start_cpu_auto()
+        """Restart the monitors _stop_cpu_proc() stopped, and only those."""
+        for pid in getattr(self, "_cpu_stopped", []):
+            panel = self._panels.get(pid)
+            if panel and hasattr(panel, "_start_cpu_auto"):
+                try:
+                    panel._start_cpu_auto()
+                except Exception as e:
+                    print(f"[Monitor] could not restart {pid}: {e}")
+        self._cpu_stopped = []
 
     def _start_cpu_auto_clean(self):
         """Delegate to Everest panel (only keyboard has CPU monitor)."""
