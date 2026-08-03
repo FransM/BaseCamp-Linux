@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.0.1] - 2026-08-03
+
+Follow-ups on the 3.0 reports from @FransM, and two findings from @rebell218's environment. Source-overlay patch, so it arrives through Settings without a new AppImage.
+
+### DisplayPad
+
+- **A page's own settings sit under its keys (#71).** The page name, Rename, Delete, and the auto-timeout with its target were only reachable through the button-actions window, which is about keys, not pages. They are a row under the twelve keys now, aligned with them, and both places share one widget so they cannot drift apart in what they store.
+- **The GIF speed box is back (#73).** Minimum milliseconds per frame was on the DisplayPad screen until the 3.0 rebuild and afterwards survived only in the multi-upload window. It sits in the page-settings row now, and the value is kept across restarts, which it never was before.
+- **A plugin frame no longer lands on the page you just switched to (#69, #70).** Plugins render in their own threads and their images are uploaded from a queue, so a frame composed for the old page could be written after the new page's icons were already on the device: two keys kept the widget's picture and looked like they had not been refreshed. Whether it happened depended on the moment the switch fell, which is why it was not reproducible. Frames now carry the page they were drawn for and stale ones are dropped. A page switch and a plugin's own thread cannot be ordered against each other, so a frame can still be handed over a moment after the page has changed and would carry the new page's number: a frame for a key that the live page has given to something else, a plain image or another action, is therefore refused as well. A plugin only ever paints keys its own action type sits on, which is how all shipped plugins find their keys, so this does not take anything away from them.
+- **The button-actions window no longer resizes itself while you watch (#68).** It appeared at its default size, filled with twelve key cards, and only then jumped to the size you left it at. It is now laid out before it is shown. Opening it also no longer overwrites the size you chose: on a screen too small for that size the window is shrunk to fit right after it appears, and that shrunk size was being saved as your preference, so it ratcheted down a little every time you opened it.
+
+### Everything else
+
+- **A device you may not open says so (#49).** With the udev rule missing or not applied, the device still enumerates, so it appeared in the list as connected while every action quietly did nothing, which is indistinguishable from the app being broken. It now reads "no access" beside the name, the screen names the `/dev` entries that were refused and the command that fixes it, and the notice disappears by itself once the permissions are right, without a restart.
+- **One more variable of our own service reached launched programs (#49).** `MEMORY_PRESSURE_WATCH` was stripped but its other half `MEMORY_PRESSURE_WRITE` was not, so a program started from a key still received our cgroup pressure thresholds. Checked end to end now by reading a launched program's own `/proc/<pid>/environ`: nothing of the AppImage, of PyInstaller, or of our unit survives, and nothing points into the mount any more.
+- **No "no keyboard" flash on a desk without a keyboard (#67).** The first screen was hardcoded to the keyboard and opened a moment after the startup device scan had already picked the right one, so a pad-only setup saw its pad, then "no keyboard", then its pad again. The scan decides now, and only the screen you land on is built.
+- **A tray icon that cannot start no longer takes the app with it (#77).** A build that names an interpreter it did not ship, which is what a Nuitka standalone build does, ended in `FileNotFoundError` out of the constructor and no window at all. The tray is a convenience: it says why it is missing and the app runs.
+- **`requires` in a plugin manifest is read the way pip writes it (#76).** `Pillow` imports as `PIL` and `opencv-python` as `cv2`, so checking the manifest string directly reported Pillow as missing on every machine, including the AppImage that ships it, and put a warning on plugins that were working.
+- **A plugin's `icon.png` is shown again (#76).** The loader survived the 3.0 rebuild but nothing called it, so plugins that ship an icon, as the plugin guide tells them to, showed none.
+- **The plugin detail names the folder it read (#75).** Nothing overwrites an installed plugin unless its version goes up, so a manifest edited in place keeps showing the old author. The pane now says which copy it is describing.
+
+### Documentation
+
+- **PLUGINS.md moved to `docs/` (#72)**, beside CONTROL_INTERFACE.md.
+- **The plugin guide matches the code again (#76):** image pushes go through one long-lived worker rather than a thread per push, `ctx.schedule()` is for widgets and never needed for pushing a key image, and the bundled-package list says what a source install adds. Its LED API server example now also exists as a folder you can copy, with its client script, under `docs/examples`.
+- **README (#74):** a current DisplayPad screenshot, the settings cog replaced by the sidebar entry that exists, and the page description brought in line with the tabs and the new settings row.
+
 ## [3.0.0] - 2026-08-02
 
 The interface has been rebuilt. Same devices, same features, a different application to look at and to move around in. Delivered as a source-overlay patch, so the update arrives through Settings without a new AppImage.

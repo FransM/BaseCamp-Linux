@@ -1,0 +1,7 @@
+{
+  "id": "led_api",
+  "name": "LED API",
+  "version": "1.0",
+  "type": "service",
+  "description": "Control keyboard LEDs via Unix socket"
+}

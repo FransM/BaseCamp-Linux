@@ -374,8 +374,24 @@ ctx.push_displaypad_image(11, img)
 | `key_index` | int (0-11) | Button index (K1=0, K12=11)        |
 | `pil_image` | PIL Image  | Any size -- resized to 102x102 automatically |
 
-The method is **thread-safe** -- it spawns a short-lived background thread to
-handle the USB transfer. The DisplayPad does not need to be in animation mode.
+The method is **thread-safe** and returns immediately: it hands the image to a
+queue that a single long-lived worker thread drains, and that worker is the only
+thread that talks to the pad, so pushes from several plugins can never collide
+on the USB device. Call it from your own thread; you do **not** need
+`ctx.schedule()` for this, only for touching GUI widgets. The DisplayPad does
+not need to be in animation mode.
+
+A frame is stamped with the page that was on the pad when you pushed it. If the
+pad switches page before the queue is drained, that frame is dropped instead of
+being painted over the new page's icons.
+
+**Paint only keys your action type sits on.** A frame for a key that the live
+page has given to something else, a plain image or another action, is dropped:
+a page switch and a plugin's own thread cannot be ordered against each other, so
+a frame arriving a moment too late would otherwise overwrite the new page's
+icon. Find your keys the way the shipped plugins do, by walking
+`ctx.get_displaypad_actions()` for your own type, and this never gets in your
+way.
 
 **Tips:**
 - Only re-upload when content actually changes (not every poll cycle) --
@@ -482,6 +498,11 @@ The GUI toolkit (Tkinter/CustomTkinter) is **not thread-safe**. Rules:
 3. Action handlers and service `_run()` methods execute in background threads
 4. `create_panel()` and `__init__()` run on the GUI thread
 
+This is about **widgets**, not about the DisplayPad. `push_displaypad_image()`
+is safe to call from your own thread and does not need `ctx.schedule()`; a
+plugin that only paints keys, like `dp_pipe_text`, never has to schedule
+anything. Wrap in `ctx.schedule()` only what touches the interface.
+
 ```python
 # WRONG - will crash or corrupt state
 def on_press(self, action_value):
@@ -510,9 +531,18 @@ If your plugin needs external packages, document the install command:
 pip install requests websocket-client
 ```
 
+Name the packages the way pip does. The loader maps the ones whose import name
+differs (`Pillow` imports as `PIL`, `opencv-python` as `cv2`) before checking,
+so `"requires": ["Pillow"]` no longer reports a package that is right there.
+
 Packages bundled with the AppImage (available without extra install):
 - `customtkinter`, `Pillow`, `psutil`, `hid`, `pyusb`
 - Standard library: `json`, `threading`, `subprocess`, `socket`, `os`, etc.
+
+Anything **not** in that list only works on a source install. The AppImage
+brings its own Python and cannot see packages installed with the system pip, so
+a plugin that needs `opencv-python` (like `dp_video`) will not run there no
+matter what you install.
 
 ---
 
@@ -667,6 +697,10 @@ from the type dropdown, then enter the path to a sound file
 
 A service plugin that exposes keyboard LED control via a Unix socket. External
 scripts can connect and send JSON commands to control the LEDs.
+
+This one also exists as a folder you can copy straight into your plugins
+directory, together with the client script that drives it:
+[`docs/examples/led_api`](examples/led_api).
 
 **`plugin.json`:**
 ```json

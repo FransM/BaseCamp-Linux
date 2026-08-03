@@ -27,10 +27,10 @@ Mountain Base Camp is only available on Windows — this project brings full dev
 ## DisplayPad
 
 <p align="center">
-  <img src="docs/Display.png" alt="DisplayPad — 12 Button Display" width="400"/>
+  <img src="docs/Display.png" alt="DisplayPad — 12 Button Display" width="760"/>
 </p>
 
-The DisplayPad panel provides full control over all 12 display buttons (102×102 pixels each) with image upload, animated GIF support, multi-page navigation and button actions.
+The DisplayPad screen provides full control over all 12 display buttons (102×102 pixels each) with image upload, animated GIF support, multi-page navigation and button actions. Pages are tabs along the top, the selected key is edited in the column on the right, and the row under the keys holds what belongs to the page itself: its name, its auto-timeout, and the minimum milliseconds per GIF frame.
 
 ### Button Images (K1–K12)
 
@@ -51,8 +51,8 @@ Upload a single image or animated GIF that is **automatically split across all 1
 - **Name your pages.** Every page, including the one the app opens on, has a name you choose and can rename at any time. Buttons, chain steps and timeouts all point at a page by that name, so a rename follows through everywhere
 - **Any key can go to any page.** There are no fixed folder slots and no page limit: build a carousel (A to B to C to A), a hub with a back key on every page, or anything in between
 - **A "Back" key is just a page action** pointing at the page you came from. New pages get one on K1 for convenience, and you can move, retarget or delete it
-- **Create, rename and delete pages** from the page dropdown in the image dialog and the action editor. Deleting warns you first, listing every button and timeout that still points at that page
-- **Per-page auto-timeout:** a page can return to another page (or the previous one) a number of seconds after it is shown, or after the last key press on it
+- **Create, rename and delete pages** from the tab bar above the keys: "+ New page" adds one, and the row under the keys renames or deletes the page you are on. Deleting warns you first, listing every button and timeout that still points at that page
+- **Per-page auto-timeout:** a page can return to another page (or the previous one) a number of seconds after it is shown, or after the last key press on it. Set it in the same row, under the keys
 - Each page is stored in its own file under `~/.config/mountain-time-sync/displaypad_pages/`, named after the page
 - Fullscreen GIFs work on any page with page navigation still functional underneath
 - Page switching re-uploads all 12 button images to the device automatically, and plugin widgets bound to a key follow the page they belong to
@@ -69,7 +69,7 @@ Upload a single image or animated GIF that is **automatically split across all 1
 
 ### Drag & Drop
 
-You can drag a PNG, JPG, GIF or WebP straight from your file manager onto a button tile in the "Assign Images" dialog. The image is imported into the library and uploaded to the device, exactly as if you had clicked the slot and browsed for it.
+You can drag a PNG, JPG, GIF or WebP straight from your file manager onto a button tile in the "Assign Images" window, which the **Fullscreen image** button in the header opens. The image is imported into the library and uploaded to the device, exactly as if you had clicked the slot and browsed for it.
 
 ### Icon Rotation
 
@@ -207,7 +207,7 @@ A bundled **Now Playing** plugin shows what's currently playing in your browser 
 
 ### Writing your own plugins
 
-See **[PLUGINS.md](PLUGINS.md)** for the full plugin development guide with API reference, styling guide, thread safety rules, and complete example plugins.
+See **[docs/PLUGINS.md](docs/PLUGINS.md)** for the full plugin development guide with API reference, styling guide, thread safety rules, and complete example plugins. The examples also exist as folders you can copy straight into your plugins directory, under [docs/examples](docs/examples).
 
 ---
 
@@ -246,7 +246,9 @@ See **[docs/CONTROL_INTERFACE.md](docs/CONTROL_INTERFACE.md)** for the full comm
 
 ## Settings
 
-The cog icon in the top-right corner of the app opens a small settings dialog.
+**Settings** is the last entry in the sidebar, at the bottom left. It opens a
+full screen with four cards: profiles, application settings, backup and restore,
+and an About box.
 
 ### Backup and Restore
 
@@ -265,20 +267,20 @@ Profiles are stored under `~/.config/mountain-time-sync/profiles/<name>/`. The a
 On startup the app quietly asks GitHub if there is a newer release. If there is, three things happen at once:
 
 1. A popup appears with two buttons (Update now or Later) so you can decide on the spot.
-2. The settings cog in the top-right corner turns green and gains a small up-arrow (⚙ ↑), so the hint stays visible even if you dismissed the popup.
-3. The settings dialog itself shows a green line with the new version number.
+2. The **Settings** entry in the sidebar renames itself to "Update 3.0.1", so the hint stays visible even if you dismissed the popup.
+3. The Settings screen itself shows a green line with the new version number.
 
 Click "Update now" and the app downloads the new version in the background with live progress, installs it, and offers a Restart button that re-launches into the new build. The labels in the popup follow your language setting — German users see "Update verfügbar / Jetzt aktualisieren / Später" instead. Most updates between major releases are tiny source patches that ship as a 200 KB tarball, so the whole flow takes a couple of seconds. When native dependencies change the updater falls back to a full AppImage swap, with the right variant picked automatically based on your distribution.
 
 Source updates are verified against a SHA-256 checksum that ships alongside the tarball on the GitHub release. A tarball without a published checksum is treated as suspect, and a checksum mismatch aborts the install before anything is extracted. The extraction itself uses Python's `tarfile.data_filter`, which refuses path-traversal entries, symlinks pointing outside the destination, and setuid bits.
 
-If you installed via AUR or from source, the popup does not appear since those workflows have their own update mechanism (`yay -Syu basecamp-linux` and `git pull` respectively). The green cog still appears so you know there is something to pull.
+If you installed via AUR or from source, the popup does not appear since those workflows have their own update mechanism (`yay -Syu basecamp-linux` and `git pull` respectively). The sidebar still names the new version so you know there is something to pull.
 
 ### File picker
 
-A small thing that still adds up: every file dialog now remembers the last folder you picked something from, per context (images, profiles, macros, backups). No more starting in your home directory every single time. If you have never picked anything yet, image pickers start at `$ICON_PATH` (set this environment variable to point at your own icon folder) and otherwise fall back to `/usr/share/icons` so you can use system icons straight away.
+Every file dialog remembers the last folder you picked something from, per context (images, profiles, macros, backups). If you have never picked anything yet, image pickers start at `$ICON_PATH` (set this environment variable to point at your own icon folder) and otherwise fall back to `/usr/share/icons` so you can use system icons straight away.
 
-If you've wandered deep into some unrelated folder and want to go back to the default, open the settings dialog and hit **Reset remembered folders**. The next picker will start from `$ICON_PATH` or `/usr/share/icons` again.
+If you've wandered deep into some unrelated folder and want to go back to the default, open Settings and hit **Reset remembered folders**. The next picker will start from `$ICON_PATH` or `/usr/share/icons` again.
 
 ### Autostart on Linux
 
@@ -625,7 +627,9 @@ Two packages are optional and only unlock extras: `tkinterdnd2` for dragging ima
 
 ### USB permissions (required once, AppImage + source installs)
 
-All Mountain devices need USB access. The rules below cover every supported device:
+All Mountain devices need USB access. The rules below cover every supported device.
+
+If the rule is missing or has not been applied, the device still enumerates and still shows up in the app, but nothing you do reaches it. The app says so instead of leaving you guessing: the device reads **no access** beside its name and the screen names the `/dev` entries it was refused, so you do not have to go looking for the cause yourself.
 
 | Device | PID |
 |--------|-----|
