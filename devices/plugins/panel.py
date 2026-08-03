@@ -252,6 +252,14 @@ class PluginManagerPanel(ctk.CTkFrame):
             dot.pack(side="left", padx=(8, 6))
             dot.bind("<Button-1>", lambda _e, p=pid: self._select(p, True))
 
+        # The icon beside the dot, so the list can be read by picture as well
+        # as by name (#79). Small enough not to grow the row.
+        icon = self._load_icon(pid, info, size=16)
+        if icon is not None:
+            ico = ctk.CTkLabel(row, image=icon, text="")
+            ico.pack(side="left", padx=(0, 6))
+            ico.bind("<Button-1>", lambda _e, p=pid, i=installed: self._select(p, i))
+
         name = ctk.CTkLabel(row, text=info.get("name", pid),
                             font=(UI.FONT_FAMILY, 11, "bold" if selected else "normal"),
                             text_color=FG if selected else FG2, anchor="w")
@@ -444,27 +452,28 @@ class PluginManagerPanel(ctk.CTkFrame):
         # expanded card. The detail pane owns them now: one row, proper ranks,
         # and it knows whether the plugin is bundled or user-installed.
 
-    def _load_icon(self, pid, info):
-        if pid in self._icon_cache:
-            return self._icon_cache[pid]
+    def _load_icon(self, pid, info, size=28):
+        key = (pid, size)
+        if key in self._icon_cache:
+            return self._icon_cache[key]
         pdir = info.get("_path", "")
         if not pdir:
             # An entry from the online index, not an installed folder. Without
             # this, join("", "icon.png") would look in the working directory.
-            self._icon_cache[pid] = None
+            self._icon_cache[key] = None
             return None
         icon_path = os.path.join(pdir, "icon.png")
         if not os.path.isfile(icon_path):
-            self._icon_cache[pid] = None
+            self._icon_cache[key] = None
             return None
         try:
-            pil_img = Image.open(icon_path).resize((28, 28), Image.LANCZOS)
+            pil_img = Image.open(icon_path).resize((size, size), Image.LANCZOS)
             ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img,
-                                   size=(28, 28))
-            self._icon_cache[pid] = ctk_img
+                                   size=(size, size))
+            self._icon_cache[key] = ctk_img
             return ctk_img
         except Exception:
-            self._icon_cache[pid] = None
+            self._icon_cache[key] = None
             return None
 
     # ── Enable / Disable ─────────────────────────────────────────────────────
