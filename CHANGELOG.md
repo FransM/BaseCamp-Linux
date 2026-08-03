@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.0.3] - 2026-08-03
+
+- **Colours can be applied while the CPU monitor runs.** The monitor holds the keyboard's USB interface, so the application stops it before any command that talks to the keyboard and starts it again afterwards. It found the monitor by looking at the screen that was open, which was the same thing while the colour editors were windows on top of their device screen. Since 3.0 they are screens of their own, so from inside the per-key editor the lookup found the editor, which owns no monitor, and the monitor kept the interface: every apply ended in "Failed to claim interface". The panels that actually own a monitor are asked now, and afterwards exactly those are started again. Everest 60 and Makalu had the same arrangement and the same problem.
+- **Six more per-key templates for the Everest Max.** Two by function: **Gaming** lights WASD and what the left hand reaches around it and takes everything else down, **Vim** puts hjkl forward with Esc marked and the rest quiet. Four by shape: **Spectrum** one hue per row, **Diagonal** two colours meeting along a diagonal, **Halo** a warm core over the typing area falling into the dark, **Split** left hand cool and right hand warm. They are computed from the key layout the editor draws, so they follow the keys rather than a list of numbers, and the numpad is deliberately left out of the two functional ones.
+
 ## [3.0.2] - 2026-08-03
 
 Two things that made the application look broken when it was not. Source-overlay patch.
