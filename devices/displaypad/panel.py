@@ -994,45 +994,22 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             path = src_path
         if not path:
             return
-        # Auto-save to fullscreen library
-        from shared.config import _save_to_dp_fs_library
-        _save_to_dp_fs_library(path)
-        is_gif = path.lower().endswith('.gif')
-        if is_gif:
-            self._status_lbl.configure(text=self._app.T("dp_gif_splitting"), text_color=FG2)
-            self.update()
-            ok = self._panel._load_fullscreen_gif(path, save=True)
-            if not ok:
-                self._status_lbl.configure(
-                    text=self._app.T("dp_gif_not_animated"), text_color=YLW)
-                is_gif = False
-            else:
+        # The splitting itself lives on the panel, so this window and the
+        # button under the keys cannot drift apart in how they do it (#78).
+        was_gif = path.lower().endswith(".gif")
+        self._panel.apply_fullscreen_image(
+            path,
+            say=lambda text, colour: self._status_lbl.configure(
+                text=text, text_color=colour),
+            on_tile=self._refresh_tile)
+        if was_gif and self._panel._fullscreen_group is not None:
+            # This window shows bigger tiles than the panel does, so it needs
+            # its own split of the animation.
+            dlg_tiles = _split_gif_display_tiles(path, _DIALOG_TILE)
+            if dlg_tiles:
                 for idx in range(NUM_KEYS):
+                    self._dlg_frames[idx] = dlg_tiles[idx]
                     self._refresh_tile(idx)
-                    # Also load large display frames for dialog
-                    if idx not in self._dlg_frames:
-                        pass  # will be built via notify_frame
-                # Re-build large dialog frames from fullscreen GIF
-                dlg_tiles = _split_gif_display_tiles(path, _DIALOG_TILE)
-                if dlg_tiles:
-                    for idx in range(NUM_KEYS):
-                        self._dlg_frames[idx] = dlg_tiles[idx]
-                        self._refresh_tile(idx)
-                self._status_lbl.configure(
-                    text=self._app.T("dp_fullscreen_gif", name=os.path.basename(path)), text_color=GRN)
-                return
-        if not is_gif:
-            try:
-                tile_paths = _split_image_to_tiles(path)
-            except Exception as e:
-                self._status_lbl.configure(text=self._app.T("dp_error", err=str(e)), text_color=RED)
-                return
-            self._panel._fullscreen_group = set()
-            for idx, tile_path in enumerate(tile_paths):
-                self._panel._set_button_image(idx, tile_path)
-                self._refresh_tile(idx)
-            self._status_lbl.configure(
-                text=self._app.T("dp_fullscreen_static", name=os.path.basename(path)), text_color=GRN)
 
     def _on_page_change(self, label):
         """Switch the image dialog to show a different page's images, or
@@ -1477,10 +1454,13 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._browse_btns[i].configure(
                 state="normal" if browse_active else "disabled",
                 image=self._folder_img if browse_active else self._folder_img_dim)
-            # "page" type: label entry (button caption) + target picker (#30)
+            # "page" type: target picker first, then the key's caption (#50).
+            # The entry is the text drawn on the key, not the page it goes to
+            # and not the name of a page, which is what its old placeholder
+            # said and what it was read as.
             if btype == "page":
                 self._cmd_entries[i].configure(
-                    placeholder_text=self._app.T("dp_page_name_hint"))
+                    placeholder_text=self._app.T("dp_page_caption_hint"))
                 _plabels, _pmap = self._page_target_options()
                 self._page_combos[i].configure(values=_plabels)
                 _sel = None
@@ -1490,6 +1470,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                         break
                 self._page_combos[i].set(_sel or self._app.T("dp_new_page"))
                 self._page_combos[i].pack(side="left", padx=(0, 4))
+                # Where you go is chosen before how the key is labelled, so the
+                # picker goes to the left of the entry.
+                self._cmd_entries[i].pack_forget()
+                self._cmd_entries[i].pack(side="left", padx=4, expand=True,
+                                          fill="x")
             # "keypress" type: show placeholder hint
             elif btype == "keypress":
                 self._cmd_entries[i].configure(
@@ -2002,6 +1987,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
                     break
             self._page_combos[idx].set(sel)
             self._page_combos[idx].pack(side="left", padx=(0, 4))
+            self._cmd_entries[idx].configure(
+                placeholder_text=self._app.T("dp_page_caption_hint"))
+            # Target first, caption second (#50).
+            self._cmd_entries[idx].pack_forget()
+            self._cmd_entries[idx].pack(side="left", padx=4, expand=True,
+                                        fill="x")
         elif internal == "keypress":
             self._cmd_entries[idx].configure(state="normal",
                 placeholder_text=self._app.T("dp_keypress_hint"))
@@ -2673,6 +2664,17 @@ class DisplayPadPanel(ctk.CTkFrame):
                                            font=(UI.FONT_FAMILY, 10), text_color=FG2)
         self._gif_speed_lbl.pack(side="left", padx=(8, 0))
 
+        # One image across all twelve keys, straight from here (#78). It is a
+        # property of the page you are looking at, so it belongs in this row
+        # rather than in the header beside the device-wide controls.
+        self._fs_btn = ctk.CTkButton(
+            fps_row, text=self.T("dp_fullscreen"), width=96,
+            height=UI.CTRL_H_SM, font=(UI.FONT_FAMILY, 10),
+            fg_color=BG3, hover_color="#333a44", text_color=FG,
+            command=self._pick_fullscreen)
+        self._fs_btn.pack(side="right")
+        self._reg(self._fs_btn, "dp_fullscreen")
+
         hint = ctk.CTkLabel(grid_wrap, text=self.T("dp_grid_hint"),
                             font=(UI.FONT_FAMILY, 10), text_color=FG2)
         hint.pack(pady=(10, 0))
@@ -2956,6 +2958,70 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._rebuild_page_tabs()
         self._switch_to_page(pid)
 
+    def apply_fullscreen_image(self, path, say=None, on_tile=None):
+        """Split one image or GIF across all twelve keys of the current page.
+
+        Shared by the button under the keys and by the assign-images window, so
+        the two cannot end up splitting an image differently. `say` reports
+        progress, `on_tile` is called per key for anything that draws its own
+        preview. Returns True if something was applied.
+        """
+        def _say(key, colour=FG2, **kw):
+            if say:
+                say(self.T(key, **kw), colour)
+
+        from shared.config import _save_to_dp_fs_library
+        _save_to_dp_fs_library(path)
+
+        if path.lower().endswith(".gif"):
+            _say("dp_gif_splitting")
+            self.update_idletasks()
+            if self._load_fullscreen_gif(path, save=True):
+                for idx in range(NUM_KEYS):
+                    if on_tile:
+                        on_tile(idx)
+                _say("dp_fullscreen_gif", GRN, name=os.path.basename(path))
+                return True
+            _say("dp_gif_not_animated", YLW)   # a still GIF: split it as one
+        try:
+            tile_paths = _split_image_to_tiles(path)
+        except Exception as e:
+            _say("dp_error", RED, err=str(e))
+            return False
+        self._fullscreen_group = set()
+        for idx, tile_path in enumerate(tile_paths):
+            self._set_button_image(idx, tile_path)
+            if on_tile:
+                on_tile(idx)
+        _say("dp_fullscreen_static", GRN, name=os.path.basename(path))
+        return True
+
+    def _pick_fullscreen(self):
+        """Fullscreen straight from the screen: pick a file, split it, done.
+
+        It used to be reachable only by opening the assign-images window first,
+        which is a detour past twelve key slots you did not want to touch (#78).
+        """
+        if self._uploading or self._animating:
+            return
+        result = pick_dp_fullscreen_image(self, self._app)
+        if not result:
+            return
+        src_path, _gif_frame, thumb_fname = result
+        if thumb_fname:
+            from shared.config import DISPLAYPAD_FS_LIBRARY_DIR
+            path = os.path.join(DISPLAYPAD_FS_LIBRARY_DIR, thumb_fname)
+        else:
+            path = src_path
+        if not path:
+            return
+        self.apply_fullscreen_image(
+            path,
+            say=lambda text, colour: self._info_label.configure(
+                text=text, text_color=colour),
+            on_tile=self._refresh_panel_tile)
+        self.after(200, self._start_upload)
+
     def _on_rename_current_page(self):
         """Rename the page on the device (#71). Main is renamable too, it is
         just the page the app opens on."""
@@ -3002,7 +3068,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         UI.PrimaryButton(parent, self.T("dp_header_upload"),
                          self._start_upload, width=110,
                          height=UI.CTRL_H_SM).pack(side="right", padx=(UI.S2, 0))
-        UI.GhostButton(parent, self.T("dp_header_fullscreen"),
+        UI.GhostButton(parent, self.T("dp_header_assign"),
                        self._open_dialog, width=130,
                        height=UI.CTRL_H_SM).pack(side="right", padx=(UI.S2, 0))
 
