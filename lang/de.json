@@ -505,5 +505,7 @@
   "meter_disk": "Platte",
   "meter_net": "Netz MB/s",
   "main_display_image_label": "Bild",
-  "pluginmgr_pick_hint": "Links ein Plugin wählen"
+  "pluginmgr_pick_hint": "Links ein Plugin wählen",
+  "pluginmgr_author": "Autor: {name}",
+  "pluginmgr_path": "Installiert in: {path}"
 }

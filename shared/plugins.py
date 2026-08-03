@@ -18,6 +18,53 @@ def _dbg(msg):
 
 PLUGINS_DIR = os.path.join(CONFIG_DIR, "plugins")
 
+# A manifest names its dependencies the way pip does, which is not always the
+# way import does: "Pillow" imports as PIL, "opencv-python" as cv2. Feeding the
+# manifest string straight to __import__ therefore reported Pillow as missing
+# everywhere, including in the AppImage that ships it, and the plugin screen
+# put a warning dot on plugins that were working fine (#76).
+_REQUIREMENT_MODULES = {
+    "pillow": "PIL",
+    "opencv-python": "cv2",
+    "opencv-python-headless": "cv2",
+    "opencv-contrib-python": "cv2",
+    "pyusb": "usb",
+    "hidapi": "hid",
+    "pyyaml": "yaml",
+    "python-dateutil": "dateutil",
+    "beautifulsoup4": "bs4",
+    "pyserial": "serial",
+    "pillow-simd": "PIL",
+}
+
+
+def requirement_module(name):
+    """The module name to import for a requirement as spelled in a manifest.
+
+    Strips any version marker ("Pillow>=10") and maps the handful of packages
+    whose import name differs from their pip name; everything else keeps its
+    own name with dashes turned into underscores, which is the pip convention.
+    """
+    base = str(name or "").strip()
+    for sep in ("<", ">", "=", "!", "~", "[", ";", " "):
+        base = base.split(sep)[0]
+    base = base.strip()
+    if not base:
+        return ""
+    return _REQUIREMENT_MODULES.get(base.lower(), base.replace("-", "_"))
+
+
+def has_requirement(name):
+    """Is a manifest requirement importable in the interpreter we run in?"""
+    mod = requirement_module(name)
+    if not mod:
+        return True
+    try:
+        return importlib.util.find_spec(mod) is not None
+    except Exception:
+        # find_spec raises for a parent package that is itself missing.
+        return False
+
 
 class PluginManager:
     """Scan, load, and manage lifecycle of user plugins."""
@@ -107,9 +154,7 @@ class PluginManager:
     def _check_requires(self, info):
         """Print warnings for missing dependencies (informational only)."""
         for pkg in info.get("requires", []):
-            try:
-                __import__(pkg)
-            except ImportError:
+            if not has_requirement(pkg):
                 print(f"[Plugin] Warning: '{info.get('id')}' requires '{pkg}' which is not installed")
 
     # ── Enable / Disable ──────────────────────────────────────────────────────

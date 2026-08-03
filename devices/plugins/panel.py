@@ -14,6 +14,7 @@ from shared.ui_helpers import (BG, BG2, BG3, FG, FG2, BLUE, GRN, RED, YLW,
                                BORDER, cap_scroll_speed)
 from shared.ui.tokens import FG_FAINT
 from shared.config import CONFIG_DIR
+from shared.plugins import has_requirement
 
 _PLUGINS_DIR = os.path.join(CONFIG_DIR, "plugins")
 _PLUGINS_INDEX_URL = "https://raw.githubusercontent.com/ramisotti13-eng/basecamp-plugins/main/plugins.json"
@@ -24,12 +25,12 @@ _PLUGIN_LIST_W = 250   # list column beside the detail
 
 
 def _has_module(name):
-    """Is a dependency importable in the interpreter this app runs in?"""
-    try:
-        __import__(name)
-        return True
-    except Exception:
-        return False
+    """Is a dependency importable in the interpreter this app runs in?
+
+    Shared with the loader so the dot in the list and the warning on the
+    console can never disagree about the same package (#76).
+    """
+    return has_requirement(name)
 
 
 _TYPE_COLORS = {
@@ -299,6 +300,13 @@ class PluginManagerPanel(ctk.CTkFrame):
 
         head = ctk.CTkFrame(self._detail, fg_color="transparent")
         head.pack(fill="x")
+        # icon.png beside the name. The loader survived the 3.0 redesign but
+        # nothing called it any more, so plugins that ship an icon, as the
+        # plugin guide tells them to, showed none (#76).
+        icon = self._load_icon(pid, info)
+        if icon is not None:
+            ctk.CTkLabel(head, image=icon, text="").pack(side="left",
+                                                         padx=(0, 8))
         ctk.CTkLabel(head, text=info.get("name", pid),
                      font=(UI.FONT_FAMILY, 15, "bold"), text_color=FG,
                      anchor="w").pack(side="left")
@@ -391,11 +399,7 @@ class PluginManagerPanel(ctk.CTkFrame):
         # console, which is why nobody could tell why a plugin was installed,
         # enabled and doing nothing. It says so here now.
         for pkg in info.get("requires", []) or []:
-            try:
-                __import__(pkg)
-                ok = True
-            except Exception:
-                ok = False
+            ok = _has_module(pkg)
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=(0, 2))
             UI.StatusDot(row, state="ok" if ok else "warn", size=7,
@@ -410,8 +414,24 @@ class PluginManagerPanel(ctk.CTkFrame):
         author = info.get("author", "")
         if author:
             ctk.CTkLabel(
-                parent, text=f"Author: {author}",
+                parent, text=self.T("pluginmgr_author", name=author),
                 font=(UI.FONT_FAMILY, 9), text_color=FG2, anchor="w"
+            ).pack(fill="x")
+
+        # Which copy this is (#75). The pane reads the manifest of the plugin
+        # that is installed, which is not necessarily the one the author is
+        # editing: nothing overwrites an installed plugin unless its version
+        # goes up, so a manifest edited in place without a version bump keeps
+        # showing the old name here. Naming the folder makes that answerable.
+        path = info.get("_path", "")
+        if path:
+            home = os.path.expanduser("~")
+            if path.startswith(home + os.sep):
+                path = "~" + path[len(home):]
+            ctk.CTkLabel(
+                parent, text=self.T("pluginmgr_path", path=path),
+                font=(UI.FONT_FAMILY, 9), text_color=FG_FAINT, anchor="w",
+                justify="left", wraplength=620
             ).pack(fill="x")
 
         if error:
@@ -428,6 +448,11 @@ class PluginManagerPanel(ctk.CTkFrame):
         if pid in self._icon_cache:
             return self._icon_cache[pid]
         pdir = info.get("_path", "")
+        if not pdir:
+            # An entry from the online index, not an installed folder. Without
+            # this, join("", "icon.png") would look in the working directory.
+            self._icon_cache[pid] = None
+            return None
         icon_path = os.path.join(pdir, "icon.png")
         if not os.path.isfile(icon_path):
             self._icon_cache[pid] = None
