@@ -62,6 +62,7 @@ send_command({"cmd": "rgb", "device": "everest60",
 | cmd       | fields                                              | effect |
 |-----------|-----------------------------------------------------|--------|
 | `ping`    | none                                                | health / version |
+| `show`    | none                                                | bring the window to the front, also out of the tray |
 | `list`    | none                                                | GUI tabs, active tab, device presence, DisplayPad pages + current page |
 | `page`    | `page`                                              | switch GUI tab (`everest_max`, `everest60`, `makalu67`, `displaypad`, `obs`, `macros`, `plugins`, plugin ids) |
 | `dp_page` | `page`                                              | switch the DisplayPad's active key page, by name, by id, or `"prev"` |
@@ -72,6 +73,11 @@ send_command({"cmd": "rgb", "device": "everest60",
 
 `page` and `dp_page` are different things: `page` decides which panel the GUI
 shows, `dp_page` decides which twelve keys the physical pad shows.
+
+`show` is what the application sends to itself: starting it while it is already
+running hands over to the instance that is there and exits, rather than running
+a second one that would fight it for the USB devices. It is a normal command,
+so a script or a shortcut can raise the window the same way.
 
 ### Switching DisplayPad pages from a script (#63)
 

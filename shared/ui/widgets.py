@@ -205,11 +205,18 @@ class StatusDot(tk.Canvas):
         super().__init__(parent, width=size, height=size, highlightthickness=0,
                          bd=0, bg=bg or T.SURFACE, **kw)
         self._size = size
+        self._state = None
         self._item = self.create_oval(1, 1, size - 1, size - 1,
                                       fill=self._COLORS["off"], outline="")
         self.set_state(state)
 
     def set_state(self, state):
+        # Repainting an unchanged dot is not free: the device scan runs every
+        # five seconds and mostly finds the same devices, so the whole sidebar
+        # was being redrawn on a timer for nothing.
+        if state == self._state:
+            return
+        self._state = state
         self.itemconfigure(self._item, fill=self._COLORS.get(state, T.LINE))
 
 
@@ -311,13 +318,18 @@ class NavItem(ctk.CTkFrame):
     # ── state ─────────────────────────────────────────────────────────────────
 
     def set_selected(self, selected):
-        self._selected = bool(selected)
+        selected = bool(selected)
+        if selected == self._selected:
+            return
+        self._selected = selected
         self._label.configure(
             text_color=T.FG if selected else T.FG_DIM,
-            font=T.font(T.TEXT_XS, bold=bool(selected)))
+            font=T.font(T.TEXT_XS, bold=selected))
         self._paint(T.SURFACE_2 if selected else self._rest)
 
     def set_text(self, text):
+        if text == self._label.cget("text"):
+            return
         self._label.configure(text=text)
 
     def set_state(self, state):

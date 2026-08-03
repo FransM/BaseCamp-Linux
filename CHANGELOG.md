@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.2] - 2026-08-03
+
+Two things that made the application look broken when it was not. Source-overlay patch.
+
+- **Only one instance per session.** Starting BaseCamp while it is already running used to start a second full application, and the two then fought over the same USB devices: `[Errno 16] Resource busy`, or the interface lost outright, and the DisplayPad sat on "Connecting to DisplayPad" for good. Nothing about the launcher tells you the application is already there when it is minimised to the tray, so clicking it again is easy to do by accident, and three instances is enough to make the pad look dead. A second start now brings the existing window to the front and exits. It decides by pinging the running instance, so an older one that does not know the new command is still recognised.
+- **The device list stopped flickering.** The USB scan runs every five seconds and the sidebar was taken apart and rebuilt on every one of them, whether anything had changed or not: over five scans of an unchanged desk that is 21 removals and 21 re-additions of the device entries. It is now only rebuilt when the list of connected devices really changes. The state dot, the selection and the labels also stopped repainting themselves when nothing about them moved.
+
 ## [3.0.1] - 2026-08-03
 
 Follow-ups on the 3.0 reports from @FransM, and two findings from @rebell218's environment. Source-overlay patch, so it arrives through Settings without a new AppImage.

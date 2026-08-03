@@ -704,7 +704,7 @@ class UpdateAvailableDialog(ctk.CTkToplevel):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.0.2"
 
 # Window size. The minimum is what the widest screen needs: sidebar plus a
 # 6x2 key grid plus the inspector column, measured rather than guessed.
@@ -876,6 +876,12 @@ class App(ctk.CTk):
         cmd = (obj.get("cmd") or "").lower()
         if cmd == "ping":
             return {"ok": True, "app": "BaseCamp Linux", "version": APP_VERSION}
+        if cmd == "show":
+            # Bring the running instance forward. Used when the application is
+            # started a second time: the launcher gives no sign that it is
+            # already running minimised to the tray, so people click again.
+            self.after(0, self._show_window)
+            return {"ok": True, "shown": True}
         if cmd == "list":
             # Every screen that exists, built or not: a script asking what is
             # there should not get a different answer depending on what the
@@ -1671,26 +1677,30 @@ class App(ctk.CTk):
                  ("makalu67", self._dev_present.get("makalu67", False)),
                  ("displaypad", self._dev_present.get("displaypad", False)))
 
-        # Re-pack in a fixed order: packing an already-packed widget again
-        # would move it to the end of the box.
-        for key, _ in order:
-            self._nav_items[key].pack_forget()
-        visible = []
-        for key, present in order:
-            if present:
+        visible = tuple(key for key, present in order if present)
+        # Re-pack only when the list really changed. This runs off the device
+        # scan every five seconds, and taking all three entries out of the box
+        # and putting them back each time is visible as a flicker even though
+        # nothing moved. Packing an already-packed widget would move it to the
+        # end of the box, hence the full rebuild when it does change.
+        if visible != getattr(self, "_nav_visible", None):
+            for key, _ in order:
+                self._nav_items[key].pack_forget()
+            for key in visible:
                 self._nav_items[key].pack(fill="x")
-                # A device we cannot open is not a working one, and the dot is
-                # the device's state, not its presence (#49).
-                denied = (self._dev_denied.get("everest_max")
-                          or self._dev_denied.get("everest60")) if key == "keyboard" \
-                    else self._dev_denied.get(key)
-                self._nav_items[key].set_state("warn" if denied else "ok")
-                visible.append(key)
+            if visible:
+                self._nav_empty.pack_forget()
+            else:
+                self._nav_empty.pack(fill="x", padx=UI.S3, pady=(UI.S1, UI.S2))
+            self._nav_visible = visible
 
-        if visible:
-            self._nav_empty.pack_forget()
-        else:
-            self._nav_empty.pack(fill="x", padx=UI.S3, pady=(UI.S1, UI.S2))
+        for key in visible:
+            # A device we cannot open is not a working one, and the dot is
+            # the device's state, not its presence (#49).
+            denied = (self._dev_denied.get("everest_max")
+                      or self._dev_denied.get("everest60")) if key == "keyboard" \
+                else self._dev_denied.get(key)
+            self._nav_items[key].set_state("warn" if denied else "ok")
 
         active = self._active_device
         for key, item in self._nav_items.items():
@@ -2370,6 +2380,27 @@ def run():
         sys.exit(0 if reply.get("ok") else 1)
     psutil.cpu_percent()
     start_minimized = "--minimized" in sys.argv
+    # One instance per session. A second one used to start fully and then fight
+    # the first for the keyboard and the pad over USB: both got "Resource busy"
+    # or lost the interface outright, and the DisplayPad sat on "Connecting to
+    # DisplayPad" forever. Nothing about the launcher tells you the application
+    # is already running minimised to the tray, so starting it twice is easy to
+    # do by accident. Hand over to the one that is running and leave.
+    try:
+        from shared.ipc import send_command as _send
+        # Ping decides, not "show": an instance from before this version does
+        # not know that command and would answer "unknown cmd", which would
+        # start a second one against a running application.
+        running = _send({"cmd": "ping"}, timeout=1.5).get("ok", False)
+        if running and not start_minimized:
+            _send({"cmd": "show"}, timeout=1.5)   # best effort, older ones ignore it
+    except Exception:
+        running = False
+    if running:
+        if not start_minimized:
+            print("[BaseCamp] already running, brought the existing window "
+                  "to the front", flush=True)
+        sys.exit(0)
     if not start_minimized and load_splash_enabled():
         show_splash()
     app = App()
