@@ -35,6 +35,7 @@ from shared.config import (
     _load_displaypad_rotation, _save_displaypad_rotation,
     _load_displaypad_brightness, _save_displaypad_brightness,
     _load_displaypad_debounce, _save_displaypad_debounce,
+    _load_displaypad_min_ms, _save_displaypad_min_ms,
     _load_displaypad_page_timeouts, _save_displaypad_page_timeouts,
     _load_displaypad_page_names, _save_displaypad_page_names,
     _create_displaypad_page, _rename_displaypad_page, _delete_displaypad_page,
@@ -1111,6 +1112,130 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
         super().destroy()
 
 
+# ── Per-page auto-timeout row ─────────────────────────────────────────────────
+
+class PageTimeoutRow(ctk.CTkFrame):
+    """The auto-timeout controls for one page (#45): mode, seconds, target.
+
+    Two places show these: the DisplayPad screen, for the page on the device
+    (#71), and the button-actions window, which can be pointed at a different
+    page. Both share this widget so the two can never drift apart in what they
+    store or how they read a legacy config.
+
+    `get_page` is a callable, not a page id, because the owning screen changes
+    pages under the row.
+    """
+
+    MODES = ["off", "after", "idle"]
+
+    def __init__(self, parent, panel, app, get_page, fg_color=BG2):
+        super().__init__(parent, fg_color=fg_color, corner_radius=6)
+        self._panel = panel
+        self._app = app
+        self._get_page = get_page
+
+        self._label = ctk.CTkLabel(self, text=app.T("dp_panel_timeout"),
+                                   font=(UI.FONT_FAMILY, 10), text_color=FG2)
+        self._label.pack(side="left", padx=(10, 4), pady=6)
+        self._mode_menu = ctk.CTkOptionMenu(
+            self, values=self._mode_labels(),
+            fg_color=BG3, button_color=BG3, button_hover_color=BORDER,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=96, height=26,
+            dynamic_resizing=False, command=lambda v: self.save())
+        self._mode_menu.pack(side="left", padx=2)
+        self._secs_var = tk.StringVar(value="10")
+        self._secs_entry = ctk.CTkEntry(
+            self, textvariable=self._secs_var, width=44, height=26,
+            fg_color=BG3, text_color=FG, border_color=BORDER,
+            font=(UI.FONT_FAMILY, 10))
+        self._secs_entry.pack(side="left", padx=(4, 1))
+        self._secs_entry.bind("<Return>",   lambda e: self.save())
+        self._secs_entry.bind("<FocusOut>", lambda e: self.save())
+        self._secs_label = ctk.CTkLabel(self, text=app.T("dp_timeout_secs"),
+                                        font=(UI.FONT_FAMILY, 10), text_color=FG2)
+        self._secs_label.pack(side="left", padx=(0, 2))
+        self._target_menu = ctk.CTkOptionMenu(
+            self, values=[""],
+            fg_color=BG3, button_color=BG3, button_hover_color=BORDER,
+            text_color=FG, font=(UI.FONT_FAMILY, 10), width=110, height=26,
+            dynamic_resizing=False, command=lambda v: self.save())
+        self._target_menu.pack(side="left", padx=(2, 10))
+
+    def _mode_labels(self):
+        return [self._app.T("dp_timeout_off"),
+                self._app.T("dp_timeout_after"),
+                self._app.T("dp_timeout_idle")]
+
+    def _target_options(self):
+        """(labels, {label: target}) for the destination picker: every page plus
+        a 'previous page' entry that returns to wherever we came from."""
+        mapping, labels = {}, []
+        prevlbl = self._app.T("dp_timeout_prev")
+        labels.append(prevlbl)
+        mapping[prevlbl] = "prev"
+        for p in self._panel._get_available_pages():
+            lbl = self._panel._get_page_name(p)
+            labels.append(lbl)
+            mapping[lbl] = p
+        return labels, mapping
+
+    def load(self):
+        """Fill the row from the stored config of the page it points at."""
+        to = self._panel._page_timeout.get(self._get_page()) or {}
+        mode = to.get("mode", "off")
+        if mode not in self.MODES:
+            mode = "off"
+        self._mode_menu.set(self._mode_labels()[self.MODES.index(mode)])
+        secs = int(to.get("seconds", 0) or 0)
+        self._secs_var.set(str(secs if secs > 0 else 10))
+        labels, mapping = self._target_options()
+        self._target_menu.configure(values=labels)
+        tgt = to.get("target", "prev")
+        sel = None
+        for lbl, val in mapping.items():
+            if val == "prev":
+                match = (tgt == "prev")
+            else:
+                # tgt may be a legacy int id or (#52) a persisted page name.
+                match = (tgt == val or tgt == self._panel._get_page_name(val))
+            if match:
+                sel = lbl
+                break
+        self._target_menu.set(sel or self._app.T("dp_timeout_prev"))
+
+    def save(self):
+        """Persist the row into the page's config (#45)."""
+        page = self._get_page()
+        try:
+            mode = self.MODES[self._mode_labels().index(self._mode_menu.get())]
+        except (ValueError, IndexError):
+            mode = "off"
+        try:
+            secs = max(1, int(float(self._secs_var.get())))
+        except (ValueError, TypeError):
+            secs = 10
+        _labels, mapping = self._target_options()
+        picked = mapping.get(self._target_menu.get(), "prev")
+        # Store by name (#52), like every other page reference; "prev" is kept
+        # as-is since it's a mode, not a page.
+        tgt = picked if picked == "prev" else self._panel._get_page_name(picked)
+        if mode == "off":
+            self._panel._page_timeout.pop(page, None)
+        else:
+            self._panel._page_timeout[page] = {
+                "mode": mode, "seconds": secs, "target": tgt}
+        _save_displaypad_page_timeouts(self._panel._page_timeout)
+        # Re-arm live if the page being edited is the one on the device now.
+        if page == self._panel._current_page:
+            self._panel._arm_page_timeout(page)
+
+    def apply_lang(self):
+        self._label.configure(text=self._app.T("dp_panel_timeout"))
+        self._secs_label.configure(text=self._app.T("dp_timeout_secs"))
+        self._mode_menu.configure(values=self._mode_labels())
+        self.load()
+
+
 # ── Actions dialog ────────────────────────────────────────────────────────────
 
 class DisplayPadActionsDialog(ctk.CTkToplevel):
@@ -1118,6 +1243,11 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
 
     def __init__(self, panel):
         super().__init__(panel._app)
+        # Built off-screen and shown once (#68). This window used to appear at
+        # its default size, fill with twelve key cards, and only then jump to
+        # the size it was left at, which read as the window resizing itself
+        # while you watched.
+        self.withdraw()
         self._panel = panel
         self._app   = panel._app
         self._page  = panel._current_page
@@ -1127,7 +1257,9 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self.minsize(420, 420)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._resize_save_after_id = None
-        self.bind("<Configure>", self._on_configure)
+        # <Configure> is bound at the very end: while the window is withdrawn
+        # its size reads as 1x1, and saving that would clamp to the minimum and
+        # overwrite the size the person actually chose.
 
         _folder_pil = Image.open(
             os.path.join(panel._res_path, "resources", "foldericon.png")).convert("RGBA")
@@ -1166,11 +1298,16 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._dbl_page_combos = []  # 'page' target picker for double-click (existing pages only)
         self._cards       = []
 
+        # Size first, so the cards are laid out once, at the width they will be
+        # read at, instead of being laid out narrow and reflowed a moment later.
+        saved_size = _load_displaypad_actions_dialog_size()
+        if saved_size:
+            self.geometry(f"{saved_size[0]}x{saved_size[1]}")
+
         self._build_ui()
         self._load_page(self._page)
 
         self.update_idletasks()
-        saved_size = _load_displaypad_actions_dialog_size()
         pw = self._app.winfo_rootx() + self._app.winfo_width() // 2
         ph = self._app.winfo_rooty() + self._app.winfo_height() // 2
         if saved_size:
@@ -1178,6 +1315,14 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         else:
             w, h = self.winfo_width(), self.winfo_height()
         self.geometry(f"{w}x{h}+{pw - w // 2}+{ph - h // 2}")
+        self.deiconify()
+        # Listen for resizes only once the window has settled. A window that
+        # does not fit the screen is shrunk to fit right after mapping, roughly
+        # 200 ms later, and saving that would replace the size the person chose
+        # with the smaller one, every time: on a small screen the remembered
+        # size would ratchet down and never grow back. Only a resize the person
+        # performs should be remembered.
+        self.after(1000, lambda: self.bind("<Configure>", self._on_configure))
 
     def _on_configure(self, event):
         """Debounce <Configure> events (fired continuously while dragging the
@@ -1422,7 +1567,7 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         # Update page selector
         self._page_selector.set(self._panel._get_page_name(page))
         # Refresh the per-page auto-timeout row for the selected page (#45).
-        self._load_timeout(page)
+        self._timeout_row.load()
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -1455,37 +1600,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
         self._page_list = pages
 
         # ── Per-page auto-timeout (issue #45) ─────────────────────────────────
-        # Applies to the page currently selected above: after N seconds (or N
-        # seconds of no keypress in 'idle' mode) the panel jumps to a target page.
-        to_row = ctk.CTkFrame(self, fg_color=BG2, corner_radius=6)
-        to_row.pack(fill="x", padx=12, pady=(0, 6))
-        ctk.CTkLabel(to_row, text=self._app.T("dp_panel_timeout"),
-                     font=(UI.FONT_FAMILY, 10), text_color=FG2).pack(
-                         side="left", padx=(10, 4), pady=6)
-        self._to_mode_menu = ctk.CTkOptionMenu(
-            to_row, values=self._timeout_mode_labels(),
-            fg_color=BG3, button_color=BLUE, button_hover_color="#0884be",
-            text_color=FG, font=(UI.FONT_FAMILY, 10), width=96, height=26,
-            dynamic_resizing=False,
-            command=lambda v: self._on_timeout_change())
-        self._to_mode_menu.pack(side="left", padx=2)
-        self._to_secs_var = tk.StringVar(value="10")
-        self._to_secs_entry = ctk.CTkEntry(
-            to_row, textvariable=self._to_secs_var, width=44, height=26,
-            fg_color=BG3, text_color=FG, border_color=BORDER,
-            font=(UI.FONT_FAMILY, 10))
-        self._to_secs_entry.pack(side="left", padx=(4, 1))
-        self._to_secs_entry.bind("<Return>",   lambda e: self._on_timeout_change())
-        self._to_secs_entry.bind("<FocusOut>", lambda e: self._on_timeout_change())
-        ctk.CTkLabel(to_row, text=self._app.T("dp_timeout_secs"),
-                     font=(UI.FONT_FAMILY, 10), text_color=FG2).pack(side="left", padx=(0, 2))
-        self._to_target_menu = ctk.CTkOptionMenu(
-            to_row, values=[""],
-            fg_color=BG3, button_color=BLUE, button_hover_color="#0884be",
-            text_color=FG, font=(UI.FONT_FAMILY, 10), width=110, height=26,
-            dynamic_resizing=False,
-            command=lambda v: self._on_timeout_change())
-        self._to_target_menu.pack(side="left", padx=(2, 10))
+        # Applies to the page currently selected above, which is not always the
+        # page on the device, so this window keeps its own copy of the row that
+        # the screen also shows (#71).
+        self._timeout_row = PageTimeoutRow(
+            self, self._panel, self._app, lambda: self._page)
+        self._timeout_row.pack(fill="x", padx=12, pady=(0, 6))
 
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG2, corner_radius=6,
                                         width=480, height=460)
@@ -1731,77 +1851,6 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             return
         self._panel._delete_page(page_id)
         self._refresh_page_selector(select=0)
-
-    # ── Per-page auto-timeout controls (issue #45) ────────────────────────────
-    _TIMEOUT_MODES = ["off", "after", "idle"]
-
-    def _timeout_mode_labels(self):
-        return [self._app.T("dp_timeout_off"),
-                self._app.T("dp_timeout_after"),
-                self._app.T("dp_timeout_idle")]
-
-    def _timeout_target_options(self):
-        """(labels, {label: target}) for the timeout destination picker: every
-        page plus a 'previous page' entry that returns to wherever we came from."""
-        mapping, labels = {}, []
-        prevlbl = self._app.T("dp_timeout_prev")
-        labels.append(prevlbl)
-        mapping[prevlbl] = "prev"
-        for p in self._panel._get_available_pages():
-            lbl = self._panel._get_page_name(p)
-            labels.append(lbl)
-            mapping[lbl] = p
-        return labels, mapping
-
-    def _load_timeout(self, page):
-        """Populate the timeout row from the selected page's stored config."""
-        to = self._panel._page_timeout.get(page) or {}
-        mode = to.get("mode", "off")
-        if mode not in self._TIMEOUT_MODES:
-            mode = "off"
-        self._to_mode_menu.set(self._timeout_mode_labels()[self._TIMEOUT_MODES.index(mode)])
-        secs = int(to.get("seconds", 0) or 0)
-        self._to_secs_var.set(str(secs if secs > 0 else 10))
-        labels, mapping = self._timeout_target_options()
-        self._to_target_menu.configure(values=labels)
-        tgt = to.get("target", "prev")
-        sel = None
-        for lbl, val in mapping.items():
-            if val == "prev":
-                match = (tgt == "prev")
-            else:
-                # tgt may be a legacy int id or (#52) a persisted page name.
-                match = (tgt == val or tgt == self._panel._get_page_name(val))
-            if match:
-                sel = lbl
-                break
-        self._to_target_menu.set(sel or self._app.T("dp_timeout_prev"))
-
-    def _on_timeout_change(self):
-        """Persist the timeout row into the selected page's config (#45)."""
-        try:
-            mode = self._TIMEOUT_MODES[
-                self._timeout_mode_labels().index(self._to_mode_menu.get())]
-        except (ValueError, IndexError):
-            mode = "off"
-        try:
-            secs = max(1, int(float(self._to_secs_var.get())))
-        except (ValueError, TypeError):
-            secs = 10
-        _labels, mapping = self._timeout_target_options()
-        picked = mapping.get(self._to_target_menu.get(), "prev")
-        # Store by name (#52), like every other page reference; "prev" is
-        # kept as-is since it's a mode, not a page.
-        tgt = picked if picked == "prev" else self._panel._get_page_name(picked)
-        if mode == "off":
-            self._panel._page_timeout.pop(self._page, None)
-        else:
-            self._panel._page_timeout[self._page] = {
-                "mode": mode, "seconds": secs, "target": tgt}
-        _save_displaypad_page_timeouts(self._panel._page_timeout)
-        # Re-arm live if the page being edited is the one on the device now.
-        if self._page == self._panel._current_page:
-            self._panel._arm_page_timeout(self._page)
 
     def _existing_page_options(self):
         """(labels, {label: page_id}) of every existing page, no 'New page'
@@ -2472,7 +2521,8 @@ class DisplayPadPanel(ctk.CTkFrame):
         if fs_path and os.path.exists(fs_path):
             self._load_fullscreen_gif(fs_path, save=False)
 
-        self._min_ms_var = ctk.StringVar(value="50")
+        self._min_ms_var = ctk.StringVar(value=str(_load_displaypad_min_ms()))
+        self._min_ms_var.trace_add("write", self._on_min_ms_change)
         self._build_ui()
 
         # Refresh tiles immediately for any pre-loaded GIF frames
@@ -2574,10 +2624,61 @@ class DisplayPadPanel(ctk.CTkFrame):
                          font=(UI.FONT_FAMILY, 9), text_color=FG2,
                          fg_color="transparent").grid(row=row * 2 + 1, column=col)
 
+        # ── Page settings, directly under the keys (#71) ────────────────────
+        # Everything here belongs to the page on the device: what it is called,
+        # whether it exists, and when it hands over to another page. It used to
+        # be reachable only through the button-actions window, which is about
+        # keys, not pages.
+        # Gridded into the key grid itself, not packed under it, so it lines up
+        # with the keys instead of with the wider column they sit in.
+        settings = ctk.CTkFrame(overview, fg_color=BG2, corner_radius=6)
+        settings.grid(row=(NUM_KEYS // KEYS_PER_ROW) * 2, column=0,
+                      columnspan=KEYS_PER_ROW, sticky="ew", pady=(12, 0))
+
+        page_row = ctk.CTkFrame(settings, fg_color="transparent")
+        page_row.pack(fill="x", padx=10, pady=(8, 2))
+        self._page_name_lbl = ctk.CTkLabel(
+            page_row, text="", font=(UI.FONT_FAMILY, 11, "bold"),
+            text_color=FG, anchor="w")
+        self._page_name_lbl.pack(side="left")
+        ctk.CTkButton(
+            page_row, text=self.T("dp_delete_page_btn"), width=72,
+            height=UI.CTRL_H_SM, font=(UI.FONT_FAMILY, 10),
+            fg_color=BG3, hover_color="#4a2222", text_color=RED,
+            command=self._on_delete_current_page).pack(side="right")
+        ctk.CTkButton(
+            page_row, text=self.T("dp_rename_page_btn"), width=92,
+            height=UI.CTRL_H_SM, font=(UI.FONT_FAMILY, 10),
+            fg_color=BG3, hover_color="#333a44", text_color=FG,
+            command=self._on_rename_current_page).pack(side="right", padx=(0, 6))
+
+        self._page_timeout_row = PageTimeoutRow(
+            settings, self, self._app, lambda: self._current_page,
+            fg_color="transparent")
+        self._page_timeout_row.pack(fill="x", padx=0, pady=(0, 2))
+
+        # Minimum milliseconds per GIF frame. This was on this screen until the
+        # 3.0 redesign and only survived in the multi-upload window, where
+        # nobody looks for it (#73). It is not page-scoped, so it sits apart.
+        fps_row = ctk.CTkFrame(settings, fg_color="transparent")
+        fps_row.pack(fill="x", padx=10, pady=(0, 8))
+        self._min_ms_lbl = ctk.CTkLabel(fps_row, text=self.T("dp_min_ms_frame"),
+                                        font=(UI.FONT_FAMILY, 10), text_color=FG2)
+        self._min_ms_lbl.pack(side="left")
+        ctk.CTkEntry(fps_row, textvariable=self._min_ms_var,
+                     width=52, height=26, font=(UI.FONT_FAMILY, 10),
+                     fg_color=BG3, border_color=BORDER, text_color=FG,
+                     ).pack(side="left", padx=(6, 0))
+        self._gif_speed_lbl = ctk.CTkLabel(fps_row, text=self.T("dp_gif_speed"),
+                                           font=(UI.FONT_FAMILY, 10), text_color=FG2)
+        self._gif_speed_lbl.pack(side="left", padx=(8, 0))
+
         hint = ctk.CTkLabel(grid_wrap, text=self.T("dp_grid_hint"),
                             font=(UI.FONT_FAMILY, 10), text_color=FG2)
         hint.pack(pady=(10, 0))
         self._reg(hint, "dp_grid_hint")
+        self._reg(self._min_ms_lbl, "dp_min_ms_frame")
+        self._reg(self._gif_speed_lbl, "dp_gif_speed")
 
         self._build_inspector(body)
 
@@ -2839,6 +2940,9 @@ class DisplayPadPanel(ctk.CTkFrame):
             command=self._on_new_page)
         add._is_tab_extra = True
         add.pack(side="left")
+        # The page-settings row below the keys follows the tabs (#71): every
+        # path that changes or renames a page already comes through here.
+        self._refresh_page_settings()
 
     def _on_new_page(self):
         name = _prompt_page_name(self._app, "dp_page_name_prompt", "dp_page_name_title")
@@ -2851,6 +2955,42 @@ class DisplayPadPanel(ctk.CTkFrame):
         _save_displaypad_page_names(names)
         self._rebuild_page_tabs()
         self._switch_to_page(pid)
+
+    def _on_rename_current_page(self):
+        """Rename the page on the device (#71). Main is renamable too, it is
+        just the page the app opens on."""
+        name = _prompt_page_name(
+            self._app, "dp_page_name_prompt", "dp_rename_page_title",
+            initial=self._get_page_name(self._current_page))
+        if not name:
+            return
+        self._rename_page(self._current_page, name)
+        self._rebuild_page_tabs()
+        self._refresh_page_settings()
+
+    def _on_delete_current_page(self):
+        """Delete the page on the device (#71), after warning if anything still
+        points at it. Falls back to Main, since the page shown is gone."""
+        page_id = self._current_page
+        if not _confirm_delete_page(self._app, self, page_id):
+            return
+        self._delete_page(page_id)
+        self._rebuild_page_tabs()
+        if self._current_page == page_id:
+            self._switch_to_page(0)
+        else:
+            self._refresh_page_settings()
+
+    def _refresh_page_settings(self):
+        """Point the page-settings row at the page currently on the device."""
+        if not hasattr(self, "_page_name_lbl"):
+            return
+        try:
+            self._page_name_lbl.configure(
+                text=self._get_page_name(self._current_page))
+            self._page_timeout_row.load()
+        except tk.TclError:
+            pass
 
     def header_actions(self, parent):
         """Fill the screen header: device controls left of the primary action.
@@ -2922,6 +3062,24 @@ class DisplayPadPanel(ctk.CTkFrame):
         sec = float(val.replace("s", ""))
         self._debounce = sec
         _save_displaypad_debounce(sec)
+
+    def _after_safe(self, delay, func):
+        """self.after() from a worker thread, tolerating a closed window.
+
+        The upload worker keeps running for a moment after the app is told to
+        quit. Scheduling onto a Tk interpreter that is already gone raised out
+        of the thread and printed a traceback on every exit taken with no pad
+        attached; there is nothing left to schedule for, so drop it.
+        """
+        try:
+            self.after(delay, func)
+        except (tk.TclError, RuntimeError):
+            pass
+
+    def _on_min_ms_change(self, *_):
+        """Keep the GIF frame floor across restarts (#73). Silently ignores
+        half-typed values -- this fires on every keystroke."""
+        _save_displaypad_min_ms(self._min_ms_var.get())
 
     def _on_rotation_change(self, val):
         deg = int(val.replace("°", ""))
@@ -3876,6 +4034,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         rebuilt instead, which picks up the new strings wholesale.
         """
         self._heading_lbl.configure(text=self.T("dp_title"))
+        self._page_timeout_row.apply_lang()
         self._rebuild_page_tabs()
         self._select_key(self._selected_key)
 
@@ -3920,7 +4079,8 @@ class DisplayPadPanel(ctk.CTkFrame):
             except Exception as e:
                 print(f"[DisplayPad] key {key_index + 1}: cannot read {path!r} ({e})")
             else:
-                self._upload_queue.put((key_index, bgr, frames))
+                self._upload_queue.put((key_index, bgr, frames,
+                                        self._current_page))
         elif not self._uploading:
             self.after(100, self._start_upload)
 
@@ -4199,9 +4359,9 @@ class DisplayPadPanel(ctk.CTkFrame):
                 delay = (2 + _retry * 2) * 1000  # 2s, 4s, 6s, 8s, 10s
                 self._uploading = False
                 self._animating = False
-                self.after(delay, self._start_upload)
+                self._after_safe(delay, self._start_upload)
                 return
-            self.after(0, lambda e=e: self._finish(False, str(e)))
+            self._after_safe(0, lambda e=e: self._finish(False, str(e)))
             return
         try:
             _init_device(hid_dev)
@@ -4309,9 +4469,15 @@ class DisplayPadPanel(ctk.CTkFrame):
                 while not self._anim_stop.is_set():
                     while True:
                         try:
-                            qi, bgr, new_frames = self._upload_queue.get_nowait()
+                            qi, bgr, new_frames, qpage = self._upload_queue.get_nowait()
                         except queue.Empty:
                             break
+                        if qpage is not None and qpage != self._current_page:
+                            continue   # drawn for a page we already left (#70)
+                        _allowed = self._plugin_key_slots()
+                        if (not new_frames and _allowed is not None
+                                and qi not in _allowed):
+                            continue   # not a key any plugin owns here (#69)
                         if new_frames:
                             animated[qi] = new_frames
                             frame_idx[qi] = 0
@@ -4488,7 +4654,11 @@ class DisplayPadPanel(ctk.CTkFrame):
         busy = self._animating or self._uploading
         if not (self._device_present or busy):
             return
-        self._upload_queue.put((key_index, bgr_bytes, None))
+        # Stamped with the page it was drawn for (#69/#70). A plugin renders in
+        # its own thread and the queue is drained later, so without this a frame
+        # composed for the page we just left gets uploaded on top of the page we
+        # just switched to, and that key keeps the old widget's picture.
+        self._upload_queue.put((key_index, bgr_bytes, None, self._current_page))
 
     def _plugin_upload_worker(self):
         """Persistent thread (started once at panel init, alive for the
@@ -4646,6 +4816,35 @@ class DisplayPadPanel(ctk.CTkFrame):
 
         _release()
 
+    def _plugin_key_slots(self):
+        """Key indexes on the live page that a plugin action type owns.
+
+        The page stamp on a queued frame closes the common case, but not the
+        instant between the page changing and a plugin's stop() taking effect:
+        a frame composed for the old page but pushed a moment later carries the
+        new page's number and would be written (#69/#70). A plugin only ever
+        paints a key its own action type sits on, so a key the live page has
+        given to a static image or to another action is never a plugin's to
+        write, whatever the stamp says.
+
+        Returns None when that cannot be established, and then nothing is
+        filtered: refusing to paint is worse than painting once too often.
+        """
+        pm = getattr(self._app, "_plugin_manager", None)
+        if pm is None:
+            return None
+        try:
+            types = set(pm.get_action_type_ids())
+        except Exception:
+            return None
+        if not types:
+            return None
+        actions = self._page_actions.get(self._current_page)
+        if not actions:
+            return None
+        return {i for i, a in enumerate(actions)
+                if isinstance(a, dict) and a.get("type") in types}
+
     def _drain_plugin_queue(self, usb_dev, hid_dev, first=None):
         """Upload every queued plugin image in this session — plus `first`,
         if given (an item the caller already popped off the queue) — keeping
@@ -4653,20 +4852,30 @@ class DisplayPadPanel(ctk.CTkFrame):
         are dispatched so the keys stay responsive while the listener is
         paused."""
         latest = {}
+        allowed = self._plugin_key_slots()
         pending = [first] if first is not None else []
         while True:
             if pending:
-                ki, bgr, frames = pending.pop()
+                ki, bgr, frames, page = pending.pop()
             else:
                 try:
-                    ki, bgr, frames = self._upload_queue.get_nowait()
+                    ki, bgr, frames, page = self._upload_queue.get_nowait()
                 except queue.Empty:
                     break
             if frames:
                 # A GIF arrived -- hand it back and let _start_upload handle it.
-                self._upload_queue.put((ki, bgr, frames))
+                self._upload_queue.put((ki, bgr, frames, page))
                 self.after(0, self._restart_for_gif)
                 break
+            if page is not None and page != self._current_page:
+                # Drawn for a page that is no longer on the device (#69/#70).
+                _dbg(f"[DBG drain] dropping stale frame for key {ki} "
+                     f"(page {page}, now {self._current_page})")
+                continue
+            if allowed is not None and ki not in allowed:
+                _dbg(f"[DBG drain] dropping frame for key {ki}: no plugin "
+                     f"action on it on page {self._current_page}")
+                continue
             latest[ki] = bgr
         if not latest:
             return

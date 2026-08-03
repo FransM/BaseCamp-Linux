@@ -138,6 +138,7 @@ DISPLAYPAD_TIMEOUTS_FILE   = os.path.join(CONFIG_DIR, "displaypad_page_timeouts.
 DISPLAYPAD_ROTATION_FILE    = os.path.join(CONFIG_DIR, "displaypad_rotation")
 DISPLAYPAD_BRIGHTNESS_FILE  = os.path.join(CONFIG_DIR, "displaypad_brightness")
 DISPLAYPAD_DEBOUNCE_FILE    = os.path.join(CONFIG_DIR, "displaypad_debounce")
+DISPLAYPAD_MIN_MS_FILE      = os.path.join(CONFIG_DIR, "displaypad_min_ms")
 DISPLAYPAD_ACTIONS_DIALOG_SIZE_FILE = os.path.join(CONFIG_DIR, "displaypad_actions_dialog_size.json")
 MACROS_FILE                 = os.path.join(CONFIG_DIR, "macros.json")
 MOUSE_RECORDINGS_DIR        = os.path.join(CONFIG_DIR, "mouse_recordings")
@@ -1364,6 +1365,35 @@ def _load_displaypad_debounce():
 def _save_displaypad_debounce(val):
     with open(DISPLAYPAD_DEBOUNCE_FILE, "w") as f:
         f.write(str(val))
+
+
+# Slowest allowed GIF frame rate is one frame per second; below 10 ms the pad
+# cannot keep up with the upload anyway.
+_MIN_MS_RANGE = (10, 1000)
+
+
+def _load_displaypad_min_ms():
+    """Minimum milliseconds per GIF frame. The box for this was on screen from
+    the start but the value never outlived the process (#73)."""
+    try:
+        with open(DISPLAYPAD_MIN_MS_FILE) as f:
+            v = int(float(f.read().strip()))
+        lo, hi = _MIN_MS_RANGE
+        return v if lo <= v <= hi else 50
+    except Exception:
+        return 50
+
+
+def _save_displaypad_min_ms(val):
+    try:
+        v = int(float(val))
+    except (TypeError, ValueError):
+        return
+    lo, hi = _MIN_MS_RANGE
+    if not (lo <= v <= hi):
+        return
+    with open(DISPLAYPAD_MIN_MS_FILE, "w") as f:
+        f.write(str(v))
 
 
 _ACTIONS_DIALOG_MIN_W, _ACTIONS_DIALOG_MIN_H = 400, 400
