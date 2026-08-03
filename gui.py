@@ -20,7 +20,27 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 _HERE   = os.path.dirname(os.path.abspath(__file__))
+# Deliberately PyInstaller only. A Nuitka build sets __compiled__ instead, but
+# counting it as frozen here would send the code below into sys._MEIPASS, which
+# only PyInstaller defines, and the app would not import at all. Nuitka is
+# handled where it actually differs: the interpreter it names does not exist
+# (see _interpreter) and the helper it would start was never shipped (#77).
 _FROZEN = getattr(sys, "frozen", False)
+
+
+def _interpreter():
+    """A python that actually exists, or None.
+
+    sys.executable is normally right, but a compiled build can name an
+    interpreter that was never shipped: Nuitka reports <dist>/python3, and
+    starting a helper with it fails with FileNotFoundError. Fall back to
+    whatever python3 is on PATH before giving up (#77).
+    """
+    exe = sys.executable
+    if exe and os.path.isfile(exe) and os.access(exe, os.X_OK):
+        return exe
+    import shutil as _shutil
+    return _shutil.which("python3") or _shutil.which("python")
 
 if _FROZEN:
     _BIN = os.path.dirname(sys.executable)
@@ -139,6 +159,77 @@ def available_langs():
 
 
 # USB presence detection helpers (non-blocking, best-effort)
+
+def _device_nodes(vid, pid):
+    """The /dev entries a device with this VID:PID is driven through.
+
+    Two kinds: the USB node under /dev/bus/usb, used by the libusb path
+    (Everest Max), and the hidraw nodes of its HID interfaces, used by
+    everything else. Returns the paths that exist.
+    """
+    nodes = []
+    target_vid, target_pid = f"{vid:04x}", f"{pid:04x}"
+    base = "/sys/bus/usb/devices"
+    try:
+        entries = os.listdir(base)
+    except OSError:
+        return nodes
+    for entry in entries:
+        d = f"{base}/{entry}"
+        try:
+            with open(f"{d}/idVendor") as f:
+                if f.read().strip() != target_vid:
+                    continue
+            with open(f"{d}/idProduct") as f:
+                if f.read().strip() != target_pid:
+                    continue
+            with open(f"{d}/busnum") as f:
+                bus = int(f.read().strip())
+            with open(f"{d}/devnum") as f:
+                dev = int(f.read().strip())
+        except (OSError, ValueError):
+            continue
+        usb_node = f"/dev/bus/usb/{bus:03d}/{dev:03d}"
+        if os.path.exists(usb_node):
+            nodes.append(usb_node)
+        # hidraw nodes live under the interface directories of this device
+        for sub in entries:
+            if not sub.startswith(entry + ":"):
+                continue
+            hidraw_dir = f"{base}/{sub}/hidraw"
+            try:
+                for name in os.listdir(hidraw_dir):
+                    node = f"/dev/{name}"
+                    if os.path.exists(node):
+                        nodes.append(node)
+            except OSError:
+                # Not every interface is a HID one, and some hang the hidraw
+                # directory a level deeper under the hid driver.
+                try:
+                    for hid_entry in os.listdir(f"{base}/{sub}"):
+                        hidraw_dir = f"{base}/{sub}/{hid_entry}/hidraw"
+                        if not os.path.isdir(hidraw_dir):
+                            continue
+                        for name in os.listdir(hidraw_dir):
+                            node = f"/dev/{name}"
+                            if os.path.exists(node):
+                                nodes.append(node)
+                except OSError:
+                    pass
+    return nodes
+
+
+def _device_access_denied(vid, pid):
+    """Nodes of a present device that this user may not read and write.
+
+    A device that has enumerated is visible in sysfs whatever the permissions
+    on its /dev entries are, so presence alone said "connected" while every
+    action quietly did nothing. That is what a missing or unapplied udev rule
+    looks like from the outside (issue #49). Empty list means all good.
+    """
+    return [n for n in _device_nodes(vid, pid)
+            if not os.access(n, os.R_OK | os.W_OK)]
+
 
 def _check_usb_presence(vid, pid):
     """Return True if a USB device with given VID:PID is present.
@@ -694,6 +785,9 @@ class App(ctk.CTk):
         self._kb_panel_id   = "everest_max"   # which keyboard panel is active
         self._dev_present   = {"everest_max": False, "everest60": False,
                                "makalu67": False, "displaypad": False, "obs": False}
+        # Devices that enumerated but whose /dev nodes we may not open (#49).
+        self._dev_denied    = {}
+        self._denied_logged = set()
 
         # Plugin system
         self._plugin_manager = PluginManager()
@@ -719,11 +813,10 @@ class App(ctk.CTk):
         # Recover from display sleep — force refresh only after withdraw/deiconify
         self.bind("<Map>", self._on_window_restore)
         self.after(500, self._start_cpu_auto_clean)
-        # Run first device check immediately so the correct panel is shown
+        # Run first device check immediately so the correct panel is shown.
+        # The screen itself is opened from _build_ui's deferred callback, which
+        # reads the result of this scan (issues #22, #67).
         self._check_devices()
-        # Open the tab of the first connected device instead of always landing
-        # on Keyboards when no keyboard is plugged in (issue #22).
-        self._select_startup_device()
         # Control IPC: lets external software (and the button-action daemon)
         # drive lighting, switch pages and redefine keys (issue #20).
         self._start_control_server()
@@ -1275,7 +1368,13 @@ class App(ctk.CTk):
         # Show the first screen once the window itself is up. Building it
         # inline meant the window only appeared when the whole screen was
         # drawn; this way the shell is on screen and the screen fills in.
-        self.after(1, lambda: self._switch_device("everest_max"))
+        #
+        # Which screen that is, is decided from the USB scan that __init__ has
+        # by then already run, not hardcoded to the keyboard (issue #67): a
+        # fixed "everest_max" here overrode the startup choice a moment later,
+        # so a desk without a keyboard saw its pad, then "no keyboard", then
+        # its pad again.
+        self.after(1, self._select_startup_device)
 
     # ── Device switching ──────────────────────────────────────────────────────
 
@@ -1368,6 +1467,22 @@ class App(ctk.CTk):
         elif active == "displaypad":
             show = not self._dev_present.get("displaypad")
             title_key = "no_device_displaypad"
+        # Present but not openable is worth its own message: the controls are
+        # all there and none of them do anything, which is indistinguishable
+        # from the application being broken unless we say so (#49).
+        denied = None
+        if active in ("everest_max", "everest60"):
+            denied = (self._dev_denied.get("everest_max")
+                      or self._dev_denied.get("everest60"))
+        elif active in ("makalu67", "displaypad"):
+            denied = self._dev_denied.get(active)
+        if not show and denied:
+            self._no_device_title.configure(text=self.T("no_access_title"))
+            self._no_device_hint.configure(
+                text=self.T("no_access_hint", nodes=", ".join(sorted(denied)[:4])))
+            self._no_device_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._no_device_frame.tkraise()
+            return
         if show:
             self._no_device_title.configure(text=self.T(title_key))
             self._no_device_hint.configure(text=self.T("no_device_hint"))
@@ -1419,11 +1534,12 @@ class App(ctk.CTk):
     def _select_startup_device(self):
         """Open the first connected device. With nothing connected we land on
         Macros, which is the one screen that works without hardware, and the
-        sidebar says why the device list is empty (#22)."""
-        kb_present = (self._dev_present.get("everest_max")
-                      or self._dev_present.get("everest60"))
-        if kb_present:
-            return  # keyboard connected, that screen is already the right one
+        sidebar says why the device list is empty (#22).
+
+        This is the only screen switch at startup. It runs from the deferred
+        callback in _build_ui, after __init__'s first _check_devices() has
+        filled _dev_present, so the first screen drawn is already the right
+        one (#67)."""
         self._fall_back_to_present_device()
 
     def _fall_back_to_present_device(self):
@@ -1447,8 +1563,42 @@ class App(ctk.CTk):
         mouse_present  = (_check_usb_presence(self.MAKALU67_VID, self.MAKALU67_PID)
                           or _check_usb_presence(self.MAKALU67_VID, 0x0002))
         dp_present     = _check_usb_presence(self.DISPLAYPAD_VID, self.DISPLAYPAD_PID)
+        self._check_device_access(kb_max_present, kb_60_present,
+                                  mouse_present, dp_present)
         self._update_device_status(kb_max_present, kb_60_present, mouse_present, dp_present)
         self.after(5000, self._check_devices)
+
+    def _check_device_access(self, kb_max, kb_60, mouse, dp):
+        """Note devices we can see but not open, and say so once (#49).
+
+        A device with root-only /dev nodes, which is what a missing or
+        unapplied udev rule leaves behind, enumerates normally: the screen said
+        "connected" while every key action quietly did nothing, and the person
+        had to find the permissions themselves.
+        """
+        checks = (
+            ("everest_max", kb_max, self.EVEREST_MAX_VID, (self.EVEREST_MAX_PID,)),
+            ("everest60", kb_60, self.EVEREST60_VID,
+             (self.EVEREST60_PID_ANSI, self.EVEREST60_PID_ISO)),
+            ("makalu67", mouse, self.MAKALU67_VID, (self.MAKALU67_PID, 0x0002)),
+            ("displaypad", dp, self.DISPLAYPAD_VID, (self.DISPLAYPAD_PID,)),
+        )
+        for dev_id, present, vid, pids in checks:
+            denied = []
+            if present:
+                for pid in pids:
+                    denied.extend(_device_access_denied(vid, pid))
+            if denied:
+                self._dev_denied[dev_id] = denied
+                if dev_id not in self._denied_logged:
+                    self._denied_logged.add(dev_id)
+                    print(f"[Device] {dev_id}: no access to "
+                          f"{', '.join(sorted(denied))}. The udev rule is "
+                          f"missing or has not been applied; see 'USB "
+                          f"permissions' in the README.", flush=True)
+            else:
+                self._dev_denied.pop(dev_id, None)
+                self._denied_logged.discard(dev_id)
 
     def _update_device_status(self, kb_max_present, kb_60_present=False,
                                mouse_present=False, dp_present=False):
@@ -1529,7 +1679,12 @@ class App(ctk.CTk):
         for key, present in order:
             if present:
                 self._nav_items[key].pack(fill="x")
-                self._nav_items[key].set_state("ok")
+                # A device we cannot open is not a working one, and the dot is
+                # the device's state, not its presence (#49).
+                denied = (self._dev_denied.get("everest_max")
+                          or self._dev_denied.get("everest60")) if key == "keyboard" \
+                    else self._dev_denied.get(key)
+                self._nav_items[key].set_state("warn" if denied else "ok")
                 visible.append(key)
 
         if visible:
@@ -1584,6 +1739,16 @@ class App(ctk.CTk):
             present = (self._dev_present.get("everest_max") or
                        self._dev_present.get("everest60")) if dev.startswith("everest") \
                 else self._dev_present.get(dev, False)
+            denied = (self._dev_denied.get("everest_max")
+                      or self._dev_denied.get("everest60")) if dev.startswith("everest") \
+                else self._dev_denied.get(dev)
+            if present and denied:
+                # Plugged in and unusable is its own state. Saying "connected"
+                # here was the reason a permissions problem looked like the
+                # application being broken (#49).
+                self._screen_state.set(text=self.T("state_no_access"), state="bad")
+                self._screen_state.pack(side="left")
+                return
             self._screen_state.set(
                 text=self.T("state_connected") if present else self.T("state_absent"),
                 state="ok" if present else "off")
@@ -1616,8 +1781,19 @@ class App(ctk.CTk):
             if _FROZEN:
                 cmd = [TRAY_HELPER, str(os.getpid()), lang_file]
             else:
-                cmd = [sys.executable, TRAY_HELPER, str(os.getpid()), lang_file]
-        self._tray_proc = subprocess.Popen(cmd, env=env)
+                cmd = [_interpreter(), TRAY_HELPER, str(os.getpid()), lang_file]
+        # The tray icon is a convenience, not a precondition: a helper that
+        # cannot be started used to take the whole application down with a
+        # FileNotFoundError out of __init__, so the window never appeared at
+        # all (#77). Say what happened and carry on without it.
+        self._tray_proc = None
+        try:
+            if not cmd[0]:
+                raise FileNotFoundError("no python interpreter found")
+            self._tray_proc = subprocess.Popen(cmd, env=env)
+        except Exception as e:
+            print(f"[Tray] not started ({type(e).__name__}: {e}); "
+                  f"the app runs without a tray icon", flush=True)
 
     def _on_window_restore(self, event=None):
         """Force UI refresh after withdraw/deiconify (tray restore or display sleep)."""
@@ -2075,8 +2251,10 @@ class App(ctk.CTk):
             if hasattr(self, "_everest_panel") and self._everest_panel._cpu_proc \
                     and self._everest_panel._cpu_proc.poll() is None:
                 self._everest_panel._cpu_proc.terminate()
-        if hasattr(self, "_tray_proc") and self._tray_proc.poll() is None:
-            self._tray_proc.terminate()
+        # None when the tray helper could not be started at all (#77).
+        tray = getattr(self, "_tray_proc", None)
+        if tray is not None and tray.poll() is None:
+            tray.terminate()
         # Stop control IPC server
         if hasattr(self, "_control_server"):
             self._control_server.stop()

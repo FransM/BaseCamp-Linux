@@ -44,10 +44,16 @@ _BUNDLE_ID_VARS = (
 # terminal. Not frozen-specific: a source or distro install started by the same
 # autostart unit leaks them too. See GitHub issue #49.
 _SYSTEMD_UNIT_VARS = (
-    "INVOCATION_ID", "JOURNAL_STREAM", "MEMORY_PRESSURE_WATCH",
-    "SYSTEMD_EXEC_PID", "MANAGERPID", "NOTIFY_SOCKET",
+    "INVOCATION_ID", "JOURNAL_STREAM",
+    # WATCH names our cgroup's pressure file, WRITE carries the thresholds to
+    # write into it. Only WATCH was listed, so a child still received our
+    # thresholds; both halves of the pair have to go.
+    "MEMORY_PRESSURE_WATCH", "MEMORY_PRESSURE_WRITE",
+    "SYSTEMD_EXEC_PID", "MANAGERPID", "MANAGERPIDFDID", "NOTIFY_SOCKET",
     "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES",
     "WATCHDOG_PID", "WATCHDOG_USEC",
+    "SYSTEMD_ACTIVATION_UNIT", "SYSTEMD_ACTIVATION_SCOPE",
+    "SERVICE_RESULT", "EXIT_CODE", "EXIT_STATUS",
 )
 
 
