@@ -2196,7 +2196,14 @@ class App(ctk.CTk):
     def restart_after_update(self):
         """Re-exec the (now updated) AppImage. Kills the tray helper first —
         execv preserves the PID, so the helper would otherwise sit on the new
-        process and a second tray would spawn on next startup."""
+        process and a second tray would spawn on next startup.
+
+        The new instance starts from a sanitised environment, the way the
+        desktop launcher would start it. Handing it our own environment made
+        the AppImage runtime stack a second mount point onto LD_LIBRARY_PATH
+        and XDG_DATA_DIRS and record the pair as the "original" value, so from
+        then on every launched program inherited the mount of an instance that
+        no longer existed (#49)."""
         tray = getattr(self, "_tray_proc", None)
         if tray is not None and tray.poll() is None:
             try:
@@ -2208,13 +2215,15 @@ class App(ctk.CTk):
                 except Exception:
                     pass
         appimg = os.environ.get("APPIMAGE", "")
+        from shared.macros import clean_child_env
+        env = clean_child_env()
         try:
             if appimg and os.path.isfile(appimg):
-                os.execv(appimg, [appimg])
+                os.execve(appimg, [appimg], env)
         except Exception:
             pass
         try:
-            subprocess.Popen([appimg] if appimg else [sys.executable])
+            subprocess.Popen([appimg] if appimg else [sys.executable], env=env)
         except Exception:
             pass
         self.destroy()
@@ -2380,9 +2389,13 @@ Categories=Utility;
             )
         print(f"Updated:   {AUTOSTART_FILE}")
 
-    # Refresh desktop cache so the launcher picks up the new .desktop immediately
+    # Refresh desktop cache so the launcher picks up the new .desktop immediately.
+    # A glib tool, so it gets the sanitised environment like every other system
+    # program we start. With our library paths it loads the bundled glib (#49).
     try:
+        from shared.macros import clean_child_env
         subprocess.run(["update-desktop-database", desktop_dir],
+                       env=clean_child_env(),
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except FileNotFoundError:
         pass

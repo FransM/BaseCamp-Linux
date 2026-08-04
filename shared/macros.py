@@ -4,6 +4,7 @@ Macros are sequences of actions (key press/release, delays, text, shell commands
 executed via xdotool (X11) or ydotool (Wayland).
 """
 import os
+import re
 import subprocess
 import sys
 import time
@@ -26,7 +27,19 @@ _FROZEN_ENV_VARS = (
     "FONTCONFIG_FILE", "FONTCONFIG_PATH",
     "TCL_LIBRARY", "TK_LIBRARY", "TKPATH",
     "SSL_CERT_FILE", "SSL_CERT_DIR",
+    # Set by PyInstaller's runtime hooks from inside Python rather than by the
+    # bootloader, so they never get an _ORIG partner and were missed by the
+    # name list until 3.0.5. GIO_MODULE_DIR is the one that breaks Plasma
+    # System Monitor: its process and application pages are GIO modules.
+    "PANGO_LIBDIR", "PANGO_SYSCONFDIR", "GIO_MODULE_DIR",
 )
+
+# A bundle announces itself by where it lives: AppImage type 2 mounts at
+# $TMPDIR/.mount_<name><random>, a onefile PyInstaller build unpacks to
+# $TMPDIR/_MEI<random>. Matching on the location rather than on a list of
+# variable names is what makes the sweep below hold for the next PyInstaller
+# release too, and for mount points that are not ours any more (see #49).
+_BUNDLE_DIR_RE = re.compile(r"/(?:\.mount_|_MEI)[^/]*(?:/|$)")
 
 # Vars that only describe our own bundle. They do not break the dynamic linker,
 # but they announce "you are running inside an AppImage" to every program we
@@ -34,6 +47,7 @@ _FROZEN_ENV_VARS = (
 # environment it would get from the desktop launcher. See GitHub issue #49.
 _BUNDLE_ID_VARS = (
     "APPDIR", "APPIMAGE", "APPIMAGE_UUID", "ARGV0", "OWD", "_MEIPASS2",
+    "BASECAMP_OVERLAY_VERSION",
 )
 
 # Vars systemd sets for the unit BaseCamp itself runs in (KDE autostart puts us
@@ -57,42 +71,79 @@ _SYSTEMD_UNIT_VARS = (
 )
 
 
+def _bundle_roots(env):
+    """Directories whose contents belong to this bundle rather than the system."""
+    roots = set()
+    appdir = env.get("APPDIR")
+    if appdir:
+        roots.add(appdir.rstrip("/"))
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.add(meipass.rstrip("/"))
+    if getattr(sys, "frozen", False):
+        roots.add(os.path.dirname(os.path.abspath(sys.executable)))
+    return roots
+
+
+def _strip_bundle_paths(value, roots):
+    """Drop the path elements of `value` that point into a bundle.
+
+    Returns the value unchanged when nothing matched, so a PATH keeps its exact
+    original spelling (an empty element means "current directory" and is not
+    ours to remove).
+    """
+    parts = value.split(os.pathsep)
+    kept = [p for p in parts
+            if not (p and (_BUNDLE_DIR_RE.search(p)
+                           or any(p == r or p.startswith(r + "/") for r in roots)))]
+    return value if len(kept) == len(parts) else os.pathsep.join(kept)
+
+
 def clean_child_env(env=None):
     """Return a copy of `env` (default os.environ) safe to hand to an external
     program, with the PyInstaller / AppImage library-path injection undone.
 
-    PyInstaller and AppRun save the pre-launch value of each injected var as
-    ``<VAR>_ORIG``; we restore that when present, otherwise drop the var so the
-    program falls back to the system libraries. AppImage mount paths are also
-    stripped from PATH / XDG_*_DIRS, the bundle-identity vars are removed, and
-    the systemd unit vars of our own service are dropped in every install kind.
+    Two passes. By name: the vars PyInstaller and AppRun inject are restored
+    from their ``<VAR>_ORIG`` partner where one exists, else dropped, so the
+    program falls back to the system libraries. Then by value: every remaining
+    variable loses the path elements that point into a bundle, and is dropped
+    when nothing is left. The second pass is the one that holds, because the
+    first depends on a list of names we maintain by hand and on _ORIG being
+    trustworthy, and neither survived contact with reality (#49): the runtime
+    hooks set PANGO_LIBDIR and GIO_MODULE_DIR without an _ORIG, and after an
+    in-app update restart the _ORIG of LD_LIBRARY_PATH is itself the previous
+    instance's mount point.
+
+    The bundle-identity vars are removed, and the systemd unit vars of our own
+    service are dropped in every install kind, frozen or not.
     """
     env = dict(os.environ if env is None else env)
     for var in _SYSTEMD_UNIT_VARS:
         env.pop(var, None)
     if not (getattr(sys, "frozen", False) or env.get("APPDIR") or env.get("APPIMAGE")):
         return env
+    roots = _bundle_roots(env)
     for var in _FROZEN_ENV_VARS:
-        orig = env.get(var + "_ORIG")
+        orig = env.pop(var + "_ORIG", "")
+        orig = _strip_bundle_paths(orig, roots) if orig else ""
         if orig:
             env[var] = orig
         else:
             env.pop(var, None)
-        env.pop(var + "_ORIG", None)
-    appdir = env.get("APPDIR")
-    if appdir:
-        for var in ("PATH", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS"):
-            val = env.get(var)
-            if not val:
-                continue
-            parts = [p for p in val.split(os.pathsep)
-                     if p and not p.startswith(appdir)]
-            if parts:
-                env[var] = os.pathsep.join(parts)
     for var in _BUNDLE_ID_VARS:
         env.pop(var, None)
     for var in [k for k in env if k.startswith("_PYI_")]:
         env.pop(var, None)
+    for var, val in list(env.items()):
+        if not val:
+            continue
+        cleaned = _strip_bundle_paths(val, roots)
+        if cleaned == val:
+            continue
+        if cleaned:
+            env[var] = cleaned
+        else:
+            env.pop(var, None)
     return env
 
 

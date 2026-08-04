@@ -14,12 +14,26 @@ except ImportError:
     BORDER = "#2a2a4a"
 
 
+def _system_env():
+    """Environment for a system tool, without our bundled library paths.
+
+    playerctl and pactl are glib / D-Bus programs. Started with the AppImage's
+    LD_LIBRARY_PATH they load our bundled glib instead of the system one, and
+    both of them just fail, so the plugin showed nothing at all in the AppImage
+    while it worked from source (#49)."""
+    try:
+        from shared.macros import clean_child_env
+        return clean_child_env()
+    except Exception:
+        return None
+
+
 def _playerctl(*args):
     """Run playerctl command, return stdout or empty string."""
     try:
         r = subprocess.run(
             ["playerctl"] + list(args),
-            capture_output=True, timeout=2,
+            capture_output=True, timeout=2, env=_system_env(),
             encoding="utf-8", errors="replace")
         return r.stdout.strip()
     except Exception:
@@ -31,7 +45,7 @@ def _pactl(*args):
     try:
         r = subprocess.run(
             ["pactl"] + list(args),
-            capture_output=True, timeout=2,
+            capture_output=True, timeout=2, env=_system_env(),
             encoding="utf-8", errors="replace")
         return r.stdout.strip()
     except Exception:
