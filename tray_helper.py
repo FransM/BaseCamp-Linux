@@ -76,6 +76,19 @@ def main():
         except (TypeError, ValueError):
             return []
 
+    def switch_to(name):
+        """Handler that puts the pad on `name`, one per page.
+
+        The page belongs in a closure, not in a third parameter with a default:
+        pystray counts a handler's parameters, defaults included, and refuses
+        anything above two. It raised while the icon was being docked, so from
+        3.0.0 until this fix a tray with a page submenu, which is every tray
+        that can reach the application, showed no icon at all.
+        """
+        def _switch(_icon, _item):
+            _ctl({"cmd": "dp_page", "page": name})
+        return _switch
+
     def on_open(icon, item):
         os.kill(main_pid, signal.SIGUSR1)
 
@@ -102,10 +115,13 @@ def main():
         # The page list is read when the menu is built, not when the tray
         # starts: pages are created and renamed while the app runs.
         def page_menu():
-            for _pid, name in dp_pages():
-                yield pystray.MenuItem(
-                    name,
-                    lambda _i, _it, n=name: _ctl({"cmd": "dp_page", "page": n}))
+            # Guarded: pystray builds this while it is docking the icon, and an
+            # exception in here took the whole tray icon down without a word.
+            try:
+                for _pid, name in dp_pages():
+                    yield pystray.MenuItem(name, switch_to(name))
+            except Exception as e:
+                print(f"[Tray] page menu: {type(e).__name__}: {e}", file=sys.stderr)
 
         items = [pystray.MenuItem(open_label, on_open, default=True)]
         if dp_pages():
