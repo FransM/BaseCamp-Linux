@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.0.8] - 2026-08-05
+
+- **A key that runs a macro says which macro.** Since 3.0 it showed `CTkComboBox`, the name of the widget itself, on both the Everest Max numpad keys and the DisplayPad keys. The dropdown asked the Macros screen for the names, and that screen is only built the first time it is opened, so on every start, which begins on a device screen, there were no names to be had and the widget kept its placeholder. The names now come from the saved macros while that screen does not exist, and with no macros at all the dropdown says so instead of leaving the placeholder on screen. The assignment itself was never affected: the key ran the macro it was set to the whole time.
+- **New screenshots in the README**, taken on 3.0 with all three devices attached. Every picture there still showed the pre-3.0 window with the tab bar.
+
 ## [3.0.7] - 2026-08-05
 
 - **The tray icon is back.** Since 3.0.0 there was no icon at all, so minimising the window put it out of reach and only the launcher brought it back. The page submenu added to the tray menu in 3.0.0 is the cause: its handlers carried the page name in a third parameter with a default value, and pystray counts a handler's parameters, defaults included, and refuses anything above two. It raised while the icon was being docked, inside the menu that is built lazily at that moment, so nothing was printed and the tray helper sat there running with no icon. Every tray that could reach the application was affected, which is every tray, since the submenu is only added when the page list can be read. The page now travels in a closure, and building the submenu can no longer take the icon down with it: a failure in there is reported and the icon keeps its other entries. Verified against the real AppImage, where the icon registers with the desktop again.
