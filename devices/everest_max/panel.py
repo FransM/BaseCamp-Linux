@@ -21,6 +21,7 @@ from shared.config import (
     _load_icon_last, _save_icon_last,
     _save_to_library, _save_to_main_library,
     _compute_lib_hash, _compute_main_lib_hash,
+    macro_names,
 )
 from shared.ui_helpers import (CardColumns,
     BG, BG2, BG3, FG, FG2, BLUE, YLW, GRN, RED, BORDER,
@@ -978,11 +979,11 @@ class EverestMaxPanel(ctk.CTkFrame):
         self._apply_btn(idx)
 
     def _populate_macro_combo(self, combo, current_uuid="", btn_idx=None):
-        macro_panel = getattr(self._app, "_macro_panel", None)
-        names = macro_panel.get_macro_names() if macro_panel else {}
+        names = self._macro_names()
         self._macro_uuid_list = list(names.keys())
         display = list(names.values())
-        combo.configure(values=display if display else [self.T("macro_none_available")])
+        none_available = self.T("macro_none_available")
+        combo.configure(values=display if display else [none_available])
         if current_uuid and current_uuid in names:
             combo.set(names[current_uuid])
         elif self._macro_uuid_list:
@@ -990,13 +991,21 @@ class EverestMaxPanel(ctk.CTkFrame):
             # Auto-set the first macro UUID so saving works immediately
             if btn_idx is not None:
                 self._btn_action[btn_idx].set(self._macro_uuid_list[0])
+        else:
+            # Say so, rather than leaving the widget's own placeholder on screen.
+            combo.set(none_available)
+
+    def _macro_names(self):
+        """{uuid: name}, from the Macros screen while it exists and from the
+        saved macros before it is first opened (see config.macro_names)."""
+        macro_panel = getattr(self._app, "_macro_panel", None)
+        if macro_panel is not None:
+            return macro_panel.get_macro_names()
+        return macro_names()
 
     def _on_macro_select(self, val, idx):
         # Use the parallel UUID list to resolve by position (handles duplicate names)
-        macro_panel = getattr(self._app, "_macro_panel", None)
-        if not macro_panel:
-            return
-        names = macro_panel.get_macro_names()
+        names = self._macro_names()
         display = list(names.values())
         uuids = list(names.keys())
         try:

@@ -40,6 +40,7 @@ from shared.config import (
     _load_displaypad_page_names, _save_displaypad_page_names,
     _create_displaypad_page, _rename_displaypad_page, _delete_displaypad_page,
     _load_displaypad_actions_dialog_size, _save_displaypad_actions_dialog_size,
+    macro_names,
 )
 
 # Set BASECAMP_PAGE_DEBUG=1 in the environment to trace page-switch/upload
@@ -2092,9 +2093,16 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             self._act_cmd[idx].set(f"scene:{val}")
         self._apply(idx)
 
-    def _populate_macro_combo(self, combo, current_uuid="", btn_idx=None):
+    def _macro_names(self):
+        """{uuid: name}, from the Macros screen while it exists and from the
+        saved macros before it is first opened (see config.macro_names)."""
         macro_panel = getattr(self._app, "_macro_panel", None)
-        names = macro_panel.get_macro_names() if macro_panel else {}
+        if macro_panel is not None:
+            return macro_panel.get_macro_names()
+        return macro_names()
+
+    def _populate_macro_combo(self, combo, current_uuid="", btn_idx=None):
+        names = self._macro_names()
         self._macro_uuid_list = list(names.keys())
         display = list(names.values())
         no_macros = self._app.T("macro_none_available")
@@ -2105,12 +2113,12 @@ class DisplayPadActionsDialog(ctk.CTkToplevel):
             combo.set(display[0])
             if btn_idx is not None:
                 self._act_cmd[btn_idx].set(self._macro_uuid_list[0])
+        else:
+            # Say so, rather than leaving the widget's own placeholder on screen.
+            combo.set(no_macros)
 
     def _on_macro_select(self, val, idx):
-        macro_panel = getattr(self._app, "_macro_panel", None)
-        if not macro_panel:
-            return
-        names = macro_panel.get_macro_names()
+        names = self._macro_names()
         display = list(names.values())
         uuids = list(names.keys())
         try:

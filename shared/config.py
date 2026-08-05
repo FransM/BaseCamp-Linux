@@ -1618,6 +1618,17 @@ def save_macros(data):
         json.dump(data, f, indent=2)
 
 
+def macro_names():
+    """{uuid: name} of every saved macro.
+
+    The panels that let a key run a macro used to ask the Macros screen for
+    this. Since 3.0 that screen is only built when it is first opened, so
+    before then there were no names at all and a key that runs a macro showed
+    the empty dropdown instead of the macro it is set to."""
+    macros = (load_macros() or {}).get("macros") or {}
+    return {uid: (m or {}).get("name", uid) for uid, m in macros.items()}
+
+
 # ── Window geometry ────────────────────────────────────────────────────────────
 
 def load_window_geometry():
