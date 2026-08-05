@@ -19,7 +19,7 @@ Mountain Base Camp is only available on Windows — this project brings full dev
 ## Screenshot
 
 <p align="center">
-  <img src="docs/gitgui.png" alt="BaseCamp Linux GUI" width="320"/>
+  <img src="docs/gitgui.png" alt="BaseCamp Linux GUI" width="900"/>
 </p>
 
 ---
@@ -27,21 +27,25 @@ Mountain Base Camp is only available on Windows — this project brings full dev
 ## DisplayPad
 
 <p align="center">
-  <img src="docs/Display.png" alt="DisplayPad — 12 Button Display" width="760"/>
+  <img src="docs/Display.png" alt="DisplayPad — 12 Button Display" width="900"/>
 </p>
 
 The DisplayPad screen provides full control over all 12 display buttons (102×102 pixels each) with image upload, animated GIF support, multi-page navigation and button actions. Pages are tabs along the top, the selected key is edited in the column on the right, and the row under the keys holds what belongs to the page itself: its name, its auto-timeout, and the minimum milliseconds per GIF frame.
 
 ### Button Images (K1–K12)
 
-- Assign individual images or animated GIFs to each of the 12 display buttons
+<p align="center">
+  <img src="docs/assignimages.png" alt="DisplayPad: Assign Images" width="720"/>
+</p>
+
+- Assign individual images or animated GIFs to each of the 12 display buttons, one key at a time on the screen or all twelve at once in **Assign images**
 - **Icon Library** with 39 bundled icons (Media, Social, System, Navigation, Numbers 1–12) plus all previously uploaded images — pick with one click instead of browsing the file system
 - Images are automatically resized and converted to the device's BGR format
 
 ### Fullscreen Image & GIF
 
 <p align="center">
-  <img src="docs/fullscreengifmode.png" alt="DisplayPad — Fullscreen GIF Mode" width="400"/>
+  <img src="docs/fullscreengifmode.png" alt="DisplayPad — Fullscreen GIF Mode" width="820"/>
 </p>
 
 Upload a single image or animated GIF that is **automatically split across all 12 displays** as one seamless picture — no manual tile preparation needed. The app handles splitting, resizing and frame synchronisation. Fullscreen images and GIFs are saved to a dedicated library for quick reuse.
@@ -69,7 +73,7 @@ Upload a single image or animated GIF that is **automatically split across all 1
 
 ### Drag & Drop
 
-You can drag a PNG, JPG, GIF or WebP straight from your file manager onto a button tile in the "Assign Images" window, which the **Fullscreen image** button in the header opens. The image is imported into the library and uploaded to the device, exactly as if you had clicked the slot and browsed for it.
+You can drag a PNG, JPG, GIF or WebP straight from your file manager onto a button tile in the "Assign Images" window, which the **Assign images** button in the header opens. The image is imported into the library and uploaded to the device, exactly as if you had clicked the slot and browsed for it.
 
 ### Icon Rotation
 
@@ -86,14 +90,14 @@ Next to the rotation dropdown in the panel header sit two more: **☀ brightness
 ## Macros
 
 <p align="center">
-  <img src="docs/macros.png" alt="Macro Editor" width="320"/>
+  <img src="docs/macros.png" alt="Macro Editor" width="860"/>
 </p>
 
 Create custom macros and assign them to any button on your keyboard (D1–D4) or DisplayPad (K1–K12). Macros are software-executed sequences of actions that run when the assigned button is pressed.
 
 ### Macro Editor
 
-Open the **Macros** tab in the switcher bar to create and manage macros.
+Open **Macros** under Tools in the sidebar to create and manage macros.
 
 - **Create / Delete / Duplicate** macros — each macro has a unique name (auto-numbered: Macro, Macro 1, Macro 2, …)
 - **Reorder actions** with the ▲ / ▼ buttons, delete with ✕
@@ -165,11 +169,11 @@ The app auto-detects which tool is available and uses it. If neither is installe
 
 ## OBS Studio — Global Integration
 
-OBS connection settings are managed in a dedicated **OBS Studio tab** — separate from any device panel. Once connected, OBS actions (Scene switch, Record, Stream) are available as an action type on **all devices**: D1–D4 (Keyboard) and K1–K12 (DisplayPad).
+OBS connection settings live on their own **OBS Studio** screen, reached from the sidebar and separate from any device panel. Once connected, OBS actions (Scene switch, Record, Stream) are available as an action type on **all devices**: D1–D4 (Keyboard) and K1–K12 (DisplayPad).
 
 - Host, Port, Password configuration
 - Connect & Load Scenes / Disconnect
-- OBS switcher button turns **green** when connected (visible from any tab)
+- The OBS entry in the sidebar turns **green** when connected, whichever screen you are on
 - Scene list auto-populated after connecting
 
 ---
@@ -180,7 +184,7 @@ BaseCamp Linux has a **plugin system** that lets you extend the app without modi
 
 ### What plugins can do
 
-- **Panel plugins** — Add a new tab to the switcher bar with custom GUI content
+- **Panel plugins** — Add a screen of their own to the sidebar with custom GUI content
 - **Action plugins** — Register new button action types for DisplayPad (K1-K12) and Everest Max (D1-D4)
 - **Service plugins** — Run background tasks that start with the app and stop on shutdown
 - **DisplayPad widgets** — Render live images onto DisplayPad buttons (e.g. live data, status indicators)
@@ -347,10 +351,10 @@ The Everest 60 panel provides RGB lighting control for the Mountain Everest 60 (
 ## Mouse — Makalu 67 / Makalu Max
 
 <p align="center">
-  <img src="docs/gitguiMouse.png" alt="BaseCamp Linux — Mouse Panel" width="320"/>
+  <img src="docs/gitguiMouse.png" alt="BaseCamp Linux — Mouse Panel" width="860"/>
 </p>
 
-The mouse panel supports both the **Makalu 67** (PID `0x0003`) and **Makalu Max** (PID `0x0002`). The app detects which mouse is connected and shows the model name in the switcher button and panel header. The Makalu Max supports 8 programmable buttons (vs 6 on the Makalu 67). All settings save to mouse flash and persist across reboots.
+The mouse panel supports both the **Makalu 67** (PID `0x0003`) and **Makalu Max** (PID `0x0002`). The app detects which mouse is connected and shows the model name in the sidebar and the screen header. The Makalu Max supports 8 programmable buttons (vs 6 on the Makalu 67). All settings save to mouse flash and persist across reboots.
 
 ### RGB Lighting
 
@@ -364,7 +368,7 @@ The mouse panel supports both the **Makalu 67** (PID `0x0003`) and **Makalu Max*
 ### Custom RGB
 
 <p align="center">
-  <img src="docs/customrgbMouse.png" alt="BaseCamp Linux — Mouse Custom RGB Editor" width="600"/>
+  <img src="docs/customrgbMouse.png" alt="BaseCamp Linux — Mouse Custom RGB Editor" width="820"/>
 </p>
 
 Click **Open Key Color Editor** to open the per-LED editor. The Makalu 67 has 8 individually addressable LEDs arranged in a large ring on top of the mouse.
@@ -402,7 +406,7 @@ Click **Open Key Color Editor** to open the per-LED editor. The Makalu 67 has 8 
 ## Custom RGB Mode — Keyboard
 
 <p align="center">
-  <img src="docs/customrgb.png" alt="Custom RGB Mode Editor" width="600"/>
+  <img src="docs/customrgb.png" alt="Custom RGB Mode Editor" width="900"/>
 </p>
 
 Click **Open Key Color Editor** in the Custom RGB Mode section to open the editor.
@@ -450,7 +454,7 @@ A built-in **Synthwave** preset is included as a starting point.
 ### Upload Images
 
 <p align="center">
-  <img src="docs/multiupload.png" alt="Upload Images Dialog" width="400"/>
+  <img src="docs/multiupload.png" alt="Upload Images Dialog" width="620"/>
 </p>
 
 Click **Upload Images** in the Numpad Keys section to open the multi-upload dialog.
@@ -470,7 +474,7 @@ The last image used per slot is remembered and shown as the tile preview next ti
 ### Image Library
 
 <p align="center">
-  <img src="docs/iconlibrary.png" alt="Image Library" width="320"/>
+  <img src="docs/iconlibrary.png" alt="Image Library" width="340"/>
 </p>
 
 Every image you upload to D1–D4 or the main display is automatically saved to a local library (`~/.config/mountain-time-sync/icon_library/`). The library opens whenever you click a tile or the individual upload button.
