@@ -393,6 +393,16 @@ icon. Find your keys the way the shipped plugins do, by walking
 `ctx.get_displaypad_actions()` for your own type, and this never gets in your
 way.
 
+**A frame is never stored as the key's icon.** Several plugins write their
+frame into the panel's image maps as well, so that the key grid in the app and
+a full page re-upload show the widget rather than the icon underneath it. That
+still works, but those maps are also what the app saves, so such a frame used
+to end up in `displaypad_pages/*.json` as the key's icon and outlive the plugin
+that drew it: the pad then showed a stopped widget's last picture on a key that
+had been given to something else entirely (#69). The panel now keeps every
+frame it is handed out of what it stores, and the key keeps the icon it was
+given.
+
 **Tips:**
 - Only re-upload when content actually changes (not every poll cycle) --
   each upload takes ~200ms of USB time

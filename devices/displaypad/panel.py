@@ -906,21 +906,15 @@ class DisplayPadImageDialog(ctk.CTkToplevel):
             return
         # Replace with blank placeholder so the device gets the new image on next upload
         self._panel._images[str(idx)] = self._panel._blank_icon
+        self._panel._take_key_back(self._panel._current_page, idx)
         self._panel._gif_frames.pop(idx, None)
         self._panel._gui_frames_sm.pop(idx, None)
         self._panel._fullscreen_group.discard(idx)
-        # self._panel._images is the *live* map for whichever page is currently
-        # showing — it is NOT necessarily Main's. _save_displaypad_buttons()
-        # always writes to page 0's stored "buttons", so calling it unconditionally
-        # here clobbered Main's saved images whenever a slot was cleared on a
-        # sub-page. Mirror the branch already used by _save_page_action() /
-        # DisplayPadPanel._clear_all(): save Main directly, or sync the current
-        # page's live images into _page_images and persist all sub-pages.
-        if self._panel._current_page == 0:
-            _save_displaypad_buttons(self._panel._images)
-        else:
-            self._panel._page_images[self._panel._current_page] = dict(self._panel._images)
-            self._panel._save_sub_pages()
+        # Through _persist_images(), because _save_displaypad_buttons() always
+        # writes page 0's stored "buttons": calling it unconditionally here
+        # clobbered Main's saved images whenever a slot was cleared on a
+        # sub-page.
+        self._panel._persist_images()
         self._dlg_frames.pop(idx, None)
         ph = _make_placeholder(_DIALOG_TILE)
         self._tile_imgs[idx] = ph
@@ -2384,6 +2378,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         self._min_frame_ms     = 50
         self._dialog_win       = None
         self._upload_queue     = queue.Queue()
+        self._plugin_frame_keys = {}     # page -> {key idx} currently showing a
+                                          # plugin's live frame instead of the
+                                          # key's icon (see _persistable_images)
         self._fullscreen_group = set()   # key indices that form a synced fullscreen GIF
         self._rotation         = _load_displaypad_rotation()
         self._brightness       = _load_displaypad_brightness()
@@ -3263,6 +3260,9 @@ class DisplayPadPanel(ctk.CTkFrame):
         stored = self._page_images.get(page, {})
         for i, act in enumerate(self._page_actions.get(page, _DEFAULT_ACTIONS)):
             t = act.get("type")
+            if t in ("page", "back"):
+                # This key navigates, so it is ours to draw, not a plugin's.
+                self._take_key_back(page, i)
             if t == "page":
                 custom = act.get("icon")
                 user_img = stored.get(str(i), "")
@@ -3460,10 +3460,11 @@ class DisplayPadPanel(ctk.CTkFrame):
 
         # ── Persist ───────────────────────────────────────────────────────────
         if is_current:
-            self._page_images[page] = dict(self._images)
+            self._sync_live_images(page)
         if page == 0:
             _save_displaypad_actions(actions)
-            _save_displaypad_buttons(self._page_images.get(0, {}))
+            _save_displaypad_buttons(
+                self._persistable_images(0, self._page_images.get(0, {})))
         else:
             self._save_sub_pages()
 
@@ -3496,6 +3497,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         except Exception:
             return
         self._page_images.setdefault(page, {})[str(idx)] = icon_path
+        self._take_key_back(page, idx)
         if page == self._current_page:
             self._images[str(idx)] = icon_path
             # The main-page branch of _save_page_action already refreshes and
@@ -3505,6 +3507,80 @@ class DisplayPadPanel(ctk.CTkFrame):
                     self._refresh_panel_tile(idx)
                 if not self._uploading and not self._animating:
                     self.after(200, self._start_upload)
+
+    # ── Plugin frames are not key icons ───────────────────────────────────────
+    # A plugin paints a key by writing its frame straight into the live image
+    # map (that is how the panel tile and a full page upload pick it up) and
+    # into page 0's map, then calling push_plugin_image(). Those two maps are
+    # also what we persist, so a frame written a moment after a page switch
+    # became the stored icon of whatever key sat there on the new page, and a
+    # plugin running on a sub-page overwrote Main's icon for its key index.
+    # Both survived the plugin being stopped, because by then they were in
+    # displaypad_pages/*.json (#69/#70). A frame is a picture on the device,
+    # not a key's icon: it is kept out of everything we store, and the key
+    # keeps whatever icon it was given.
+
+    def _mark_plugin_frame(self, idx):
+        """Note that key `idx` now shows a plugin frame rather than its icon.
+        Both maps a plugin writes are marked: the live one, which belongs to
+        the page that is up right now, and Main's, which they write directly."""
+        for page in (self._current_page, 0):
+            self._plugin_frame_keys.setdefault(page, set()).add(int(idx))
+
+    def _take_key_back(self, page, idx):
+        """The panel itself assigned this key's image, so it is an icon again
+        and gets stored like any other."""
+        keys = self._plugin_frame_keys.get(page)
+        if keys:
+            keys.discard(int(idx))
+
+    def _icons_restored(self, page, live, keep=()):
+        """`live` with every plugin frame replaced by the icon that key
+        actually carries, except on the keys in `keep`.
+
+        The stored config is where that icon comes from: it is the one record
+        of it a frame cannot have overwritten, since this is the only place
+        that writes it and every panel-side assignment takes the key back
+        first."""
+        imgs = dict(live)
+        marked = self._plugin_frame_keys.get(page, set()) - set(keep)
+        if not marked:
+            return imgs
+        if page == 0:
+            stored = _load_displaypad_buttons()
+        else:
+            stored = _load_displaypad_pages().get(str(page), {}).get("buttons") or {}
+        for idx in marked:
+            k = str(idx)
+            if k in stored:
+                imgs[k] = stored[k]
+            else:
+                imgs.pop(k, None)
+        return imgs
+
+    def _persistable_images(self, page, live=None):
+        """The map to store for `page` (the current page's live map by
+        default). Nothing a plugin painted goes in: the config records what a
+        key carries, and a widget frame is a picture on the device."""
+        return self._icons_restored(page, self._images if live is None else live)
+
+    def _images_for_page(self, page):
+        """The map to put on screen for `page`, from what we hold for it.
+
+        A frame is kept on the keys this page gives to a plugin, where the
+        widget belongs and where dropping it would flash the static icon
+        between the switch and the plugin's next frame. On every other key it
+        is somebody else's picture and the key gets its icon back."""
+        live = self._page_images.get(page, {})
+        owned = self._plugin_key_slots()
+        if owned is None:
+            return dict(live)   # cannot tell whose key is whose, leave it alone
+        return self._icons_restored(page, live, keep=owned)
+
+    def _sync_live_images(self, page=None):
+        """Copy the live map into the page's stored map, frames excluded."""
+        page = self._current_page if page is None else page
+        self._page_images[page] = self._persistable_images(page)
 
     def _save_sub_pages(self):
         """Persist every non-main page to displaypad_pages.json. Page ids are no
@@ -3516,7 +3592,7 @@ class DisplayPadPanel(ctk.CTkFrame):
                 continue
             out[str(p)] = {
                 "v": 2,   # page-model version — >=2 means don't re-derive back (#30)
-                "buttons": self._page_images.get(p, {}),
+                "buttons": self._persistable_images(p, self._page_images.get(p, {})),
                 "actions": self._page_actions.get(p, [dict(a) for a in _DEFAULT_ACTIONS]),
                 "fullscreen": self._page_fullscreen.get(p),
             }
@@ -3589,7 +3665,7 @@ class DisplayPadPanel(ctk.CTkFrame):
             _dbg(f"[DBG switch] {old_page} -> {page_num} | old_page was deleted, not saving its state")
         else:
             self._prev_page = old_page   # 'previous page' timeout target (#45)
-            self._page_images[old_page] = dict(self._images)
+            self._sync_live_images(old_page)
             self._page_gif_frames[old_page] = dict(self._gif_frames)
             self._page_gui_frames[old_page] = dict(self._gui_frames_sm)
             if self._fullscreen_group:
@@ -3615,7 +3691,7 @@ class DisplayPadPanel(ctk.CTkFrame):
               f"page_images[{page_num}]={self._page_images.get(page_num)}")
 
         # Load new page
-        self._images = dict(self._page_images.get(page_num, {}))
+        self._images = self._images_for_page(page_num)
         _dbg(f"[DBG switch] loaded self._images for page {page_num} = {self._images}")
         self._gif_frames = {}
         self._gui_frames_sm = {}
@@ -4116,13 +4192,8 @@ class DisplayPadPanel(ctk.CTkFrame):
 
     def _set_button_image(self, key_index, path):
         self._images[str(key_index)] = path
-        # Same page-agnostic-map issue as _clear_slot: self._images is the live
-        # map for whichever page is currently showing, not necessarily Main.
-        if self._current_page == 0:
-            _save_displaypad_buttons(self._images)
-        else:
-            self._page_images[self._current_page] = dict(self._images)
-            self._save_sub_pages()
+        self._take_key_back(self._current_page, key_index)
+        self._persist_images()
         frames = _load_gif_frames(path) if path.lower().endswith('.gif') else None
         if frames:
             self._gif_frames[key_index] = frames
@@ -4235,11 +4306,14 @@ class DisplayPadPanel(ctk.CTkFrame):
         return True
 
     def _persist_images(self):
-        """Write the current page's images where that page keeps them."""
+        """Write the current page's images where that page keeps them.
+
+        self._images is the live map of whichever page is showing, not
+        necessarily Main's, so which file it goes to depends on the page."""
         if self._current_page == 0:
-            _save_displaypad_buttons(self._images)
+            _save_displaypad_buttons(self._persistable_images(0))
         else:
-            self._page_images[self._current_page] = dict(self._images)
+            self._sync_live_images()
             self._save_sub_pages()
 
     def _clear_slot(self, idx):
@@ -4247,6 +4321,7 @@ class DisplayPadPanel(ctk.CTkFrame):
         if idx is None:
             return
         self._images[str(idx)] = self._blank_icon
+        self._take_key_back(self._current_page, idx)
         self._gif_frames.pop(idx, None)
         self._fullscreen_group.discard(idx)
         self._persist_images()
@@ -4303,6 +4378,8 @@ class DisplayPadPanel(ctk.CTkFrame):
                     kept_page_actions[i] = dict(act)
         self._images = {str(i): self._blank_icon for i in range(NUM_KEYS)}
         self._images.update(page_btns)
+        # Every key on this page is ours again, whatever a plugin was painting.
+        self._plugin_frame_keys.pop(self._current_page, None)
         self._gif_frames = {}
         self._gui_frames_sm = {}
         self._gui_fidx = {}
@@ -4707,6 +4784,10 @@ class DisplayPadPanel(ctk.CTkFrame):
         """
         if not (0 <= key_index <= 11):
             return
+        # Plugins put their frame into the image maps themselves so the panel
+        # tile and a full page upload show it. Note the key, so the frame stays
+        # out of the config and does not become that key's icon (#69).
+        self._mark_plugin_frame(key_index)
         _dbg(f"[DBG push_plugin_image] key={key_index} current_page={self._current_page}")
         img = pil_image.convert("RGB").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
         rot = self._rotation
