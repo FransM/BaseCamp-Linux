@@ -23,6 +23,14 @@ from shared.ui.widgets import (
     bind_dropdown_autoclose,
     ConfirmDialog, PromptDialog, ask_yes_no, ask_text, show_error,
 )
+from shared.ui.dropdown import (
+    InlineDropdown, InlineMenu, install_inline_dropdown,
+)
+
+# Every option menu and combo box in the application opens its list inside the
+# window from here on (#66). Done once, at import, so a panel does not have to
+# ask for it and one added later is covered as well.
+install_inline_dropdown()
 
 __all__ = [
     "tokens",
@@ -34,5 +42,6 @@ __all__ = [
     "PrimaryButton", "GhostButton", "DangerButton",
     "StatusDot", "StatusPill", "Field", "Toast", "resolve_t",
     "bind_dropdown_autoclose",
+    "InlineDropdown", "InlineMenu", "install_inline_dropdown",
     "ConfirmDialog", "PromptDialog", "ask_yes_no", "ask_text", "show_error",
 ]

@@ -14,6 +14,7 @@ import shared.ui as _ui
 from PIL import Image, ImageTk, ImageEnhance
 
 from shared.ui.widgets import resolve_t
+from shared.ui.dropdown import InlineMenu
 from shared.config import (
     ICON_LIBRARY_DIR, MAIN_LIBRARY_DIR,
     DISPLAYPAD_LIBRARY_DIR, DISPLAYPAD_FS_LIBRARY_DIR,
@@ -322,21 +323,19 @@ def attach_clipboard_menu(widget, T=None):
             pass
         return "break"
 
-    menu = tk.Menu(inner, tearoff=0,
-                   bg=BG2, fg=FG, activebackground=BLUE, activeforeground=FG,
-                   borderwidth=0)
-    menu.add_command(label=_tr("Cut",        "clipboard_cut"),    command=_cut)
-    menu.add_command(label=_tr("Copy",       "clipboard_copy"),   command=_copy)
-    menu.add_command(label=_tr("Paste",      "clipboard_paste"),  command=_paste)
-    menu.add_separator()
-    menu.add_command(label=_tr("Select All", "clipboard_select_all"), command=_select_all)
+    # Not a tk.Menu: it would take a global grab and stay over whatever the
+    # user switches to, which is the dropdown's problem in an entry field
+    # (#66). InlineMenu is the same list the dropdowns use. One per widget,
+    # with the labels rebuilt on every open so a language change is picked up.
+    menu = InlineMenu(inner, [])
 
     def _popup(event):
-        try:
-            inner.focus_set()
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+        menu.set_items([(_tr("Cut",        "clipboard_cut"),        _cut),
+                        (_tr("Copy",       "clipboard_copy"),       _copy),
+                        (_tr("Paste",      "clipboard_paste"),      _paste),
+                        (_tr("Select All", "clipboard_select_all"), _select_all)])
+        inner.focus_set()
+        menu.open(event.x_root, event.y_root)
 
     inner.bind("<Button-3>", _popup, add="+")
     # Reliable Ctrl-key bindings (override Tk defaults so they always hit CLIPBOARD)

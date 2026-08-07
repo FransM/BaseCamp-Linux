@@ -37,16 +37,23 @@ def resolve_t(widget):
 # ── Dropdown behaviour ────────────────────────────────────────────────────────
 
 def bind_dropdown_autoclose(toplevel):
-    """Close an open option-menu popup when the focus leaves the application.
+    """Close an open Tk menu when the focus leaves the application.
 
-    This only helps where the popup is told that the focus left, which is not
+    The dropdowns do not use a Tk menu any more, they use the list in
+    shared.ui.dropdown, so this is the safety net for the one case where that
+    list could not be installed: CustomTkinter renames the class it is put in
+    place of, install_inline_dropdown() declines, and the widgets fall back to
+    posting a menu. It is left in place for that path, and for a plugin that
+    posts a menu of its own.
+
+    It only helps where the popup is told that the focus left, which is not
     everywhere. Measured under Wayland (XWayland, KWin): a posted popup holds a
     *global* grab, the compositor still activates the other application, and
     nothing in this process is notified. No FocusOut, no Deactivate, no pointer
     event. The popup therefore stays painted over the other application and
-    there is no event left to hang a fix on (#66). A popup drawn inside our own
+    there is no event left to hang a fix on (#66). A list drawn inside our own
     window instead of in a separate override-redirect window is the only real
-    cure, and that means replacing the widget, not binding an event.
+    cure, which is what the dropdowns do now.
 
     Two earlier attempts are worth not repeating. Binding the window's own
     <FocusOut> breaks opening a dropdown at all: the popup takes the focus, so
