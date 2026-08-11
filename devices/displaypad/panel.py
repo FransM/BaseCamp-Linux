@@ -2843,6 +2843,12 @@ class DisplayPadPanel(ctk.CTkFrame):
         if btype == "_separator":
             self._load_inspector()
             return
+        # A value belongs to the type it was typed for: "F6" means nothing once
+        # the key becomes a clock, and the old value was being saved under the
+        # new type rather than just displayed (#84). The actions dialog has
+        # cleared it since #9; this is the same rule for the inspector.
+        if btype != self._get_action_dict(self._selected_key).get("type", "none"):
+            self._insp_value_var.set("")
         self._apply_inspector_type(btype)
         self._save_inspector(btype)
 
@@ -3482,6 +3488,34 @@ class DisplayPadPanel(ctk.CTkFrame):
                 self._refresh_panel_tile(idx)
             if not self._uploading and not self._animating:
                 self.after(200, self._start_upload)
+        self._sync_editors(page)
+
+    def _sync_editors(self, page):
+        """Show the stored action in the editor that did not just write it.
+
+        The key inspector beside the grid and the actions dialog are two views
+        of the same action and both save through _save_page_action, so neither
+        noticed the other's edits and whichever you looked at second was wrong
+        (#84). This is the one place both go through, so it is the one place
+        that can keep them agreeing.
+        """
+        if page != self._current_page or getattr(self, "_syncing_editors", False):
+            return
+        self._syncing_editors = True
+        try:
+            dlg = getattr(self, "_actions_dialog_win", None)
+            try:
+                if dlg is not None and dlg.winfo_exists():
+                    dlg._load_page(dlg._page)
+            except Exception:
+                pass
+            try:
+                if self._tile_lbls and self._selected_key is not None:
+                    self._load_inspector()
+            except Exception:
+                pass
+        finally:
+            self._syncing_editors = False
 
     def _maybe_auto_label_icon(self, page, idx, btype, action):
         """Render and assign a text label icon for keypress/text keys (issue
@@ -4994,9 +5028,13 @@ class DisplayPadPanel(ctk.CTkFrame):
             return None
         if not types:
             return None
-        actions = self._page_actions.get(self._current_page)
-        if not actions:
-            return None
+        if self._current_page not in self._page_actions:
+            return None      # nothing known about this page, so do not filter
+        actions = self._page_actions[self._current_page]
+        # An empty action list is knowledge, not ignorance: a page where
+        # nothing is assigned is exactly the page on which no plugin frame
+        # belongs. Treating it like "cannot be established" turned the guard
+        # off on the page that needed it most (#70, #82).
         return {i for i, a in enumerate(actions)
                 if isinstance(a, dict) and a.get("type") in types}
 

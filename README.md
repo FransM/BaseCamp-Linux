@@ -4,6 +4,31 @@
 
 # BaseCamp Linux
 
+> [!IMPORTANT]
+> ### Do you own a Mountain MacroPad? Five minutes of yours would finish the driver.
+>
+> The MacroPad is the 12 key pad with M1 to M12 keycaps and per-key RGB, the one
+> without displays. Its protocol is reverse engineered and implemented: lighting,
+> profiles, key remapping, shortcuts. One piece cannot be worked out from the
+> Windows software, and nobody on this project owns the hardware to measure it:
+> **the exact report the pad sends when you press a key.**
+>
+> If you have one, run this and attach the file it writes to
+> [issue #85](https://github.com/ramisotti13-eng/BaseCamp-Linux/issues/85):
+>
+> ```bash
+> curl -O https://raw.githubusercontent.com/ramisotti13-eng/BaseCamp-Linux/main/tools/macropad_probe.py
+> python3 macropad_probe.py
+> ```
+>
+> It reads and does not write: no flash, no key bindings, no firmware, nothing
+> saved on the device. It lists the interfaces, sends the handshake, then asks you
+> to press M1 to M12 one at a time and records the raw reports into a json file.
+> Takes about five minutes. The lighting test is opt-in with `--lighting` and is
+> gone when you unplug the pad.
+>
+> With that file, MacroPad support ships in the release after this one.
+
 **Unofficial Linux companion app for Mountain peripherals.**
 
 Mountain Base Camp is only available on Windows. This project brings full device control for the **Everest Max keyboard**, **Everest 60 keyboard**, **Makalu 67 mouse**, **Makalu Max mouse** and **DisplayPad** to Linux: display control, RGB lighting, button actions, monitor metrics, DPI, button remapping, multi-page display management and OBS integration.

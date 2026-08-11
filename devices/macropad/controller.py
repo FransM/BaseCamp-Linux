@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+"""
+Mountain MacroPad Controller
+VID: 0x3282, PID: 0x0008
+12 mechanical keys (M1-M12) with per-key RGB. No displays.
+
+Protocol: vendor HID collection (Usage Page 0xFF00, Usage 0x01).
+Reports are 64 payload bytes plus a leading Report ID 0x00, so 65 bytes go
+into hid.Device.write(), exactly like the DisplayPad command interface.
+
+Reverse-engineered on 2026-08-11 from Mountain Base Camp for Windows
+(MacroPadSDK.dll disassembly plus the BaseCamp.Service.exe decompile).
+Full write-up: protocol/macropad_protocol.md.
+
+How much of this is trustworthy: the same static analysis run against
+DisplayPadSDK.dll reproduces, byte for byte, the two commands our working
+DisplayPad driver sends to real hardware (APEnable = 11 80 00 00 01 and
+SetMainBrightness = 12 03 00 00 <percent>), and reads back the correct PIDs
+for the DisplayPad and the Everest. So the method is sound. What is NOT
+verified is this device: nobody on the team owns a MacroPad. Every packet
+below is built from the SDK, not from a capture.
+
+The one genuine gap is the key event input report. The SDK hands key presses
+to a callback as (matrix, pressed) after decoding them inside a HID helper
+class that could not be read statically. decode_key_event() below implements
+the DisplayPad format as a hypothesis and says so. tools/macropad_probe.py
+exists to collect that missing piece from someone who owns the device.
+
+Command summary (payload offsets, Report ID not counted):
+
+  11 80  [4]=1                       AP enable, the INIT handshake
+  11 00                              firmware info
+  11 12                              firmware layout / version
+  12 02 / 12 03                      main LED off / on
+  13 55  [4]=slot                    save current state to flash
+  13 60 / 13 61                      reset key bindings / reset effects
+  14 00  [4]=profile 1-5 [5]=slot    switch profile
+  14 20  [2:4]=src [4:6]=target      remap a key
+  14 21  [2:4]=src [4]=key [5]=mods  assign a shortcut
+  14 2C  [2:64]=EffData              lighting effect (62 byte struct)
+  14 2C 00 01 [4]=chunk [5]=4B       per-key static colours at offset 7
+
+Acknowledgement: response[0] == 0xFF and response[1] == 0xAA, except for
+commands that echo their own arguments instead (switch_profile does).
+"""
+import time
+
+try:
+    import hid
+    HID_AVAILABLE = True
+except ImportError:
+    HID_AVAILABLE = False
+
+VID = 0x3282
+PID = 0x0008
+
+# The SDK finds the device by HID usage rather than by interface number, so we
+# do the same. Which interface that lands on is not known without hardware;
+# find_path() falls back to trying every interface when hidapi does not report
+# usage information (older builds return 0 for both fields on Linux).
+USAGE_PAGE = 0xFF00
+USAGE = 0x01
+
+PAYLOAD_LEN = 64
+NUM_KEYS = 12
+NUM_PROFILES = 5          # FW_NUM_PROFILE
+NUM_EFFECT_SLOTS = 9      # FW_EFF_MENU_NUM
+
+DEFAULT_TIMEOUT_MS = 500   # what the SDK waits for a reply
+PROFILE_TIMEOUT_MS = 950   # switch_profile is slower
+
+# ── Effect codes (EFF_INDEX, these are the wire values) ───────────────────────
+
+EFFECT_STATIC     = 0
+EFFECT_BREATHING  = 1
+EFFECT_REACTIVE_A = 3
+EFFECT_WAVE       = 4
+EFFECT_REACTIVE_B = 5
+EFFECT_YETI       = 6
+EFFECT_TORNADO    = 7
+EFFECT_MATRIX     = 9
+EFFECT_CUSTOM     = 10
+EFFECT_REACTIVE_C = 11
+EFFECT_OFF        = 12
+
+# Ordered for a UI: value, translation key. The names are the ones Base Camp
+# uses; the reactive variants are three separate firmware effects.
+EFFECTS = [
+    (EFFECT_STATIC,     "static"),
+    (EFFECT_BREATHING,  "breathing"),
+    (EFFECT_WAVE,       "wave"),
+    (EFFECT_TORNADO,    "tornado"),
+    (EFFECT_MATRIX,     "matrix"),
+    (EFFECT_YETI,       "yeti"),
+    (EFFECT_REACTIVE_A, "reactive_a"),
+    (EFFECT_REACTIVE_B, "reactive_b"),
+    (EFFECT_REACTIVE_C, "reactive_c"),
+    (EFFECT_CUSTOM,     "custom"),
+    (EFFECT_OFF,        "off"),
+]
+
+# byRandColor: how the colour fields are read by the firmware.
+COLOR_SINGLE = 0    # colorLv[0] only
+COLOR_DUAL   = 16   # colorLv[0] and colorLv[1]
+COLOR_RANDOM = 2    # firmware picks, colour fields ignored
+
+# The Windows UI leaves these two at 0xFF for every effect this device has;
+# they belong to the shared SDK struct and are used by the Everest keyboards.
+UNUSED = 0xFF
+
+# Lighting defaults straight out of the Base Camp data model (Lighting.cs),
+# which also tells us the units: both are percentages, 0-100.
+DEFAULT_SPEED = 60
+DEFAULT_BRIGHTNESS = 75
+
+
+# ── Packet builders ───────────────────────────────────────────────────────────
+#
+# Pure functions returning the 64 byte payload. They are separated from the I/O
+# so they can be checked without a device; tools/test_macropad_protocol.py
+# asserts them against the bytes documented above.
+
+def _pkt(fill=0x00):
+    return bytearray([fill]) * PAYLOAD_LEN
+
+
+def _clamp(value, low, high):
+    return max(low, min(high, int(value)))
+
+
+def _rgb(color):
+    r, g, b = color
+    return (r & 0xFF, g & 0xFF, b & 0xFF)
+
+
+def pkt_init(enable=True):
+    """AP enable. Base Camp sends this once after opening the device.
+
+    This is the same handshake our DisplayPad driver calls INIT_MSG, where it
+    is answered with an echo of the first five bytes."""
+    p = _pkt()
+    p[0] = 0x11
+    p[1] = 0x80
+    p[4] = 1 if enable else 0
+    return bytes(p)
+
+
+def pkt_firmware_info():
+    p = _pkt()
+    p[0] = 0x11
+    p[1] = 0x00
+    return bytes(p)
+
+
+def pkt_firmware_layout():
+    p = _pkt()
+    p[0] = 0x11
+    p[1] = 0x12
+    return bytes(p)
+
+
+def pkt_led(on):
+    """Master backlight on/off. Unlike the DisplayPad this carries no
+    percentage; per-effect brightness lives in the effect packet."""
+    p = _pkt()
+    p[0] = 0x12
+    p[1] = 0x03 if on else 0x02
+    return bytes(p)
+
+
+def pkt_switch_profile(profile, slot=0):
+    """Profile is 1-5, slot is the effect slot 0-8. The SDK rejects anything
+    outside those ranges before it ever builds a packet, so we do too."""
+    if not 1 <= int(profile) <= NUM_PROFILES:
+        raise ValueError("profile must be 1..%d" % NUM_PROFILES)
+    if not 0 <= int(slot) < NUM_EFFECT_SLOTS:
+        raise ValueError("slot must be 0..%d" % (NUM_EFFECT_SLOTS - 1))
+    p = _pkt()
+    p[0] = 0x14
+    p[1] = 0x00
+    p[4] = int(profile)
+    p[5] = int(slot)
+    return bytes(p)
+
+
+def pkt_save(slot=0):
+    """Persist the current effect slot to flash. Everything set without this
+    is lost on replug."""
+    if not 0 <= int(slot) < NUM_EFFECT_SLOTS:
+        raise ValueError("slot must be 0..%d" % (NUM_EFFECT_SLOTS - 1))
+    p = _pkt()
+    p[0] = 0x13
+    p[1] = 0x55
+    p[4] = int(slot)
+    return bytes(p)
+
+
+def pkt_reset_keys():
+    p = _pkt()
+    p[0] = 0x13
+    p[1] = 0x60
+    return bytes(p)
+
+
+def pkt_reset_effects():
+    p = _pkt()
+    p[0] = 0x13
+    p[1] = 0x61
+    return bytes(p)
+
+
+def pkt_effect(effect, brightness=DEFAULT_BRIGHTNESS, speed=DEFAULT_SPEED,
+               color1=(255, 255, 255), color2=None, background=None,
+               color_mode=None, all_keys=0):
+    """Lighting effect: 14 2C followed by the 62 byte EffData struct.
+
+    EffData maps onto the payload like this:
+      [2] effect index   [3] byAll        [4] speed     [5] brightness
+      [6] colour mode    [7] direction    [8] width
+      [9:18] colour 1-3  [18:21] background   [21:64] effect specific
+
+    Static and Off carry speed 0xFF, which is what Base Camp sends; direction
+    and width are 0xFF for every effect this device supports."""
+    p = _pkt()
+    p[0] = 0x14
+    p[1] = 0x2C
+    p[2] = int(effect) & 0xFF
+    p[3] = int(all_keys) & 0xFF
+
+    if effect in (EFFECT_STATIC, EFFECT_OFF):
+        p[4] = UNUSED
+    else:
+        p[4] = _clamp(speed, 0, 100)
+    p[5] = _clamp(brightness, 0, 100)
+
+    if color_mode is None:
+        color_mode = COLOR_DUAL if color2 is not None else COLOR_SINGLE
+    p[6] = int(color_mode) & 0xFF
+    p[7] = UNUSED   # byDirection
+    p[8] = UNUSED   # byWidth
+
+    if effect != EFFECT_OFF and color_mode != COLOR_RANDOM:
+        p[9], p[10], p[11] = _rgb(color1)
+        if color2 is not None:
+            p[12], p[13], p[14] = _rgb(color2)
+    if background is not None:
+        p[18], p[19], p[20] = _rgb(background)
+    return bytes(p)
+
+
+def pkt_custom_activate(brightness=DEFAULT_BRIGHTNESS):
+    """Switch to the custom (per-key) effect.
+
+    This is just pkt_effect(EFFECT_CUSTOM) with one twist worth keeping: the
+    SDK memsets the buffer to 0xFF here rather than 0x00, so every field it
+    does not set explicitly goes out as 0xFF. Reproduced exactly, because a
+    firmware that treats 0x00 as a real value would behave differently."""
+    p = _pkt(0xFF)
+    p[0] = 0x14
+    p[1] = 0x2C
+    p[2] = EFFECT_CUSTOM
+    p[3] = 0x00
+    p[5] = _clamp(brightness, 0, 100)
+    return bytes(p)
+
+
+def pkt_custom_colors(colors, chunk=0):
+    """Per-key static colours: 12 RGB triples starting at payload offset 7.
+
+    36 bytes fit in one packet (the SDK chunks at 57 bytes, so it only ever
+    sends one), but the chunk index in byte 4 is part of the format and is
+    kept here for the day someone needs it."""
+    if len(colors) != NUM_KEYS:
+        raise ValueError("need exactly %d colours" % NUM_KEYS)
+    p = _pkt()
+    p[0] = 0x14
+    p[1] = 0x2C
+    p[2] = 0x00
+    p[3] = 0x01
+    p[4] = int(chunk) & 0xFF
+    p[5] = 0x4B
+    off = 7
+    for color in colors:
+        p[off], p[off + 1], p[off + 2] = _rgb(color)
+        off += 3
+    return bytes(p)
+
+
+def pkt_remap_key(source, target):
+    """Remap key `source` (0-11) to HID key code `target`."""
+    p = _pkt()
+    p[0] = 0x14
+    p[1] = 0x20
+    p[2] = int(source) & 0xFF
+    p[3] = (int(source) >> 8) & 0xFF
+    p[4] = int(target) & 0xFF
+    p[5] = (int(target) >> 8) & 0xFF
+    return bytes(p)
+
+
+def pkt_shortcut(source, target, modifiers=0):
+    """Assign a modifier plus key combination to key `source`."""
+    p = _pkt()
+    p[0] = 0x14
+    p[1] = 0x21
+    p[2] = int(source) & 0xFF
+    p[3] = (int(source) >> 8) & 0xFF
+    p[4] = int(target) & 0xFF
+    p[5] = int(modifiers) & 0xFF
+    return bytes(p)
+
+
+# ── Responses ─────────────────────────────────────────────────────────────────
+
+def is_ack(response):
+    """The generic acknowledgement the SDK looks for."""
+    return bool(response) and len(response) >= 2 and \
+        response[0] == 0xFF and response[1] == 0xAA
+
+
+def is_key_event(response):
+    """Hypothesis, not verified: the DisplayPad marks key state reports with
+    0x01 in byte 0 and our driver filters on exactly that. Same firmware
+    family, same key count, so it is the sensible starting point. Confirm with
+    tools/macropad_probe.py before anyone relies on it."""
+    return bool(response) and response[0] == 0x01
+
+
+def decode_key_event(response):
+    """Turn a key state report into a set of pressed key indices.
+
+    UNVERIFIED, see is_key_event(). The DisplayPad packs 12 keys as one bit
+    each starting at byte 1; that layout is assumed here. If the probe shows
+    something else, this function is the only place that has to change."""
+    if not is_key_event(response):
+        return set()
+    pressed = set()
+    for index in range(NUM_KEYS):
+        byte = 1 + index // 8
+        bit = index % 8
+        if byte < len(response) and response[byte] & (1 << bit):
+            pressed.add(index)
+    return pressed
+
+
+# ── Device discovery ──────────────────────────────────────────────────────────
+
+def enumerate_interfaces():
+    """Every HID interface the MacroPad exposes, as hidapi reports them."""
+    if not HID_AVAILABLE:
+        return []
+    return list(hid.enumerate(VID, PID))
+
+
+def find_path():
+    """HID path of the vendor command interface, or None.
+
+    Preference order: the collection the SDK asks for (usage page 0xFF00,
+    usage 1), then anything with a vendor-defined usage page, then the
+    highest interface number, which is where this page sits on the DisplayPad
+    and the Everest."""
+    entries = enumerate_interfaces()
+    if not entries:
+        return None
+    for entry in entries:
+        if entry.get('usage_page') == USAGE_PAGE and entry.get('usage') == USAGE:
+            return entry['path']
+    for entry in entries:
+        if (entry.get('usage_page') or 0) >= 0xFF00:
+            return entry['path']
+    entries.sort(key=lambda e: e.get('interface_number') or 0)
+    return entries[-1]['path']
+
+
+def is_connected():
+    return bool(enumerate_interfaces())
+
+
+# ── Device ────────────────────────────────────────────────────────────────────
+
+class MacroPad:
+    """Thin wrapper around the command interface.
+
+    Key state reports arriving while we wait for a command reply are not
+    thrown away: they land in .key_events so a listener can drain them. That
+    is the same split our DisplayPad driver needed once uploads and key
+    presses started sharing one interface (issues #26-#28)."""
+
+    def __init__(self, path=None):
+        if not HID_AVAILABLE:
+            raise RuntimeError("hidapi not installed (pip install hid)")
+        if path is None:
+            path = find_path()
+        if path is None:
+            raise RuntimeError(
+                "MacroPad not found (VID=0x%04X PID=0x%04X)" % (VID, PID))
+        self.dev = hid.Device(path=path)
+        self.dev.nonblocking = False
+        self.key_events = []
+
+    def close(self):
+        try:
+            self.dev.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+
+    def write(self, payload):
+        """Send one payload. hidapi wants the report ID in front."""
+        if len(payload) != PAYLOAD_LEN:
+            raise ValueError("payload must be %d bytes" % PAYLOAD_LEN)
+        self.dev.write(b"\x00" + bytes(payload))
+
+    def read(self, timeout_ms=DEFAULT_TIMEOUT_MS):
+        """Read one report, skipping key state reports (they are queued)."""
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            data = self.dev.read(PAYLOAD_LEN, timeout=int(remaining * 1000))
+            if not data:
+                return None
+            if is_key_event(data):
+                self.key_events.append(bytes(data))
+                continue
+            return bytes(data)
+
+    def command(self, payload, timeout_ms=DEFAULT_TIMEOUT_MS):
+        """Send and wait for the reply. Returns the raw response or None."""
+        self.write(payload)
+        return self.read(timeout_ms)
+
+    def drain_key_events(self):
+        events, self.key_events = self.key_events, []
+        return events
+
+    # High level operations. Each one returns the device response so a caller
+    # can decide how strict to be; is_ack() covers the common case.
+
+    def init(self):
+        return self.command(pkt_init(True))
+
+    def firmware_info(self):
+        return self.command(pkt_firmware_info())
+
+    def firmware_layout(self):
+        return self.command(pkt_firmware_layout())
+
+    def set_led(self, on):
+        return self.command(pkt_led(on))
+
+    def switch_profile(self, profile, slot=0):
+        return self.command(pkt_switch_profile(profile, slot),
+                            timeout_ms=PROFILE_TIMEOUT_MS)
+
+    def set_effect(self, effect, **kwargs):
+        return self.command(pkt_effect(effect, **kwargs))
+
+    def set_key_colors(self, colors, brightness=DEFAULT_BRIGHTNESS):
+        """Paint the 12 keys individually: upload the colours, then switch the
+        firmware to the custom effect so they become visible."""
+        response = self.command(pkt_custom_colors(colors))
+        self.command(pkt_custom_activate(brightness))
+        return response
+
+    def remap_key(self, source, target):
+        return self.command(pkt_remap_key(source, target))
+
+    def set_shortcut(self, source, target, modifiers=0):
+        return self.command(pkt_shortcut(source, target, modifiers))
+
+    def reset_keys(self):
+        return self.command(pkt_reset_keys())
+
+    def reset_effects(self):
+        return self.command(pkt_reset_effects())
+
+    def save(self, slot=0):
+        return self.command(pkt_save(slot))
